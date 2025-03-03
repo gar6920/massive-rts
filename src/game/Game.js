@@ -94,7 +94,7 @@ class Game {
     /**
      * Handle entity selection
      */
-    handleSelection(worldX, worldY) {
+    handleEntitySelection(worldX, worldY) {
         let entitySelected = false;
         
         // Deselect all entities first
@@ -126,6 +126,49 @@ class Game {
             const tileY = Math.floor(worldY / Config.TILE_SIZE);
             console.log(`Clicked on tile: (${tileX}, ${tileY})`);
         }
+    }
+    
+    /**
+     * Select entities within a box
+     */
+    selectEntitiesInBox(startX, startY, endX, endY) {
+        // Deselect all entities first
+        for (const entity of this.entities) {
+            entity.isSelected = false;
+        }
+        this.selectedEntities = [];
+        
+        // Calculate selection rectangle
+        const selectionRect = {
+            x: Math.min(startX, endX),
+            y: Math.min(startY, endY),
+            width: Math.abs(endX - startX),
+            height: Math.abs(endY - startY)
+        };
+        
+        // Select all entities within the selection rectangle
+        for (const entity of this.entities) {
+            if (
+                entity.x + entity.width >= selectionRect.x &&
+                entity.x <= selectionRect.x + selectionRect.width &&
+                entity.y + entity.height >= selectionRect.y &&
+                entity.y <= selectionRect.y + selectionRect.height &&
+                entity.isPlayerControlled // Only select player-controlled units
+            ) {
+                entity.isSelected = true;
+                this.selectedEntities.push(entity);
+            }
+        }
+    }
+    
+    /**
+     * Deselect all entities
+     */
+    deselectAll() {
+        for (const entity of this.entities) {
+            entity.isSelected = false;
+        }
+        this.selectedEntities = [];
     }
     
     /**

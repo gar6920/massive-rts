@@ -11,11 +11,18 @@ class InputHandler {
         this.canvas = game.canvas;
         
         this.keys = {}; // Track pressed keys
-        this.mousePosition = { x: 0, y: 0 }; // Current mouse position
-        this.isMouseDown = false; // Track mouse button state
-        this.isDragging = false; // Track if user is dragging
-        this.selectionStart = { x: 0, y: 0 }; // Start position of selection box
-        this.selectionEnd = { x: 0, y: 0 }; // End position of selection box
+        this.mouseX = 0;
+        this.mouseY = 0;
+        this.mouseDown = false;
+        this.rightMouseDown = false;
+        this.middleMouseDown = false;
+        this.lastMouseX = 0;
+        this.lastMouseY = 0;
+        this.selectionStartX = 0;
+        this.selectionStartY = 0;
+        this.selectionEndX = 0;
+        this.selectionEndY = 0;
+        this.isSelecting = false;
         
         // Bind event handlers
         this.setupEventListeners();
@@ -34,6 +41,7 @@ class InputHandler {
         this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
         this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
         this.canvas.addEventListener('contextmenu', this.handleRightClick.bind(this));
+        this.canvas.addEventListener('wheel', this.handleMouseWheel.bind(this));
         
         // Prevent context menu from appearing on right-click
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -46,7 +54,14 @@ class InputHandler {
      * Handle key down events
      */
     handleKeyDown(e) {
-        this.keys[e.key] = true;
+        this.keys[e.code] = true;
+        
+        // Handle specific key presses
+        switch (e.code) {
+            case 'Escape':
+                this.game.deselectAll();
+                break;
+        }
         
         // Handle camera movement with arrow keys
         this.updateCameraFromKeys();
@@ -56,31 +71,39 @@ class InputHandler {
      * Handle key up events
      */
     handleKeyUp(e) {
-        this.keys[e.key] = false;
+        this.keys[e.code] = false;
     }
     
     /**
      * Handle mouse down events
      */
     handleMouseDown(e) {
-        this.isMouseDown = true;
+        this.mouseX = e.clientX;
+        this.mouseY = e.clientY;
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
         
-        // Store the starting position for selection box
-        this.selectionStart.x = e.clientX;
-        this.selectionStart.y = e.clientY;
-        this.selectionEnd.x = e.clientX;
-        this.selectionEnd.y = e.clientY;
-        
-        // Convert to world coordinates
-        const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-        
-        // Left click (select)
+        // Left mouse button
         if (e.button === 0) {
-            this.game.handleSelection(worldPos.x, worldPos.y);
+            this.mouseDown = true;
+            this.selectionStartX = e.clientX;
+            this.selectionStartY = e.clientY;
+            this.selectionEndX = e.clientX;
+            this.selectionEndY = e.clientY;
+            this.isSelecting = true;
+            
+            // Check if clicked on an entity
+            const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+            this.game.handleEntitySelection(worldPos.x, worldPos.y);
         }
-        // Right click (command)
+        // Right mouse button
         else if (e.button === 2) {
-            this.game.handleCommand(worldPos.x, worldPos.y);
+            this.rightMouseDown = true;
+        }
+        // Middle mouse button (rollerball)
+        else if (e.button === 1) {
+            this.middleMouseDown = true;
+            e.preventDefault(); // Prevent default middle-click behavior
         }
     }
     
@@ -88,15 +111,25 @@ class InputHandler {
      * Handle mouse up events
      */
     handleMouseUp(e) {
-        this.isMouseDown = false;
-        
-        // If we were dragging, process the selection area
-        if (this.isDragging) {
-            const startWorld = this.camera.screenToWorld(this.selectionStart.x, this.selectionStart.y);
-            const endWorld = this.camera.screenToWorld(this.selectionEnd.x, this.selectionEnd.y);
+        // Left mouse button
+        if (e.button === 0) {
+            this.mouseDown = false;
             
-            this.game.handleAreaSelection(startWorld, endWorld);
-            this.isDragging = false;
+            if (this.isSelecting) {
+                // Finalize selection box
+                const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
+                const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
+                this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
+                this.isSelecting = false;
+            }
+        }
+        // Right mouse button
+        else if (e.button === 2) {
+            this.rightMouseDown = false;
+        }
+        // Middle mouse button (rollerball)
+        else if (e.button === 1) {
+            this.middleMouseDown = false;
         }
     }
     
@@ -104,33 +137,55 @@ class InputHandler {
      * Handle mouse movement
      */
     handleMouseMove(e) {
-        this.mousePosition.x = e.clientX;
-        this.mousePosition.y = e.clientY;
+        this.mouseX = e.clientX;
+        this.mouseY = e.clientY;
         
-        // Update selection box if dragging
-        if (this.isMouseDown) {
-            this.selectionEnd.x = e.clientX;
-            this.selectionEnd.y = e.clientY;
-            
-            // If mouse has moved enough, consider it a drag
-            const dx = Math.abs(this.selectionStart.x - this.selectionEnd.x);
-            const dy = Math.abs(this.selectionStart.y - this.selectionEnd.y);
-            
-            if (dx > 5 || dy > 5) {
-                this.isDragging = true;
-            }
+        // Update selection box if selecting
+        if (this.isSelecting) {
+            this.selectionEndX = e.clientX;
+            this.selectionEndY = e.clientY;
         }
+        
+        // Handle middle mouse panning
+        if (this.middleMouseDown) {
+            const deltaX = this.lastMouseX - e.clientX;
+            const deltaY = this.lastMouseY - e.clientY;
+            
+            // Move camera based on mouse movement
+            this.camera.move(deltaX / this.camera.zoom, deltaY / this.camera.zoom);
+        }
+        
+        this.lastMouseX = e.clientX;
+        this.lastMouseY = e.clientY;
         
         // Handle camera movement when mouse is near screen edges
         this.updateCameraFromMouse();
     }
     
     /**
-     * Handle right-click events
+     * Handle mouse wheel events for zooming
+     */
+    handleMouseWheel(e) {
+        e.preventDefault();
+        
+        // Determine zoom direction
+        const deltaZoom = e.deltaY < 0 ? Config.ZOOM_SPEED : -Config.ZOOM_SPEED;
+        
+        // Zoom at the mouse position
+        this.camera.zoomAt(deltaZoom, e.clientX, e.clientY);
+    }
+    
+    /**
+     * Handle right click events
      */
     handleRightClick(e) {
-        e.preventDefault();
-        // Right-click functionality is handled in mouseDown
+        e.preventDefault(); // Prevent context menu
+        
+        // If we have selected entities, issue a command
+        if (this.game.selectedEntities.length > 0) {
+            const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+            this.game.handleCommand(worldPos.x, worldPos.y);
+        }
     }
     
     /**
@@ -168,10 +223,10 @@ class InputHandler {
         const threshold = Config.CAMERA_EDGE_THRESHOLD;
         
         // Move camera if mouse is near the edges
-        if (this.mousePosition.x < threshold) dx -= Config.CAMERA_SPEED;
-        if (this.mousePosition.x > Config.CANVAS_WIDTH - threshold) dx += Config.CAMERA_SPEED;
-        if (this.mousePosition.y < threshold) dy -= Config.CAMERA_SPEED;
-        if (this.mousePosition.y > Config.CANVAS_HEIGHT - threshold) dy += Config.CAMERA_SPEED;
+        if (this.mouseX < threshold) dx -= Config.CAMERA_SPEED;
+        if (this.mouseX > Config.CANVAS_WIDTH - threshold) dx += Config.CAMERA_SPEED;
+        if (this.mouseY < threshold) dy -= Config.CAMERA_SPEED;
+        if (this.mouseY > Config.CANVAS_HEIGHT - threshold) dy += Config.CAMERA_SPEED;
         
         if (dx !== 0 || dy !== 0) {
             this.camera.move(dx, dy);
@@ -190,13 +245,13 @@ class InputHandler {
      * Get the current selection box in screen coordinates
      */
     getSelectionBox() {
-        if (!this.isDragging) return null;
+        if (!this.isSelecting) return null;
         
         return {
-            x: Math.min(this.selectionStart.x, this.selectionEnd.x),
-            y: Math.min(this.selectionStart.y, this.selectionEnd.y),
-            width: Math.abs(this.selectionEnd.x - this.selectionStart.x),
-            height: Math.abs(this.selectionEnd.y - this.selectionStart.y)
+            x: Math.min(this.selectionStartX, this.selectionEndX),
+            y: Math.min(this.selectionStartY, this.selectionEndY),
+            width: Math.abs(this.selectionEndX - this.selectionStartX),
+            height: Math.abs(this.selectionEndY - this.selectionStartY)
         };
     }
 } 

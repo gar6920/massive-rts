@@ -45,16 +45,16 @@ class Renderer {
      * Render the map tiles
      */
     renderMap() {
-        // Calculate visible tile range based on camera position
+        // Calculate visible tile range based on camera position and zoom
         const startCol = Math.floor(this.camera.x / Config.TILE_SIZE);
         const endCol = Math.min(
-            startCol + Math.ceil(this.camera.width / Config.TILE_SIZE) + 1,
+            startCol + Math.ceil((this.camera.width / this.camera.zoom) / Config.TILE_SIZE) + 1,
             Config.MAP_WIDTH
         );
         
         const startRow = Math.floor(this.camera.y / Config.TILE_SIZE);
         const endRow = Math.min(
-            startRow + Math.ceil(this.camera.height / Config.TILE_SIZE) + 1,
+            startRow + Math.ceil((this.camera.height / this.camera.zoom) / Config.TILE_SIZE) + 1,
             Config.MAP_HEIGHT
         );
         
@@ -70,13 +70,16 @@ class Renderer {
                 // Convert world coordinates to screen coordinates
                 const screenPos = this.camera.worldToScreen(worldX, worldY);
                 
+                // Calculate tile size with zoom
+                const tileSize = Config.TILE_SIZE * this.camera.zoom;
+                
                 // Draw the tile
                 this.ctx.fillStyle = this.getTileColor(tile.type);
                 this.ctx.fillRect(
                     screenPos.x,
                     screenPos.y,
-                    Config.TILE_SIZE,
-                    Config.TILE_SIZE
+                    tileSize,
+                    tileSize
                 );
                 
                 // Draw grid lines if enabled
@@ -85,8 +88,8 @@ class Renderer {
                     this.ctx.strokeRect(
                         screenPos.x,
                         screenPos.y,
-                        Config.TILE_SIZE,
-                        Config.TILE_SIZE
+                        tileSize,
+                        tileSize
                     );
                 }
             }
@@ -126,6 +129,10 @@ class Renderer {
             // Convert world coordinates to screen coordinates
             const screenPos = this.camera.worldToScreen(entity.x, entity.y);
             
+            // Calculate entity size with zoom
+            const width = entity.width * this.camera.zoom;
+            const height = entity.height * this.camera.zoom;
+            
             // Draw the entity
             this.ctx.fillStyle = entity.isPlayerControlled ? 
                 Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
@@ -133,8 +140,8 @@ class Renderer {
             this.ctx.fillRect(
                 screenPos.x,
                 screenPos.y,
-                entity.width,
-                entity.height
+                width,
+                height
             );
             
             // Draw selection highlight if entity is selected
@@ -144,8 +151,8 @@ class Renderer {
                 this.ctx.strokeRect(
                     screenPos.x - 2,
                     screenPos.y - 2,
-                    entity.width + 4,
-                    entity.height + 4
+                    width + 4,
+                    height + 4
                 );
                 this.ctx.lineWidth = 1;
             }
@@ -192,12 +199,15 @@ class Renderer {
         // Display camera position
         this.ctx.fillText(`Camera: (${this.camera.x.toFixed(0)}, ${this.camera.y.toFixed(0)})`, 10, 40);
         
+        // Display zoom level
+        this.ctx.fillText(`Zoom: ${(this.camera.zoom * 100).toFixed(0)}%`, 10, 60);
+        
         // Display entity count
-        this.ctx.fillText(`Entities: ${this.game.entities.length}`, 10, 60);
+        this.ctx.fillText(`Entities: ${this.game.entities.length}`, 10, 80);
         
         // Display selected entities count
         const selectedCount = this.game.entities.filter(e => e.isSelected).length;
-        this.ctx.fillText(`Selected: ${selectedCount}`, 10, 80);
+        this.ctx.fillText(`Selected: ${selectedCount}`, 10, 100);
     }
     
     /**

@@ -12,6 +12,7 @@ class Camera {
         this.height = Config.CANVAS_HEIGHT;
         this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - this.width;
         this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - this.height;
+        this.zoom = Config.ZOOM_DEFAULT; // Current zoom level
     }
 
     /**
@@ -45,8 +46,11 @@ class Camera {
      * Ensure camera stays within map boundaries
      */
     clampPosition() {
-        this.x = Math.max(0, Math.min(this.x, this.maxX));
-        this.y = Math.max(0, Math.min(this.y, this.maxY));
+        const effectiveMaxX = (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom);
+        const effectiveMaxY = (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom);
+        
+        this.x = Math.max(0, Math.min(this.x, effectiveMaxX));
+        this.y = Math.max(0, Math.min(this.y, effectiveMaxY));
     }
 
     /**
@@ -54,8 +58,8 @@ class Camera {
      */
     worldToScreen(worldX, worldY) {
         return {
-            x: worldX - this.x,
-            y: worldY - this.y
+            x: (worldX - this.x) * this.zoom,
+            y: (worldY - this.y) * this.zoom
         };
     }
 
@@ -64,8 +68,8 @@ class Camera {
      */
     screenToWorld(screenX, screenY) {
         return {
-            x: screenX + this.x,
-            y: screenY + this.y
+            x: (screenX / this.zoom) + this.x,
+            y: (screenY / this.zoom) + this.y
         };
     }
 
@@ -75,9 +79,9 @@ class Camera {
     isVisible(worldX, worldY, width, height) {
         return (
             worldX + width > this.x &&
-            worldX < this.x + this.width &&
+            worldX < this.x + (this.width / this.zoom) &&
             worldY + height > this.y &&
-            worldY < this.y + this.height
+            worldY < this.y + (this.height / this.zoom)
         );
     }
 
@@ -87,8 +91,34 @@ class Camera {
     updateDimensions() {
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - this.width;
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - this.height;
+        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - (this.width / this.zoom);
+        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - (this.height / this.zoom);
+        this.clampPosition();
+    }
+    
+    /**
+     * Zoom the camera centered on a specific screen position
+     */
+    zoomAt(deltaZoom, screenX, screenY) {
+        // Get world position before zoom
+        const worldX = (screenX / this.zoom) + this.x;
+        const worldY = (screenY / this.zoom) + this.y;
+        
+        // Adjust zoom level
+        const oldZoom = this.zoom;
+        this.zoom += deltaZoom;
+        this.zoom = Math.max(Config.ZOOM_MIN, Math.min(Config.ZOOM_MAX, this.zoom));
+        
+        // If zoom didn't change, exit early
+        if (oldZoom === this.zoom) return;
+        
+        // Adjust camera position to keep the point under the mouse in the same position
+        this.x = worldX - (screenX / this.zoom);
+        this.y = worldY - (screenY / this.zoom);
+        
+        // Update max bounds and clamp position
+        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - (this.width / this.zoom);
+        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - (this.height / this.zoom);
         this.clampPosition();
     }
 } 

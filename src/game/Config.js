@@ -14,6 +14,10 @@ class Config {
     // Camera settings
     static CAMERA_SPEED = 10; // Camera movement speed
     static CAMERA_EDGE_THRESHOLD = 50; // Pixels from edge to trigger camera movement
+    static ZOOM_MIN = 0.5; // Minimum zoom level (50%)
+    static ZOOM_MAX = 2.0; // Maximum zoom level (200%)
+    static ZOOM_SPEED = 0.1; // How much to zoom per mouse wheel tick
+    static ZOOM_DEFAULT = 1.0; // Default zoom level (100%)
     
     // Unit settings
     static UNIT_SPEED = 2; // Movement speed of units
