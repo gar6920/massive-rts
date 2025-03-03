@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Massive RTS Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div class="ui-overlay">
+            <div id="resourcesPanel" class="panel">
+                <!-- Resources will be displayed here -->
+            </div>
+            <div id="minimap" class="panel">
+                <!-- Minimap will be displayed here -->
+            </div>
+            <div id="controlPanel" class="panel">
+                <!-- Control buttons will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Game scripts -->
+    <script src="../src/utils/helpers.js"></script>
+    <script src="../src/map/Tile.js"></script>
+    <script src="../src/map/Map.js"></script>
+    <script src="../src/entities/Entity.js"></script>
+    <script src="../src/entities/Unit.js"></script>
+    <script src="../src/game/Config.js"></script>
+    <script src="../src/game/Camera.js"></script>
+    <script src="../src/game/InputHandler.js"></script>
+    <script src="../src/game/Renderer.js"></script>
+    <script src="../src/game/Game.js"></script>
+    <script>
+        // Initialize the game when the window loads
+        window.onload = function() {
+            const game = new Game();
+            game.start();
+        };
+    </script>
+</body>
+</html> 
