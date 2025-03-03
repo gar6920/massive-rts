@@ -19,6 +19,7 @@ class Game {
         this.map = new Map();
         this.renderer = new Renderer(this);
         this.inputHandler = new InputHandler(this);
+        this.multiplayer = new Multiplayer(this);
         
         // Game state
         this.entities = [];
@@ -26,35 +27,21 @@ class Game {
         this.running = false;
         this.lastFrameTime = 0;
         this.fps = 0;
+        
+        // Multiplayer state
+        this.playerId = null;
     }
     
     /**
      * Start the game
      */
     start() {
-        // Generate the map
-        this.map.generate();
-        
-        // Create a test player unit
-        this.createTestUnit();
+        // Connect to multiplayer server
+        this.multiplayer.connect();
         
         // Start the game loop
         this.running = true;
         requestAnimationFrame(this.gameLoop.bind(this));
-    }
-    
-    /**
-     * Create a test player unit
-     */
-    createTestUnit() {
-        const unit = new Unit(
-            Config.MAP_WIDTH * Config.TILE_SIZE / 2,
-            Config.MAP_HEIGHT * Config.TILE_SIZE / 2,
-            Config.UNIT_SIZE,
-            Config.UNIT_SIZE,
-            true
-        );
-        this.entities.push(unit);
     }
     
     /**
@@ -85,6 +72,9 @@ class Game {
         // Update input handler
         this.inputHandler.update();
         
+        // Update multiplayer
+        this.multiplayer.update(deltaTime);
+        
         // Update all entities
         for (const entity of this.entities) {
             entity.update(deltaTime, this);
@@ -111,6 +101,11 @@ class Game {
                 worldY >= entity.y &&
                 worldY <= entity.y + entity.height
             ) {
+                // Only select entities that belong to the player
+                if (entity.playerId !== this.multiplayer.playerId) {
+                    continue;
+                }
+                
                 // Select this entity
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
@@ -155,6 +150,11 @@ class Game {
                 entity.y <= selectionRect.y + selectionRect.height &&
                 entity.isPlayerControlled // Only select player-controlled units
             ) {
+                // Only select entities that belong to the player
+                if (entity.playerId !== this.multiplayer.playerId) {
+                    continue;
+                }
+                
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
             }
@@ -198,6 +198,11 @@ class Game {
                 entity.y <= selectionRect.y + selectionRect.height &&
                 entity.isPlayerControlled // Only select player-controlled units
             ) {
+                // Only select entities that belong to the player
+                if (entity.playerId !== this.multiplayer.playerId) {
+                    continue;
+                }
+                
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
             }
@@ -210,10 +215,14 @@ class Game {
     handleCommand(worldX, worldY) {
         if (this.selectedEntities.length === 0) return;
 
-        for (const entity of this.selectedEntities) {
-            if (entity instanceof Unit && entity.isPlayerControlled) {
-                entity.moveTo(worldX, worldY);
-            }
+        // Get IDs of selected units for multiplayer
+        const selectedUnitIds = this.selectedEntities
+            .filter(entity => entity instanceof Unit)
+            .map(entity => entity.id);
+        
+        if (selectedUnitIds.length > 0) {
+            // Send movement command to server
+            this.multiplayer.moveUnits(selectedUnitIds, worldX, worldY);
         }
     }
     

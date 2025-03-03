@@ -12,11 +12,12 @@ This is a simplified, browser-based RTS game prototype with the following featur
 - Adaptive difficulty based on human team performance
 - AI-generated variation (maps, NPCs, units) via external APIs
 
-## Current Development Phase (Phase 1)
+## Current Development Phase (Phase 2)
 
 - Basic, Warcraft-like top-down map
 - Procedurally generated terrain on HTML5 Canvas
 - Single controllable unit with camera panning
+- **Multiplayer functionality with real-time synchronization**
 
 ## Setup and Installation
 
@@ -26,20 +27,29 @@ This is a simplified, browser-based RTS game prototype with the following featur
    cd massive-rts
    ```
 
-2. Install dependencies:
+2. Start the game server:
    ```
-   npm install
+   start.bat
+   ```
+   This will:
+   - Check for and install any required dependencies
+   - Start the Node.js multiplayer server
+   - Automatically open your browser to the game
+
+3. To stop the server when done:
+   ```
+   stop.bat
    ```
 
-3. Start the development server:
-   ```
-   npm start
-   ```
+## Multiplayer Setup
 
-4. Open your browser and navigate to:
-   ```
-   http://localhost:8080/public/
-   ```
+The game now supports multiplayer functionality using Node.js and Socket.IO:
+
+1. The server runs on port 3000 by default
+2. Players connect by opening their browser to the server URL
+3. Each player gets a unique ID and can control their own units
+4. Game state is synchronized in real-time between all connected players
+5. Players can see each other's units and interact in the same game world
 
 ## Controls
 
@@ -47,7 +57,7 @@ This is a simplified, browser-based RTS game prototype with the following featur
 - **Arrow Keys/WASD**: Move the camera
 - **Left Click**: Select units
 - **Right Click**: Command selected units to move
-- **Click and Drag**: Select multiple units (future feature)
+- **Click and Drag**: Select multiple units
 
 ## Project Structure
 
@@ -63,7 +73,8 @@ massive-rts/
 │   │   ├── Renderer.js      # Canvas rendering logic
 │   │   ├── InputHandler.js  # User inputs (keyboard, mouse)
 │   │   ├── Camera.js        # Camera panning logic
-│   │   └── Config.js        # Game constants/configurations
+│   │   ├── Config.js        # Game constants/configurations
+│   │   └── Multiplayer.js   # Client-side multiplayer integration
 │   │
 │   ├── entities/
 │   │   ├── Entity.js        # Base class for all units/buildings
@@ -78,18 +89,40 @@ massive-rts/
 │   └── utils/
 │       └── helpers.js       # Utility functions
 │
+├── server/
+│   └── index.js             # Node.js server for multiplayer
+│
 ├── tests/                   # Unit tests (future)
 ├── package.json             # Dependencies & project info
+├── start.bat                # Script to start the game server
+├── stop.bat                 # Script to stop the game server
 └── README.md                # This file
 ```
 
+## Multiplayer Architecture
+
+The multiplayer system uses a client-server architecture:
+
+- **Server**: Node.js with Express and Socket.IO
+  - Maintains the authoritative game state
+  - Processes player commands
+  - Broadcasts state updates to all clients
+  - Handles player connections/disconnections
+
+- **Client**: Browser with Socket.IO client
+  - Sends player commands to the server
+  - Receives and renders game state updates
+  - Interpolates entity positions between updates
+  - Handles local input and camera controls
+
 ## Future Development
 
-- Multiplayer functionality using WebSockets
 - Resource gathering and base building
 - Unit production and tech trees
 - AI opponents with varying difficulty levels
 - Enhanced graphics and animations
+- Chat system for player communication
+- Team-based gameplay
 
 ## License
 

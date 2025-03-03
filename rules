@@ -108,4 +108,35 @@ When working with PowerShell, be aware of these common issues:
 
 8. **Error Handling**: PowerShell has robust error handling with try/catch blocks and the $ErrorActionPreference variable, which is different from Command Prompt's errorlevel checking.
 
-Always test PowerShell scripts in the target environment, as behavior can vary between PowerShell versions and configurations. 
+Always test PowerShell scripts in the target environment, as behavior can vary between PowerShell versions and configurations.
+
+## GitHub and Git Best Practices
+
+When working with Git and GitHub, follow these simplified approaches:
+
+1. **Keep Git Commands Simple**: Use the basic commands directly without trying to pipe or filter output:
+   - `git add <file>` - Stage specific files
+   - `git add .` - Stage all changes
+   - `git commit -m "message"` - Commit with a clear message
+   - `git push` - Push to the remote repository
+
+2. **Avoid Complex Piping in PowerShell**: Commands like `git diff | cat` often cause issues in PowerShell. Instead:
+   - Use `git diff` alone and press 'q' to exit when done viewing
+   - Use `git show` to view specific commits
+   - Use GitHub's web interface for detailed diff views when needed
+
+3. **Repository Setup (One-time Operations)**:
+   - `git clone <url>` - Clone a repository
+   - `git remote add origin <url>` - Add a remote
+   - `git pull origin master` - Pull from a remote branch
+
+4. **Common Workflows**:
+   - New feature: `git add` → `git commit` → `git push`
+   - Get updates: `git pull`
+   - Switch branches: `git checkout <branch>`
+
+5. **Error Recovery**:
+   - If a command fails, try the simplest alternative
+   - When in doubt, use the GitHub Desktop application for visual operations
+
+Remember that Git operations should be straightforward. If you're encountering errors with a complex command, there's usually a simpler way to accomplish the same task. 

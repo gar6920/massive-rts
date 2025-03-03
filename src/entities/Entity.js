@@ -14,6 +14,12 @@ class Entity {
         this.isSelected = false;
         this.health = 100;
         this.maxHealth = 100;
+        
+        // Multiplayer properties
+        this.id = null; // Server-assigned ID
+        this.playerId = null; // ID of the player who owns this entity
+        this.serverX = null; // Position from server for interpolation
+        this.serverY = null; // Position from server for interpolation
     }
     
     /**
@@ -97,5 +103,22 @@ class Entity {
         const dy = targetY - center.y;
         
         return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    /**
+     * Convert entity to a network-friendly format
+     */
+    toNetworkData() {
+        return {
+            id: this.id,
+            type: this.constructor.name.toLowerCase(),
+            x: this.x,
+            y: this.y,
+            width: this.width,
+            height: this.height,
+            health: this.health,
+            playerId: this.playerId,
+            isPlayerControlled: this.isPlayerControlled
+        };
     }
 } 

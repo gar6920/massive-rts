@@ -6,11 +6,33 @@ class Tile {
      * Initialize a tile
      */
     constructor(type = 'grass') {
-        this.type = type;
-        this.walkable = this.isWalkable(type);
-        this.buildable = this.isBuildable(type);
-        this.resourceType = this.getResourceType(type);
+        // Ensure valid tile type
+        this.type = this.validateTileType(type);
+        this.walkable = this.isWalkable(this.type);
+        this.buildable = this.isBuildable(this.type);
+        this.resourceType = this.getResourceType(this.type);
         this.resourceAmount = this.resourceType ? Math.floor(Math.random() * 500) + 500 : 0;
+    }
+    
+    /**
+     * Validate and normalize tile type
+     */
+    validateTileType(type) {
+        const validTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
+        
+        if (!type || typeof type !== 'string') {
+            console.warn(`Invalid tile type: ${type}, defaulting to grass`);
+            return 'grass';
+        }
+        
+        const normalizedType = type.toLowerCase();
+        
+        if (!validTypes.includes(normalizedType)) {
+            console.warn(`Unknown tile type: ${normalizedType}, defaulting to grass`);
+            return 'grass';
+        }
+        
+        return normalizedType;
     }
     
     /**
@@ -21,6 +43,10 @@ class Tile {
             case 'water':
             case 'mountain':
                 return false;
+            case 'grass':
+            case 'sand':
+            case 'forest':
+                return true;
             default:
                 return true;
         }
@@ -34,6 +60,10 @@ class Tile {
             case 'grass':
             case 'sand':
                 return true;
+            case 'water':
+            case 'mountain':
+            case 'forest':
+                return false;
             default:
                 return false;
         }

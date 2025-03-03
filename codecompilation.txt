@@ -1,0 +1,1725 @@
+Massive RTS Game - Code Compilation 
+Created: Mon 03/03/2025 10:56:39.12 
+======================================== 
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Entity.js 
+======================================== 
+ 
+/**
+ * Base class for all game entities (units, buildings, etc.)
+ */
+class Entity {
+    /**
+     * Initialize an entity
+     */
+    constructor(x, y, width, height, isPlayerControlled = false) {
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.isPlayerControlled = isPlayerControlled;
+        this.isSelected = false;
+        this.health = 100;
+        this.maxHealth = 100;
+    }
+    
+    /**
+     * Update entity state
+     */
+    update(deltaTime, game) {
+        // Base entity doesn't do anything in update
+        // This method should be overridden by subclasses
+    }
+    
+    /**
+     * Check if this entity collides with another entity
+     */
+    collidesWith(otherEntity) {
+        return (
+            this.x < otherEntity.x + otherEntity.width &&
+            this.x + this.width > otherEntity.x &&
+            this.y < otherEntity.y + otherEntity.height &&
+            this.y + this.height > otherEntity.y
+        );
+    }
+    
+    /**
+     * Check if this entity contains a point
+     */
+    containsPoint(x, y) {
+        return (
+            x >= this.x &&
+            x <= this.x + this.width &&
+            y >= this.y &&
+            y <= this.y + this.height
+        );
+    }
+    
+    /**
+     * Take damage
+     */
+    takeDamage(amount) {
+        this.health -= amount;
+        if (this.health <= 0) {
+            this.health = 0;
+            this.die();
+        }
+    }
+    
+    /**
+     * Entity death
+     */
+    die() {
+        // This method should be overridden by subclasses
+        console.log('Entity died');
+    }
+    
+    /**
+     * Get the center position of the entity
+     */
+    getCenter() {
+        return {
+            x: this.x + this.width / 2,
+            y: this.y + this.height / 2
+        };
+    }
+    
+    /**
+     * Calculate distance to another entity or point
+     */
+    distanceTo(target) {
+        let targetX, targetY;
+        
+        if (target instanceof Entity) {
+            const targetCenter = target.getCenter();
+            targetX = targetCenter.x;
+            targetY = targetCenter.y;
+        } else {
+            targetX = target.x;
+            targetY = target.y;
+        }
+        
+        const center = this.getCenter();
+        const dx = targetX - center.x;
+        const dy = targetY - center.y;
+        
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Unit.js 
+======================================== 
+ 
+/**
+ * Unit class for player and AI controlled units
+ */
+class Unit extends Entity {
+    /**
+     * Initialize a unit
+     */
+    constructor(x, y, width, height, isPlayerControlled = false) {
+        super(x, y, width, height, isPlayerControlled);
+        
+        // Movement properties
+        this.speed = Config.UNIT_SPEED;
+        this.targetX = null;
+        this.targetY = null;
+        this.isMoving = false;
+        
+        // Combat properties
+        this.attackRange = 50;
+        this.attackDamage = 10;
+        this.attackCooldown = 1000; // ms
+        this.lastAttackTime = 0;
+        this.targetEntity = null;
+    }
+    
+    /**
+     * Update unit state
+     */
+    update(deltaTime, game) {
+        // Handle movement if we have a target
+        if (this.isMoving && this.targetX !== null && this.targetY !== null) {
+            this.moveTowardsTarget(deltaTime);
+        }
+        
+        // Handle combat if we have a target entity
+        if (this.targetEntity) {
+            this.updateCombat(deltaTime, game);
+        }
+    }
+    
+    /**
+     * Move towards the target position
+     */
+    moveTowardsTarget(deltaTime) {
+        // Calculate direction to target
+        const center = this.getCenter();
+        const dx = this.targetX - center.x;
+        const dy = this.targetY - center.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        // If we're close enough to the target, stop moving
+        if (distance < 5) {
+            this.isMoving = false;
+            return;
+        }
+        
+        // Normalize direction and apply speed
+        const moveSpeed = this.speed * (deltaTime / 1000);
+        const normalizedDx = dx / distance;
+        const normalizedDy = dy / distance;
+        
+        // Update position
+        this.x += normalizedDx * moveSpeed;
+        this.y += normalizedDy * moveSpeed;
+    }
+    
+    /**
+     * Set a movement target
+     */
+    moveTo(x, y) {
+        this.targetX = x;
+        this.targetY = y;
+        this.isMoving = true;
+        this.targetEntity = null; // Clear combat target when moving
+    }
+    
+    /**
+     * Set a target entity to attack
+     */
+    attackEntity(entity) {
+        this.targetEntity = entity;
+        // Move within attack range
+        const targetCenter = entity.getCenter();
+        const center = this.getCenter();
+        const dx = targetCenter.x - center.x;
+        const dy = targetCenter.y - center.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > this.attackRange) {
+            // Calculate position at attack range
+            const ratio = this.attackRange / distance;
+            const moveToX = center.x + dx * ratio;
+            const moveToY = center.y + dy * ratio;
+            this.moveTo(moveToX, moveToY);
+        } else {
+            // Already in range, stop moving
+            this.isMoving = false;
+        }
+    }
+    
+    /**
+     * Update combat state
+     */
+    updateCombat(deltaTime, game) {
+        // Check if target is still valid
+        if (!this.targetEntity || this.targetEntity.health <= 0) {
+            this.targetEntity = null;
+            return;
+        }
+        
+        // Check if we're in attack range
+        const distance = this.distanceTo(this.targetEntity);
+        if (distance > this.attackRange) {
+            // Move closer to target
+            this.attackEntity(this.targetEntity);
+            return;
+        }
+        
+        // Stop moving if we're in attack range
+        this.isMoving = false;
+        
+        // Attack if cooldown has elapsed
+        const currentTime = Date.now();
+        if (currentTime - this.lastAttackTime >= this.attackCooldown) {
+            this.performAttack();
+            this.lastAttackTime = currentTime;
+        }
+    }
+    
+    /**
+     * Perform an attack on the target entity
+     */
+    performAttack() {
+        if (this.targetEntity) {
+            this.targetEntity.takeDamage(this.attackDamage);
+            console.log(`Unit attacked for ${this.attackDamage} damage`);
+        }
+    }
+    
+    /**
+     * Handle unit death
+     */
+    die() {
+        console.log('Unit died');
+        // In a real implementation, we would remove the unit from the game
+        // and possibly play a death animation
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Camera.js 
+======================================== 
+ 
+/**
+ * Camera class for handling viewport and map navigation
+ */
+class Camera {
+    /**
+     * Initialize the camera
+     */
+    constructor() {
+        this.x = 0; // Camera's x position in the world
+        this.y = 0; // Camera's y position in the world
+        this.width = Config.CANVAS_WIDTH;
+        this.height = Config.CANVAS_HEIGHT;
+        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - this.width;
+        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - this.height;
+    }
+
+    /**
+     * Move the camera by the specified delta
+     */
+    move(dx, dy) {
+        this.x += dx;
+        this.y += dy;
+        this.clampPosition();
+    }
+
+    /**
+     * Set the camera position directly
+     */
+    setPosition(x, y) {
+        this.x = x;
+        this.y = y;
+        this.clampPosition();
+    }
+
+    /**
+     * Center the camera on a specific world position
+     */
+    centerOn(worldX, worldY) {
+        this.x = worldX - this.width / 2;
+        this.y = worldY - this.height / 2;
+        this.clampPosition();
+    }
+
+    /**
+     * Ensure camera stays within map boundaries
+     */
+    clampPosition() {
+        this.x = Math.max(0, Math.min(this.x, this.maxX));
+        this.y = Math.max(0, Math.min(this.y, this.maxY));
+    }
+
+    /**
+     * Convert world coordinates to screen coordinates
+     */
+    worldToScreen(worldX, worldY) {
+        return {
+            x: worldX - this.x,
+            y: worldY - this.y
+        };
+    }
+
+    /**
+     * Convert screen coordinates to world coordinates
+     */
+    screenToWorld(screenX, screenY) {
+        return {
+            x: screenX + this.x,
+            y: screenY + this.y
+        };
+    }
+
+    /**
+     * Check if a world position is visible on screen
+     */
+    isVisible(worldX, worldY, width, height) {
+        return (
+            worldX + width > this.x &&
+            worldX < this.x + this.width &&
+            worldY + height > this.y &&
+            worldY < this.y + this.height
+        );
+    }
+
+    /**
+     * Update camera dimensions when window is resized
+     */
+    updateDimensions() {
+        this.width = Config.CANVAS_WIDTH;
+        this.height = Config.CANVAS_HEIGHT;
+        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - this.width;
+        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - this.height;
+        this.clampPosition();
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Config.js 
+======================================== 
+ 
+/**
+ * Game configuration constants
+ */
+class Config {
+    // Canvas and rendering
+    static CANVAS_WIDTH = window.innerWidth;
+    static CANVAS_HEIGHT = window.innerHeight;
+    
+    // Map settings
+    static MAP_WIDTH = 100; // Number of tiles horizontally
+    static MAP_HEIGHT = 100; // Number of tiles vertically
+    static TILE_SIZE = 32; // Size of each tile in pixels
+    
+    // Camera settings
+    static CAMERA_SPEED = 10; // Camera movement speed
+    static CAMERA_EDGE_THRESHOLD = 50; // Pixels from edge to trigger camera movement
+    
+    // Unit settings
+    static UNIT_SPEED = 2; // Movement speed of units
+    static UNIT_SIZE = 24; // Size of units in pixels
+    
+    // Colors
+    static COLORS = {
+        GRASS: '#3a8c3a',
+        WATER: '#4286f4',
+        SAND: '#e6d56e',
+        MOUNTAIN: '#7a7a7a',
+        FOREST: '#1f5e1f',
+        PLAYER_UNIT: '#ff0000',
+        ENEMY_UNIT: '#0000ff',
+        SELECTION: '#ffffff',
+        GRID: 'rgba(0, 0, 0, 0.2)'
+    };
+    
+    // Debug settings
+    static DEBUG_MODE = true; // Enable/disable debug information
+    static SHOW_GRID = true; // Show grid lines
+    
+    // Update the canvas dimensions when the window is resized
+    static updateDimensions() {
+        this.CANVAS_WIDTH = window.innerWidth;
+        this.CANVAS_HEIGHT = window.innerHeight;
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Game.js 
+======================================== 
+ 
+/**
+ * Main game class that coordinates all game components
+ */
+class Game {
+    /**
+     * Initialize the game
+     */
+    constructor() {
+        // Get canvas and context
+        this.canvas = document.getElementById('gameCanvas');
+        this.ctx = this.canvas.getContext('2d');
+        
+        // Set canvas dimensions
+        this.canvas.width = Config.CANVAS_WIDTH;
+        this.canvas.height = Config.CANVAS_HEIGHT;
+        
+        // Initialize game components
+        this.camera = new Camera();
+        this.map = new Map();
+        this.renderer = new Renderer(this);
+        this.inputHandler = new InputHandler(this);
+        
+        // Game state
+        this.entities = [];
+        this.selectedEntities = [];
+        this.running = false;
+        this.lastFrameTime = 0;
+        this.fps = 0;
+    }
+    
+    /**
+     * Start the game
+     */
+    start() {
+        // Generate the map
+        this.map.generate();
+        
+        // Create a test player unit
+        this.createTestUnit();
+        
+        // Start the game loop
+        this.running = true;
+        requestAnimationFrame(this.gameLoop.bind(this));
+    }
+    
+    /**
+     * Create a test player unit
+     */
+    createTestUnit() {
+        const unit = new Unit(
+            Config.MAP_WIDTH * Config.TILE_SIZE / 2,
+            Config.MAP_HEIGHT * Config.TILE_SIZE / 2,
+            Config.UNIT_SIZE,
+            Config.UNIT_SIZE,
+            true
+        );
+        this.entities.push(unit);
+    }
+    
+    /**
+     * Main game loop
+     */
+    gameLoop(timestamp) {
+        // Calculate delta time and FPS
+        const deltaTime = timestamp - this.lastFrameTime;
+        this.lastFrameTime = timestamp;
+        this.fps = 1000 / deltaTime;
+        
+        // Update game state
+        this.update(deltaTime);
+        
+        // Render the game
+        this.renderer.render();
+        
+        // Continue the game loop
+        if (this.running) {
+            requestAnimationFrame(this.gameLoop.bind(this));
+        }
+    }
+    
+    /**
+     * Update game state
+     */
+    update(deltaTime) {
+        // Update input handler
+        this.inputHandler.update();
+        
+        // Update all entities
+        for (const entity of this.entities) {
+            entity.update(deltaTime, this);
+        }
+    }
+    
+    /**
+     * Handle entity selection
+     */
+    handleSelection(worldX, worldY) {
+        let entitySelected = false;
+        
+        // Deselect all entities first
+        for (const entity of this.entities) {
+            entity.isSelected = false;
+        }
+        this.selectedEntities = [];
+        
+        // Check if any entity was clicked
+        for (const entity of this.entities) {
+            if (
+                worldX >= entity.x &&
+                worldX <= entity.x + entity.width &&
+                worldY >= entity.y &&
+                worldY <= entity.y + entity.height
+            ) {
+                // Select this entity
+                entity.isSelected = true;
+                this.selectedEntities.push(entity);
+                entitySelected = true;
+                break; // Only select one entity for now
+            }
+        }
+        
+        // If no entity was selected, this might be a map click
+        if (!entitySelected) {
+            // Get the tile at this position
+            const tileX = Math.floor(worldX / Config.TILE_SIZE);
+            const tileY = Math.floor(worldY / Config.TILE_SIZE);
+            console.log(`Clicked on tile: (${tileX}, ${tileY})`);
+        }
+    }
+    
+    /**
+     * Handle area selection
+     */
+    handleAreaSelection(startPos, endPos) {
+        // Deselect all entities first
+        for (const entity of this.entities) {
+            entity.isSelected = false;
+        }
+        this.selectedEntities = [];
+        
+        // Calculate selection rectangle
+        const selectionRect = {
+            x: Math.min(startPos.x, endPos.x),
+            y: Math.min(startPos.y, endPos.y),
+            width: Math.abs(endPos.x - startPos.x),
+            height: Math.abs(endPos.y - startPos.y)
+        };
+        
+        // Select all entities within the selection rectangle
+        for (const entity of this.entities) {
+            if (
+                entity.x + entity.width >= selectionRect.x &&
+                entity.x <= selectionRect.x + selectionRect.width &&
+                entity.y + entity.height >= selectionRect.y &&
+                entity.y <= selectionRect.y + selectionRect.height &&
+                entity.isPlayerControlled // Only select player-controlled units
+            ) {
+                entity.isSelected = true;
+                this.selectedEntities.push(entity);
+            }
+        }
+    }
+    
+    /**
+     * Handle command (right-click)
+     */
+    handleCommand(worldX, worldY) {
+        // If no units are selected, do nothing
+        if (this.selectedEntities.length === 0) return;
+        
+        // Get the tile at this position
+        const tileX = Math.floor(worldX / Config.TILE_SIZE);
+        const tileY = Math.floor(worldY / Config.TILE_SIZE);
+        const tile = this.map.getTile(tileX, tileY);
+        
+        // If the tile is not walkable, do nothing
+        if (tile && !tile.walkable) return;
+        
+        // Command all selected entities to move to this position
+        for (const entity of this.selectedEntities) {
+            entity.moveTo(worldX, worldY);
+        }
+    }
+    
+    /**
+     * Handle window resize
+     */
+    handleResize() {
+        this.canvas.width = Config.CANVAS_WIDTH;
+        this.canvas.height = Config.CANVAS_HEIGHT;
+        this.renderer.handleResize();
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\InputHandler.js 
+======================================== 
+ 
+/**
+ * Handles user input (keyboard, mouse) for game interaction
+ */
+class InputHandler {
+    /**
+     * Initialize input handler and set up event listeners
+     */
+    constructor(game) {
+        this.game = game;
+        this.camera = game.camera;
+        this.canvas = game.canvas;
+        
+        this.keys = {}; // Track pressed keys
+        this.mousePosition = { x: 0, y: 0 }; // Current mouse position
+        this.isMouseDown = false; // Track mouse button state
+        this.isDragging = false; // Track if user is dragging
+        this.selectionStart = { x: 0, y: 0 }; // Start position of selection box
+        this.selectionEnd = { x: 0, y: 0 }; // End position of selection box
+        
+        // Bind event handlers
+        this.setupEventListeners();
+    }
+    
+    /**
+     * Set up all event listeners
+     */
+    setupEventListeners() {
+        // Keyboard events
+        window.addEventListener('keydown', this.handleKeyDown.bind(this));
+        window.addEventListener('keyup', this.handleKeyUp.bind(this));
+        
+        // Mouse events
+        this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
+        this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
+        this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        this.canvas.addEventListener('contextmenu', this.handleRightClick.bind(this));
+        
+        // Prevent context menu from appearing on right-click
+        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Window resize event
+        window.addEventListener('resize', this.handleResize.bind(this));
+    }
+    
+    /**
+     * Handle key down events
+     */
+    handleKeyDown(e) {
+        this.keys[e.key] = true;
+        
+        // Handle camera movement with arrow keys
+        this.updateCameraFromKeys();
+    }
+    
+    /**
+     * Handle key up events
+     */
+    handleKeyUp(e) {
+        this.keys[e.key] = false;
+    }
+    
+    /**
+     * Handle mouse down events
+     */
+    handleMouseDown(e) {
+        this.isMouseDown = true;
+        
+        // Store the starting position for selection box
+        this.selectionStart.x = e.clientX;
+        this.selectionStart.y = e.clientY;
+        this.selectionEnd.x = e.clientX;
+        this.selectionEnd.y = e.clientY;
+        
+        // Convert to world coordinates
+        const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+        
+        // Left click (select)
+        if (e.button === 0) {
+            this.game.handleSelection(worldPos.x, worldPos.y);
+        }
+        // Right click (command)
+        else if (e.button === 2) {
+            this.game.handleCommand(worldPos.x, worldPos.y);
+        }
+    }
+    
+    /**
+     * Handle mouse up events
+     */
+    handleMouseUp(e) {
+        this.isMouseDown = false;
+        
+        // If we were dragging, process the selection area
+        if (this.isDragging) {
+            const startWorld = this.camera.screenToWorld(this.selectionStart.x, this.selectionStart.y);
+            const endWorld = this.camera.screenToWorld(this.selectionEnd.x, this.selectionEnd.y);
+            
+            this.game.handleAreaSelection(startWorld, endWorld);
+            this.isDragging = false;
+        }
+    }
+    
+    /**
+     * Handle mouse movement
+     */
+    handleMouseMove(e) {
+        this.mousePosition.x = e.clientX;
+        this.mousePosition.y = e.clientY;
+        
+        // Update selection box if dragging
+        if (this.isMouseDown) {
+            this.selectionEnd.x = e.clientX;
+            this.selectionEnd.y = e.clientY;
+            
+            // If mouse has moved enough, consider it a drag
+            const dx = Math.abs(this.selectionStart.x - this.selectionEnd.x);
+            const dy = Math.abs(this.selectionStart.y - this.selectionEnd.y);
+            
+            if (dx > 5 || dy > 5) {
+                this.isDragging = true;
+            }
+        }
+        
+        // Handle camera movement when mouse is near screen edges
+        this.updateCameraFromMouse();
+    }
+    
+    /**
+     * Handle right-click events
+     */
+    handleRightClick(e) {
+        e.preventDefault();
+        // Right-click functionality is handled in mouseDown
+    }
+    
+    /**
+     * Handle window resize
+     */
+    handleResize() {
+        Config.updateDimensions();
+        this.camera.updateDimensions();
+        this.game.handleResize();
+    }
+    
+    /**
+     * Update camera position based on keyboard input
+     */
+    updateCameraFromKeys() {
+        let dx = 0;
+        let dy = 0;
+        
+        if (this.keys['ArrowUp'] || this.keys['w']) dy -= Config.CAMERA_SPEED;
+        if (this.keys['ArrowDown'] || this.keys['s']) dy += Config.CAMERA_SPEED;
+        if (this.keys['ArrowLeft'] || this.keys['a']) dx -= Config.CAMERA_SPEED;
+        if (this.keys['ArrowRight'] || this.keys['d']) dx += Config.CAMERA_SPEED;
+        
+        if (dx !== 0 || dy !== 0) {
+            this.camera.move(dx, dy);
+        }
+    }
+    
+    /**
+     * Update camera position when mouse is near screen edges
+     */
+    updateCameraFromMouse() {
+        let dx = 0;
+        let dy = 0;
+        const threshold = Config.CAMERA_EDGE_THRESHOLD;
+        
+        // Move camera if mouse is near the edges
+        if (this.mousePosition.x < threshold) dx -= Config.CAMERA_SPEED;
+        if (this.mousePosition.x > Config.CANVAS_WIDTH - threshold) dx += Config.CAMERA_SPEED;
+        if (this.mousePosition.y < threshold) dy -= Config.CAMERA_SPEED;
+        if (this.mousePosition.y > Config.CANVAS_HEIGHT - threshold) dy += Config.CAMERA_SPEED;
+        
+        if (dx !== 0 || dy !== 0) {
+            this.camera.move(dx, dy);
+        }
+    }
+    
+    /**
+     * Update method called each frame
+     */
+    update() {
+        this.updateCameraFromKeys();
+        this.updateCameraFromMouse();
+    }
+    
+    /**
+     * Get the current selection box in screen coordinates
+     */
+    getSelectionBox() {
+        if (!this.isDragging) return null;
+        
+        return {
+            x: Math.min(this.selectionStart.x, this.selectionEnd.x),
+            y: Math.min(this.selectionStart.y, this.selectionEnd.y),
+            width: Math.abs(this.selectionEnd.x - this.selectionStart.x),
+            height: Math.abs(this.selectionEnd.y - this.selectionStart.y)
+        };
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Renderer.js 
+======================================== 
+ 
+/**
+ * Handles all rendering operations for the game
+ */
+class Renderer {
+    /**
+     * Initialize the renderer
+     */
+    constructor(game) {
+        this.game = game;
+        this.canvas = game.canvas;
+        this.ctx = game.ctx;
+        this.camera = game.camera;
+        this.map = game.map;
+    }
+    
+    /**
+     * Clear the canvas
+     */
+    clear() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    }
+    
+    /**
+     * Render the entire game scene
+     */
+    render() {
+        this.clear();
+        
+        // Render map tiles
+        this.renderMap();
+        
+        // Render entities (units, buildings)
+        this.renderEntities();
+        
+        // Render UI elements
+        this.renderUI();
+        
+        // Render debug information if enabled
+        if (Config.DEBUG_MODE) {
+            this.renderDebugInfo();
+        }
+    }
+    
+    /**
+     * Render the map tiles
+     */
+    renderMap() {
+        // Calculate visible tile range based on camera position
+        const startCol = Math.floor(this.camera.x / Config.TILE_SIZE);
+        const endCol = Math.min(
+            startCol + Math.ceil(this.camera.width / Config.TILE_SIZE) + 1,
+            Config.MAP_WIDTH
+        );
+        
+        const startRow = Math.floor(this.camera.y / Config.TILE_SIZE);
+        const endRow = Math.min(
+            startRow + Math.ceil(this.camera.height / Config.TILE_SIZE) + 1,
+            Config.MAP_HEIGHT
+        );
+        
+        // Render only visible tiles
+        for (let row = startRow; row < endRow; row++) {
+            for (let col = startCol; col < endCol; col++) {
+                const tile = this.map.getTile(col, row);
+                if (!tile) continue;
+                
+                const worldX = col * Config.TILE_SIZE;
+                const worldY = row * Config.TILE_SIZE;
+                
+                // Convert world coordinates to screen coordinates
+                const screenPos = this.camera.worldToScreen(worldX, worldY);
+                
+                // Draw the tile
+                this.ctx.fillStyle = this.getTileColor(tile.type);
+                this.ctx.fillRect(
+                    screenPos.x,
+                    screenPos.y,
+                    Config.TILE_SIZE,
+                    Config.TILE_SIZE
+                );
+                
+                // Draw grid lines if enabled
+                if (Config.SHOW_GRID) {
+                    this.ctx.strokeStyle = Config.COLORS.GRID;
+                    this.ctx.strokeRect(
+                        screenPos.x,
+                        screenPos.y,
+                        Config.TILE_SIZE,
+                        Config.TILE_SIZE
+                    );
+                }
+            }
+        }
+    }
+    
+    /**
+     * Get color for a tile type
+     */
+    getTileColor(tileType) {
+        switch (tileType) {
+            case 'grass': return Config.COLORS.GRASS;
+            case 'water': return Config.COLORS.WATER;
+            case 'sand': return Config.COLORS.SAND;
+            case 'mountain': return Config.COLORS.MOUNTAIN;
+            case 'forest': return Config.COLORS.FOREST;
+            default: return Config.COLORS.GRASS;
+        }
+    }
+    
+    /**
+     * Render all game entities
+     */
+    renderEntities() {
+        // Render all entities that are in the visible area
+        for (const entity of this.game.entities) {
+            // Skip entities outside the visible area
+            if (!this.camera.isVisible(
+                entity.x,
+                entity.y,
+                entity.width,
+                entity.height
+            )) {
+                continue;
+            }
+            
+            // Convert world coordinates to screen coordinates
+            const screenPos = this.camera.worldToScreen(entity.x, entity.y);
+            
+            // Draw the entity
+            this.ctx.fillStyle = entity.isPlayerControlled ? 
+                Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+                
+            this.ctx.fillRect(
+                screenPos.x,
+                screenPos.y,
+                entity.width,
+                entity.height
+            );
+            
+            // Draw selection highlight if entity is selected
+            if (entity.isSelected) {
+                this.ctx.strokeStyle = Config.COLORS.SELECTION;
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeRect(
+                    screenPos.x - 2,
+                    screenPos.y - 2,
+                    entity.width + 4,
+                    entity.height + 4
+                );
+                this.ctx.lineWidth = 1;
+            }
+        }
+    }
+    
+    /**
+     * Render UI elements
+     */
+    renderUI() {
+        // Render selection box if dragging
+        const selectionBox = this.game.inputHandler.getSelectionBox();
+        if (selectionBox) {
+            this.ctx.strokeStyle = Config.COLORS.SELECTION;
+            this.ctx.lineWidth = 1;
+            this.ctx.strokeRect(
+                selectionBox.x,
+                selectionBox.y,
+                selectionBox.width,
+                selectionBox.height
+            );
+            
+            // Semi-transparent fill
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            this.ctx.fillRect(
+                selectionBox.x,
+                selectionBox.y,
+                selectionBox.width,
+                selectionBox.height
+            );
+        }
+    }
+    
+    /**
+     * Render debug information
+     */
+    renderDebugInfo() {
+        this.ctx.fillStyle = 'white';
+        this.ctx.font = '12px Arial';
+        
+        // Display FPS
+        this.ctx.fillText(`FPS: ${this.game.fps.toFixed(1)}`, 10, 20);
+        
+        // Display camera position
+        this.ctx.fillText(`Camera: (${this.camera.x.toFixed(0)}, ${this.camera.y.toFixed(0)})`, 10, 40);
+        
+        // Display entity count
+        this.ctx.fillText(`Entities: ${this.game.entities.length}`, 10, 60);
+        
+        // Display selected entities count
+        const selectedCount = this.game.entities.filter(e => e.isSelected).length;
+        this.ctx.fillText(`Selected: ${selectedCount}`, 10, 80);
+    }
+    
+    /**
+     * Handle window resize
+     */
+    handleResize() {
+        this.canvas.width = Config.CANVAS_WIDTH;
+        this.canvas.height = Config.CANVAS_HEIGHT;
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\map\Map.js 
+======================================== 
+ 
+/**
+ * Manages the game map and terrain generation
+ */
+class Map {
+    /**
+     * Initialize the map
+     */
+    constructor() {
+        this.width = Config.MAP_WIDTH;
+        this.height = Config.MAP_HEIGHT;
+        this.tiles = [];
+    }
+    
+    /**
+     * Generate a new map
+     */
+    generate() {
+        // Initialize empty tile array
+        this.tiles = new Array(this.height);
+        for (let y = 0; y < this.height; y++) {
+            this.tiles[y] = new Array(this.width);
+        }
+        
+        // Generate terrain using simplex noise (mocked for now)
+        this.generateTerrain();
+        
+        // Add features like forests, mountains, etc.
+        this.addFeatures();
+        
+        console.log('Map generated successfully');
+    }
+    
+    /**
+     * Generate basic terrain
+     */
+    generateTerrain() {
+        // For now, we'll use a simple algorithm to generate terrain
+        // In a real implementation, we would use noise functions for more natural terrain
+        
+        // Start with all grass
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                this.tiles[y][x] = new Tile('grass');
+            }
+        }
+        
+        // Add some water (simple algorithm for demonstration)
+        this.generateWater();
+    }
+    
+    /**
+     * Generate water bodies
+     */
+    generateWater() {
+        // Create a few lakes/rivers
+        const numWaterBodies = Math.floor(Math.random() * 3) + 2;
+        
+        for (let i = 0; i < numWaterBodies; i++) {
+            // Random starting point
+            const startX = Math.floor(Math.random() * this.width);
+            const startY = Math.floor(Math.random() * this.height);
+            
+            // Random size
+            const size = Math.floor(Math.random() * 10) + 5;
+            
+            // Create water body
+            this.createWaterBody(startX, startY, size);
+        }
+    }
+    
+    /**
+     * Create a water body starting at (x, y) with given size
+     */
+    createWaterBody(x, y, size) {
+        // Simple circular water body
+        for (let dy = -size; dy <= size; dy++) {
+            for (let dx = -size; dx <= size; dx++) {
+                // Calculate distance from center
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // If within radius and with some randomness
+                if (distance <= size * (0.7 + Math.random() * 0.3)) {
+                    const tileX = x + dx;
+                    const tileY = y + dy;
+                    
+                    // Check bounds
+                    if (tileX >= 0 && tileX < this.width && tileY >= 0 && tileY < this.height) {
+                        // Set tile to water
+                        this.tiles[tileY][tileX] = new Tile('water');
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Add map features (forests, mountains, etc.)
+     */
+    addFeatures() {
+        // Add forests
+        this.addForests();
+        
+        // Add mountains
+        this.addMountains();
+        
+        // Add sand (beaches near water)
+        this.addBeaches();
+    }
+    
+    /**
+     * Add forests to the map
+     */
+    addForests() {
+        // Number of forest clusters
+        const numForests = Math.floor(Math.random() * 5) + 5;
+        
+        for (let i = 0; i < numForests; i++) {
+            // Random starting point
+            const startX = Math.floor(Math.random() * this.width);
+            const startY = Math.floor(Math.random() * this.height);
+            
+            // Random size
+            const size = Math.floor(Math.random() * 8) + 4;
+            
+            // Create forest
+            this.createForest(startX, startY, size);
+        }
+    }
+    
+    /**
+     * Create a forest starting at (x, y) with given size
+     */
+    createForest(x, y, size) {
+        for (let dy = -size; dy <= size; dy++) {
+            for (let dx = -size; dx <= size; dx++) {
+                // Calculate distance from center
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // If within radius and with some randomness
+                if (distance <= size * (0.6 + Math.random() * 0.4)) {
+                    const tileX = x + dx;
+                    const tileY = y + dy;
+                    
+                    // Check bounds and that tile is grass
+                    if (
+                        tileX >= 0 && tileX < this.width && 
+                        tileY >= 0 && tileY < this.height &&
+                        this.tiles[tileY][tileX].type === 'grass'
+                    ) {
+                        // Set tile to forest with some randomness
+                        if (Math.random() < 0.7) {
+                            this.tiles[tileY][tileX] = new Tile('forest');
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Add mountains to the map
+     */
+    addMountains() {
+        // Number of mountain ranges
+        const numMountains = Math.floor(Math.random() * 3) + 2;
+        
+        for (let i = 0; i < numMountains; i++) {
+            // Random starting point
+            const startX = Math.floor(Math.random() * this.width);
+            const startY = Math.floor(Math.random() * this.height);
+            
+            // Random size
+            const size = Math.floor(Math.random() * 6) + 3;
+            
+            // Create mountain range
+            this.createMountains(startX, startY, size);
+        }
+    }
+    
+    /**
+     * Create mountains starting at (x, y) with given size
+     */
+    createMountains(x, y, size) {
+        for (let dy = -size; dy <= size; dy++) {
+            for (let dx = -size; dx <= size; dx++) {
+                // Calculate distance from center
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // If within radius and with some randomness
+                if (distance <= size * (0.5 + Math.random() * 0.5)) {
+                    const tileX = x + dx;
+                    const tileY = y + dy;
+                    
+                    // Check bounds and that tile is not water
+                    if (
+                        tileX >= 0 && tileX < this.width && 
+                        tileY >= 0 && tileY < this.height &&
+                        this.tiles[tileY][tileX].type !== 'water'
+                    ) {
+                        // Set tile to mountain with some randomness
+                        if (Math.random() < 0.6) {
+                            this.tiles[tileY][tileX] = new Tile('mountain');
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    /**
+     * Add beaches (sand) near water
+     */
+    addBeaches() {
+        // Create a copy of the current tiles
+        const tempTiles = [];
+        for (let y = 0; y < this.height; y++) {
+            tempTiles[y] = [...this.tiles[y]];
+        }
+        
+        // Check each tile
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                // If tile is not water but is adjacent to water, make it sand
+                if (this.tiles[y][x].type !== 'water' && this.isAdjacentToWater(x, y)) {
+                    tempTiles[y][x] = new Tile('sand');
+                }
+            }
+        }
+        
+        // Update tiles
+        this.tiles = tempTiles;
+    }
+    
+    /**
+     * Check if a tile is adjacent to water
+     */
+    isAdjacentToWater(x, y) {
+        // Check all 8 adjacent tiles
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                // Skip the center tile
+                if (dx === 0 && dy === 0) continue;
+                
+                const nx = x + dx;
+                const ny = y + dy;
+                
+                // Check bounds
+                if (nx >= 0 && nx < this.width && ny >= 0 && ny < this.height) {
+                    // If adjacent tile is water, return true
+                    if (this.tiles[ny][nx].type === 'water') {
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Get a tile at the specified coordinates
+     */
+    getTile(x, y) {
+        // Check bounds
+        if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
+            return null;
+        }
+        
+        return this.tiles[y][x];
+    }
+    
+    /**
+     * Check if a position is walkable
+     */
+    isWalkable(x, y) {
+        const tile = this.getTile(x, y);
+        return tile && tile.walkable;
+    }
+    
+    /**
+     * Check if a position is buildable
+     */
+    isBuildable(x, y) {
+        const tile = this.getTile(x, y);
+        return tile && tile.buildable;
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\map\Tile.js 
+======================================== 
+ 
+/**
+ * Represents a single tile on the game map
+ */
+class Tile {
+    /**
+     * Initialize a tile
+     */
+    constructor(type = 'grass') {
+        this.type = type;
+        this.walkable = this.isWalkable(type);
+        this.buildable = this.isBuildable(type);
+        this.resourceType = this.getResourceType(type);
+        this.resourceAmount = this.resourceType ? Math.floor(Math.random() * 500) + 500 : 0;
+    }
+    
+    /**
+     * Determine if a tile type is walkable
+     */
+    isWalkable(type) {
+        switch (type) {
+            case 'water':
+            case 'mountain':
+                return false;
+            default:
+                return true;
+        }
+    }
+    
+    /**
+     * Determine if a tile type is buildable
+     */
+    isBuildable(type) {
+        switch (type) {
+            case 'grass':
+            case 'sand':
+                return true;
+            default:
+                return false;
+        }
+    }
+    
+    /**
+     * Get resource type for a tile if applicable
+     */
+    getResourceType(type) {
+        switch (type) {
+            case 'forest':
+                return 'wood';
+            case 'mountain':
+                return 'stone';
+            default:
+                return null;
+        }
+    }
+    
+    /**
+     * Extract resources from the tile
+     */
+    extractResource(amount) {
+        if (!this.resourceType || this.resourceAmount <= 0) {
+            return 0;
+        }
+        
+        const extracted = Math.min(amount, this.resourceAmount);
+        this.resourceAmount -= extracted;
+        
+        // If resources are depleted, change the tile type
+        if (this.resourceAmount <= 0) {
+            this.depleteResource();
+        }
+        
+        return extracted;
+    }
+    
+    /**
+     * Handle resource depletion
+     */
+    depleteResource() {
+        switch (this.resourceType) {
+            case 'wood':
+                this.type = 'grass';
+                break;
+            case 'stone':
+                this.type = 'mountain';
+                break;
+            default:
+                break;
+        }
+        
+        this.resourceType = null;
+        this.resourceAmount = 0;
+        this.walkable = this.isWalkable(this.type);
+        this.buildable = this.isBuildable(this.type);
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\utils\helpers.js 
+======================================== 
+ 
+/**
+ * Utility functions for the game
+ */
+
+/**
+ * Calculate distance between two points
+ */
+function distance(x1, y1, x2, y2) {
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Clamp a value between min and max
+ */
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+/**
+ * Linear interpolation between two values
+ */
+function lerp(a, b, t) {
+    return a + (b - a) * t;
+}
+
+/**
+ * Generate a random integer between min and max (inclusive)
+ */
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+/**
+ * Check if a point is inside a rectangle
+ */
+function pointInRect(px, py, rx, ry, rw, rh) {
+    return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+}
+
+/**
+ * Check if two rectangles overlap
+ */
+function rectOverlap(r1x, r1y, r1w, r1h, r2x, r2y, r2w, r2h) {
+    return (
+        r1x < r2x + r2w &&
+        r1x + r1w > r2x &&
+        r1y < r2y + r2h &&
+        r1y + r1h > r2y
+    );
+}
+
+/**
+ * Convert degrees to radians
+ */
+function degToRad(degrees) {
+    return degrees * Math.PI / 180;
+}
+
+/**
+ * Convert radians to degrees
+ */
+function radToDeg(radians) {
+    return radians * 180 / Math.PI;
+}
+
+/**
+ * Calculate the angle between two points (in radians)
+ */
+function angleBetweenPoints(x1, y1, x2, y2) {
+    return Math.atan2(y2 - y1, x2 - x1);
+}
+
+/**
+ * Get a point on a circle given center, radius, and angle
+ */
+function pointOnCircle(centerX, centerY, radius, angleRadians) {
+    return {
+        x: centerX + radius * Math.cos(angleRadians),
+        y: centerY + radius * Math.sin(angleRadians)
+    };
+}
+
+/**
+ * Shuffle an array (Fisher-Yates algorithm)
+ */
+function shuffleArray(array) {
+    const result = [...array];
+    for (let i = result.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [result[i], result[j]] = [result[j], result[i]];
+    }
+    return result;
+}
+
+/**
+ * Format a number with commas (e.g., 1,234,567)
+ */
+function formatNumber(num) {
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+}
+
+/**
+ * Format time in seconds to MM:SS format
+ */
+function formatTime(seconds) {
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
+
+/**
+ * Ease in-out function (smooth acceleration and deceleration)
+ */
+function easeInOut(t) {
+    return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+/**
+ * Get a random element from an array
+ */
+function randomArrayElement(array) {
+    return array[Math.floor(Math.random() * array.length)];
+}
+
+/**
+ * Check if a value is between min and max (inclusive)
+ */
+function isBetween(value, min, max) {
+    return value >= min && value <= max;
+}
+
+/**
+ * Calculate the Manhattan distance between two points
+ */
+function manhattanDistance(x1, y1, x2, y2) {
+    return Math.abs(x2 - x1) + Math.abs(y2 - y1);
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html 
+======================================== 
+ 
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Massive RTS Game</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        <div class="ui-overlay">
+            <div id="resourcesPanel" class="panel">
+                <!-- Resources will be displayed here -->
+            </div>
+            <div id="minimap" class="panel">
+                <!-- Minimap will be displayed here -->
+            </div>
+            <div id="controlPanel" class="panel">
+                <!-- Control buttons will be displayed here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Game scripts -->
+    <script src="/src/utils/helpers.js"></script>
+    <script src="/src/map/Tile.js"></script>
+    <script src="/src/map/Map.js"></script>
+    <script src="/src/entities/Entity.js"></script>
+    <script src="/src/entities/Unit.js"></script>
+    <script src="/src/game/Config.js"></script>
+    <script src="/src/game/Camera.js"></script>
+    <script src="/src/game/InputHandler.js"></script>
+    <script src="/src/game/Renderer.js"></script>
+    <script src="/src/game/Game.js"></script>
+    <script>
+        // Initialize the game when the window loads
+        window.onload = function() {
+            const game = new Game();
+            game.start();
+        };
+    </script>
+</body>
+</html>  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\public\styles.css 
+======================================== 
+ 
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: Arial, sans-serif;
+    background-color: #222;
+    color: #fff;
+    overflow: hidden;
+}
+
+.game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background-color: #000;
+}
+
+.ui-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none; /* Allow clicks to pass through to canvas */
+}
+
+.panel {
+    pointer-events: auto; /* Make panels clickable */
+    background-color: rgba(0, 0, 0, 0.7);
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+#resourcesPanel {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    width: 200px;
+}
+
+#minimap {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    width: 200px;
+    height: 200px;
+}
+
+#controlPanel {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    width: 200px;
+}  
+ 
+ 
+======================================== 
+FILE: package.json 
+======================================== 
+ 
+{
+  "name": "massive-rts",
+  "version": "0.1.0",
+  "description": "A browser-based RTS game with massively multiplayer capabilities",
+  "main": "index.js",
+  "scripts": {
+    "start": "http-server -c-1 -p 8080",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "rts",
+    "game",
+    "multiplayer",
+    "browser",
+    "html5",
+    "canvas"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "http-server": "^14.1.1"
+  }
+}  
+ 
