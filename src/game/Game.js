@@ -165,20 +165,12 @@ class Game {
      * Handle command (right-click)
      */
     handleCommand(worldX, worldY) {
-        // If no units are selected, do nothing
         if (this.selectedEntities.length === 0) return;
-        
-        // Get the tile at this position
-        const tileX = Math.floor(worldX / Config.TILE_SIZE);
-        const tileY = Math.floor(worldY / Config.TILE_SIZE);
-        const tile = this.map.getTile(tileX, tileY);
-        
-        // If the tile is not walkable, do nothing
-        if (tile && !tile.walkable) return;
-        
-        // Command all selected entities to move to this position
+
         for (const entity of this.selectedEntities) {
-            entity.moveTo(worldX, worldY);
+            if (entity instanceof Unit && entity.isPlayerControlled) {
+                entity.moveTo(worldX, worldY);
+            }
         }
     }
     
