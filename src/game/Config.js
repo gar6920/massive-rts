@@ -32,6 +32,20 @@ class Config {
         }
     };
     
+    // Building settings
+    static BUILDING_ATTRIBUTES = {
+        BASE: {
+            health: 1000,
+            productionRate: 0.1, // Units per second
+            productionType: 'SOLDIER'
+        },
+        BARRACKS: {
+            health: 500,
+            productionRate: 0.2,
+            productionType: 'SOLDIER'
+        }
+    };
+    
     // Player settings
     static PLAYER_COLORS = [
         'red',
@@ -47,8 +61,8 @@ class Config {
         SAND: '#e6d56e',
         MOUNTAIN: '#7a7a7a',
         FOREST: '#1f5e1f',
-        PLAYER_UNIT: '#ff0000',
-        ENEMY_UNIT: '#0000ff',
+        PLAYER_UNIT: '#0000ff',
+        ENEMY_UNIT: '#ff0000',
         SELECTION: '#ffffff',
         GRID: 'rgba(0, 0, 0, 0.2)'
     };

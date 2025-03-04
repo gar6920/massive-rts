@@ -129,29 +129,140 @@ const gameState = {
   lastUpdateTime: Date.now()
 };
 
+// Initialize the game with bases
+initializeGame();
+
+// Function to initialize the game with bases
+function initializeGame() {
+  console.log('Initializing game with bases');
+  
+  // Create human base in the bottom-left quadrant
+  const humanBaseId = uuidv4();
+  const humanBaseX = Math.floor(gameState.map.length * 0.25);
+  const humanBaseY = Math.floor(gameState.map[0].length * 0.75);
+  
+  // Create AI base in the top-right quadrant
+  const aiBaseId = uuidv4();
+  const aiBaseX = Math.floor(gameState.map.length * 0.75);
+  const aiBaseY = Math.floor(gameState.map[0].length * 0.25);
+  
+  // Make sure the base locations are walkable
+  makeAreaWalkable(humanBaseX, humanBaseY, 5, 5);
+  makeAreaWalkable(aiBaseX, aiBaseY, 5, 5);
+  
+  // Add human base to entities with persistent team identifier
+  gameState.entities[humanBaseId] = {
+    id: humanBaseId,
+    type: 'building',
+    buildingType: 'BASE',
+    playerColor: 'blue',
+    x: humanBaseX * 32, // Convert tile coordinates to pixel coordinates
+    y: humanBaseY * 32,
+    width: 5 * 32, // 5x5 tiles
+    height: 5 * 32,
+    playerId: 'human-team', // Persistent team identifier
+    isPlayerControlled: true,
+    health: 1000,
+    maxHealth: 1000
+  };
+  
+  // Add AI base to entities
+  gameState.entities[aiBaseId] = {
+    id: aiBaseId,
+    type: 'building',
+    buildingType: 'BASE',
+    playerColor: 'red',
+    x: aiBaseX * 32,
+    y: aiBaseY * 32,
+    width: 5 * 32,
+    height: 5 * 32,
+    playerId: 'ai-team', // Persistent team identifier
+    isPlayerControlled: false,
+    health: 1000,
+    maxHealth: 1000
+  };
+  
+  // Create an AI unit near the AI base
+  const aiUnitId = uuidv4();
+  gameState.entities[aiUnitId] = {
+    id: aiUnitId,
+    type: 'unit',
+    unitType: 'SOLDIER',
+    playerColor: 'red',
+    x: aiBaseX * 32 - 64, // Position to the left of the base
+    y: aiBaseY * 32 + 80, // Position near the middle of the base
+    width: 32, // Config.UNIT_SIZE
+    height: 32, // Config.UNIT_SIZE
+    playerId: 'ai',
+    isPlayerControlled: false,
+    health: 100,
+    maxHealth: 100,
+    attackDamage: 10,
+    attackRange: 50,
+    attackCooldown: 1000,
+    speed: 2,
+    level: 1,
+    experience: 0,
+    targetX: null,
+    targetY: null,
+    isMoving: false,
+    lastUpdateTime: Date.now()
+  };
+  
+  console.log('Bases created:', {
+    humanBase: { x: humanBaseX, y: humanBaseY },
+    aiBase: { x: aiBaseX, y: aiBaseY }
+  });
+  console.log('AI unit created near AI base');
+}
+
+// Function to make an area walkable (for base placement)
+function makeAreaWalkable(centerX, centerY, width, height) {
+  const halfWidth = Math.floor(width / 2);
+  const halfHeight = Math.floor(height / 2);
+  
+  for (let y = centerY - halfHeight; y <= centerY + halfHeight; y++) {
+    for (let x = centerX - halfWidth; x <= centerX + halfWidth; x++) {
+      if (y >= 0 && y < gameState.map.length && x >= 0 && x < gameState.map[0].length) {
+        gameState.map[y][x].type = 'grass';
+        gameState.map[y][x].walkable = true;
+      }
+    }
+  }
+}
+
 // Player colors for assignment
 const playerColors = ['red', 'blue', 'green', 'yellow'];
 let nextPlayerColorIndex = 0;
 
 // Handle socket connections
 io.on('connection', (socket) => {
-  console.log(`Player connected: ${socket.id}`);
+  console.log(`New player connected: ${socket.id}`);
   
-  // Create a new player
+  // Generate a unique player ID
   const playerId = uuidv4();
   
-  // Assign player color
-  const playerColor = playerColors[nextPlayerColorIndex % playerColors.length];
-  nextPlayerColorIndex++;
-  
+  // Add player to game state
   gameState.players[playerId] = {
     id: playerId,
     socketId: socket.id,
     name: `Player ${Object.keys(gameState.players).length + 1}`,
-    color: playerColor,
+    color: 'blue', // Always blue for human player
     connected: true,
     lastActivity: Date.now()
   };
+  
+  // Find the human base by its persistent team identifier
+  let humanBase = null;
+  Object.values(gameState.entities).forEach(entity => {
+    if (entity.type === 'building' && entity.buildingType === 'BASE' && 
+        (entity.playerId === 'human-team' || entity.playerColor === 'blue')) {
+      // Assign this player to the base
+      entity.playerId = playerId;
+      humanBase = entity;
+      console.log(`Assigned human base to player ${playerId}`);
+    }
+  });
   
   // Send initial game state to the new player
   socket.emit('gameState', {
@@ -168,6 +279,129 @@ io.on('connection', (socket) => {
   socket.broadcast.emit('playerJoined', {
     player: gameState.players[playerId]
   });
+  
+  // Automatically spawn a starting unit for the player near the human base
+  // First, find the human base location if we don't have it yet
+  if (!humanBase) {
+    Object.values(gameState.entities).forEach(entity => {
+      if (entity.type === 'building' && entity.buildingType === 'BASE' && 
+          entity.playerColor === 'blue') {
+        humanBase = entity;
+        console.log(`Found human base for unit spawning`);
+      }
+    });
+  }
+  
+  if (humanBase) {
+    // Create a unit ID
+    const unitId = uuidv4();
+    
+    // Calculate position near the human base
+    // Position the unit to the right of the base with some offset
+    const spawnX = humanBase.x + humanBase.width + 64; // 64 pixels to the right of the base
+    const spawnY = humanBase.y + (humanBase.height / 2); // Middle height of the base
+    
+    // Get unit attributes
+    const unitAttributes = {
+      health: 100,
+      attackDamage: 10,
+      attackRange: 50,
+      attackCooldown: 1000,
+      speed: 2
+    };
+    
+    // Create a new unit in the game state
+    const newUnit = {
+      id: unitId,
+      type: 'unit',
+      unitType: 'SOLDIER',
+      playerColor: 'blue',
+      x: spawnX,
+      y: spawnY,
+      width: 32, // Unit size
+      height: 32, // Unit size
+      playerId: playerId,
+      isPlayerControlled: true,
+      health: unitAttributes.health,
+      maxHealth: unitAttributes.health,
+      attackDamage: unitAttributes.attackDamage,
+      attackRange: unitAttributes.attackRange,
+      attackCooldown: unitAttributes.attackCooldown,
+      speed: unitAttributes.speed,
+      level: 1,
+      experience: 0,
+      targetX: null,
+      targetY: null,
+      isMoving: false,
+      lastUpdateTime: Date.now()
+    };
+    
+    // Add the unit to the game state
+    gameState.entities[unitId] = newUnit;
+    
+    // Broadcast the new unit to all players
+    io.emit('unitCreated', {
+      unit: newUnit
+    });
+    
+    console.log(`Automatically spawned starting unit for player ${playerId} near the human base at (${spawnX}, ${spawnY})`);
+  } else {
+    console.error(`Could not find human base for unit spawning`);
+    
+    // Fallback to a fixed position in the bottom-left quadrant if base not found
+    const mapWidth = gameState.map.length * 32;
+    const mapHeight = gameState.map[0].length * 32;
+    const spawnX = Math.floor(mapWidth * 0.25);
+    const spawnY = Math.floor(mapHeight * 0.75);
+    
+    // Create a unit ID
+    const unitId = uuidv4();
+    
+    // Get unit attributes
+    const unitAttributes = {
+      health: 100,
+      attackDamage: 10,
+      attackRange: 50,
+      attackCooldown: 1000,
+      speed: 2
+    };
+    
+    // Create a new unit in the game state
+    const newUnit = {
+      id: unitId,
+      type: 'unit',
+      unitType: 'SOLDIER',
+      playerColor: 'blue',
+      x: spawnX,
+      y: spawnY,
+      width: 32, // Unit size
+      height: 32, // Unit size
+      playerId: playerId,
+      isPlayerControlled: true,
+      health: unitAttributes.health,
+      maxHealth: unitAttributes.health,
+      attackDamage: unitAttributes.attackDamage,
+      attackRange: unitAttributes.attackRange,
+      attackCooldown: unitAttributes.attackCooldown,
+      speed: unitAttributes.speed,
+      level: 1,
+      experience: 0,
+      targetX: null,
+      targetY: null,
+      isMoving: false,
+      lastUpdateTime: Date.now()
+    };
+    
+    // Add the unit to the game state
+    gameState.entities[unitId] = newUnit;
+    
+    // Broadcast the new unit to all players
+    io.emit('unitCreated', {
+      unit: newUnit
+    });
+    
+    console.log(`Fallback: Spawned starting unit for player ${playerId} in bottom-left quadrant at (${spawnX}, ${spawnY})`);
+  }
   
   // Handle player movement commands
   socket.on('moveUnits', (data) => {
@@ -266,9 +500,14 @@ io.on('connection', (socket) => {
         playerId: playerId
       });
       
-      // Remove player's units
+      // Remove player's units but keep bases (with team identifiers)
       Object.keys(gameState.entities).forEach(entityId => {
-        if (gameState.entities[entityId].playerId === playerId) {
+        const entity = gameState.entities[entityId];
+        // Only remove entities that belong directly to the player
+        // Skip entities with team-based identifiers (bases)
+        if (entity.playerId === playerId && 
+            entity.playerId !== 'human-team' && 
+            entity.playerId !== 'ai-team') {
           delete gameState.entities[entityId];
           
           // Broadcast entity removal
@@ -304,6 +543,8 @@ setInterval(() => {
       // If we're close enough to the target, stop moving
       if (distance < 5) {
         entity.isMoving = false;
+        entity.targetX = null;
+        entity.targetY = null;
         return;
       }
       
@@ -312,9 +553,16 @@ setInterval(() => {
       const normalizedDx = dx / distance;
       const normalizedDy = dy / distance;
       
-      // Update position
-      entity.x += normalizedDx * moveSpeed;
-      entity.y += normalizedDy * moveSpeed;
+      // Update position with boundary checking
+      const newX = entity.x + normalizedDx * moveSpeed;
+      const newY = entity.y + normalizedDy * moveSpeed;
+      
+      // Ensure the entity stays within map boundaries
+      const mapWidth = gameState.map[0].length * 32; // Map width in pixels
+      const mapHeight = gameState.map.length * 32; // Map height in pixels
+      
+      entity.x = Math.max(0, Math.min(newX, mapWidth - entity.width));
+      entity.y = Math.max(0, Math.min(newY, mapHeight - entity.height));
     }
   });
   

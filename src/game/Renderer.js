@@ -12,18 +12,23 @@ class Renderer {
         this.camera = game.camera;
         this.map = game.map;
         
-        // Preload unit images
-        this.preloadUnitImages();
+        // Preload images
+        this.preloadImages();
     }
     
     /**
-     * Preload unit images for different player colors
+     * Preload unit and building images for different player colors
      */
-    preloadUnitImages() {
+    preloadImages() {
         // Preload soldier images for each player color
         Config.PLAYER_COLORS.forEach(color => {
-            const img = new Image();
-            img.src = `/images/units/${color}_soldier.svg`;
+            // Preload unit images
+            const unitImg = new Image();
+            unitImg.src = `/images/units/${color}_soldier.svg`;
+            
+            // Preload building images
+            const baseImg = new Image();
+            baseImg.src = `/images/buildings/${color}_base.svg`;
         });
     }
     
@@ -125,11 +130,15 @@ class Renderer {
     }
     
     /**
-     * Render all game entities
+     * Render all entities
      */
     renderEntities() {
+        console.log(`Rendering ${this.game.entities.length} entities`);
+        
         // Render all entities that are in the visible area
         for (const entity of this.game.entities) {
+            console.log(`Entity: ${entity.constructor.name}, position: (${entity.x}, ${entity.y})`);
+            
             // Skip entities outside the visible area
             if (!this.camera.isVisible(
                 entity.x,
@@ -137,6 +146,7 @@ class Renderer {
                 entity.width,
                 entity.height
             )) {
+                console.log(`Entity at (${entity.x}, ${entity.y}) is not visible`);
                 continue;
             }
             
@@ -148,10 +158,13 @@ class Renderer {
             const height = entity.height * this.camera.zoom;
             
             // Draw the entity based on its type
-            if (entity instanceof Unit) {
+            if (entity.constructor.name === 'Unit' || entity instanceof Unit) {
                 this.renderUnit(entity, screenPos, width, height);
+            } else if (entity.constructor.name === 'Building' || entity.buildingType) {
+                this.renderBuilding(entity, screenPos, width, height);
             } else {
                 // Fallback for other entity types
+                console.log(`Using fallback rendering for entity type: ${entity.constructor.name}`);
                 this.ctx.fillStyle = entity.isPlayerControlled ? 
                     Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
                     
@@ -238,6 +251,86 @@ class Renderer {
                 screenPos.y + height + 12 * this.camera.zoom
             );
         }
+    }
+    
+    /**
+     * Render a building with its image and health bar
+     */
+    renderBuilding(building, screenPos, width, height) {
+        console.log(`Rendering building: ${building.buildingType} at screen position (${screenPos.x}, ${screenPos.y}), world position (${building.x}, ${building.y})`);
+        
+        // Always draw a solid base rectangle first
+        this.ctx.fillStyle = building.playerColor === 'red' ? 
+            '#ff0000' : building.playerColor === 'blue' ? 
+            '#0000ff' : '#888888';
+            
+        this.ctx.fillRect(
+            screenPos.x,
+            screenPos.y,
+            width,
+            height
+        );
+        
+        // Draw building image if available
+        if (building.image && building.image.complete) {
+            console.log(`Drawing building image: ${building.playerColor}_${building.buildingType.toLowerCase()}.svg`);
+            this.ctx.drawImage(
+                building.image,
+                screenPos.x,
+                screenPos.y,
+                width,
+                height
+            );
+        }
+        
+        // Draw a border
+        this.ctx.strokeStyle = '#000000';
+        this.ctx.lineWidth = 2;
+        this.ctx.strokeRect(
+            screenPos.x,
+            screenPos.y,
+            width,
+            height
+        );
+        
+        // Draw health bar
+        const healthPercentage = building.health / building.maxHealth;
+        const healthBarWidth = width;
+        const healthBarHeight = 5 * this.camera.zoom;
+        
+        // Background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(
+            screenPos.x,
+            screenPos.y - healthBarHeight - 2,
+            healthBarWidth,
+            healthBarHeight
+        );
+        
+        // Health
+        this.ctx.fillStyle = this.getHealthColor(healthPercentage);
+        this.ctx.fillRect(
+            screenPos.x,
+            screenPos.y - healthBarHeight - 2,
+            healthBarWidth * healthPercentage,
+            healthBarHeight
+        );
+        
+        // Determine the label based on player color
+        let baseLabel = building.buildingType;
+        if (building.buildingType === 'BASE') {
+            baseLabel = building.playerColor === 'blue' ? 'Human Base' : 'AI Base';
+        }
+        
+        // Draw building type text
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.font = `${12 * this.camera.zoom}px Arial`;
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(
+            baseLabel,
+            screenPos.x + width / 2,
+            screenPos.y + height / 2
+        );
     }
     
     /**
@@ -332,8 +425,15 @@ class Renderer {
             const width = entity.width * scaleX;
             const height = entity.height * scaleY;
             
-            this.minimapCtx.fillStyle = entity.isPlayerControlled ? 
-                Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+            // Use the entity's playerColor property to determine the color
+            if (entity.playerColor) {
+                this.minimapCtx.fillStyle = entity.playerColor === 'blue' ? 
+                    Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+            } else {
+                // Fallback to the old method if playerColor is not available
+                this.minimapCtx.fillStyle = entity.isPlayerControlled ? 
+                    Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+            }
             this.minimapCtx.fillRect(x, y, width, height);
         }
         
