@@ -94,6 +94,8 @@ class Unit extends Entity {
         // If we're close enough to the target, stop moving
         if (distance < 5) {
             this.isMoving = false;
+            this.targetX = null;
+            this.targetY = null;
             return;
         }
         
@@ -102,9 +104,16 @@ class Unit extends Entity {
         const normalizedDx = dx / distance;
         const normalizedDy = dy / distance;
         
-        // Update position
-        this.x += normalizedDx * moveSpeed;
-        this.y += normalizedDy * moveSpeed;
+        // Calculate new position
+        const newX = this.x + normalizedDx * moveSpeed;
+        const newY = this.y + normalizedDy * moveSpeed;
+        
+        // Ensure the unit stays within map boundaries
+        const mapWidth = Config.MAP_WIDTH * Config.TILE_SIZE;
+        const mapHeight = Config.MAP_HEIGHT * Config.TILE_SIZE;
+        
+        this.x = Math.max(0, Math.min(newX, mapWidth - this.width));
+        this.y = Math.max(0, Math.min(newY, mapHeight - this.height));
     }
     
     /**

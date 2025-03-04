@@ -61,11 +61,12 @@ class InputHandler {
      * Handle key down events
      */
     handleKeyDown(e) {
-        this.keys[e.code] = true;
+        this.keys[e.key] = true;
         
         // Handle specific key presses
-        switch (e.code) {
+        switch (e.key) {
             case 'Escape':
+                // Deselect all units
                 this.game.deselectAll();
                 break;
         }

@@ -6,13 +6,47 @@ class Camera {
      * Initialize the camera
      */
     constructor() {
-        this.x = 0; // Camera's x position in the world
-        this.y = 0; // Camera's y position in the world
+        // Camera position (top-left corner of the viewport in world coordinates)
+        this.x = 0;
+        this.y = 0;
+        
+        // Camera dimensions (viewport size)
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - this.width;
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - this.height;
-        this.zoom = Config.ZOOM_DEFAULT; // Current zoom level
+        
+        // Camera zoom level
+        this.zoom = Config.ZOOM_DEFAULT;
+        
+        // Calculate initial boundaries based on current map dimensions
+        this.updateBoundaries();
+        
+        // Set initial position to center on the map
+        this.centerOnMap();
+        
+        console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
+    }
+
+    /**
+     * Center the camera on the map
+     */
+    centerOnMap() {
+        // Calculate the center of the map in world coordinates
+        const mapCenterX = (Config.MAP_WIDTH * Config.TILE_SIZE) / 2;
+        const mapCenterY = (Config.MAP_HEIGHT * Config.TILE_SIZE) / 2;
+        
+        // Center the camera on the map
+        this.centerOn(mapCenterX, mapCenterY);
+    }
+
+    /**
+     * Update camera boundaries based on current map dimensions
+     */
+    updateBoundaries() {
+        // Calculate maximum camera positions based on map dimensions and zoom
+        this.maxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
+        this.maxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
+        
+        console.log(`Camera boundaries updated: maxX=${this.maxX}, maxY=${this.maxY}`);
     }
 
     /**
@@ -49,9 +83,11 @@ class Camera {
      * Ensure camera stays within map boundaries
      */
     clampPosition() {
-        const effectiveMaxX = (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom);
-        const effectiveMaxY = (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom);
+        // Recalculate effective boundaries based on current zoom
+        const effectiveMaxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
+        const effectiveMaxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
         
+        // Clamp camera position to stay within map boundaries
         this.x = Math.max(0, Math.min(this.x, effectiveMaxX));
         this.y = Math.max(0, Math.min(this.y, effectiveMaxY));
     }
@@ -89,14 +125,20 @@ class Camera {
     }
 
     /**
-     * Update camera dimensions when window is resized
+     * Update camera dimensions when window is resized or map dimensions change
      */
     updateDimensions() {
+        // Update viewport dimensions
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - (this.width / this.zoom);
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - (this.height / this.zoom);
+        
+        // Update boundaries based on current map dimensions
+        this.updateBoundaries();
+        
+        // Ensure camera position is still valid
         this.clampPosition();
+        
+        console.log(`Camera dimensions updated: width=${this.width}, height=${this.height}, map=${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
     }
     
     /**
@@ -119,9 +161,8 @@ class Camera {
         this.x = worldX - (screenX / this.zoom);
         this.y = worldY - (screenY / this.zoom);
         
-        // Update max bounds and clamp position
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - (this.width / this.zoom);
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - (this.height / this.zoom);
+        // Update boundaries and clamp position
+        this.updateBoundaries();
         this.clampPosition();
     }
 } 

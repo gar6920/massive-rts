@@ -34,6 +34,29 @@ app.get('/public/index.html', (req, res) => {
   res.redirect('/');
 });
 
+// Function to determine map size based on player count
+function getMapDimensions(playerCount) {
+  if (playerCount <= 5) {
+    return { 
+      width: 40, 
+      height: 40,
+      zoomFactor: 1.5 // Higher zoom factor for smaller maps
+    };
+  } else if (playerCount <= 15) {
+    return { 
+      width: 60, 
+      height: 60,
+      zoomFactor: 1.0 // Medium zoom factor
+    };
+  } else {
+    return { 
+      width: 80, 
+      height: 80,
+      zoomFactor: 0.75 // Lower zoom factor for larger maps
+    };
+  }
+}
+
 // Generate a random map
 function generateMap(width, height) {
   console.log(`Generating map with dimensions ${width}x${height}`);
@@ -125,9 +148,13 @@ function generateMap(width, height) {
 const gameState = {
   players: {},
   entities: {},
-  map: generateMap(100, 100), // Generate a 100x100 map
+  map: null, // Will be initialized based on player count
+  mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 }, // Default starting dimensions with zoom
   lastUpdateTime: Date.now()
 };
+
+// Initialize the map with default dimensions
+gameState.map = generateMap(gameState.mapDimensions.width, gameState.mapDimensions.height);
 
 // Initialize the game with bases
 initializeGame();
@@ -138,13 +165,13 @@ function initializeGame() {
   
   // Create human base in the bottom-left quadrant
   const humanBaseId = uuidv4();
-  const humanBaseX = Math.floor(gameState.map.length * 0.25);
-  const humanBaseY = Math.floor(gameState.map[0].length * 0.75);
+  const humanBaseX = Math.floor(gameState.mapDimensions.width * 0.25);
+  const humanBaseY = Math.floor(gameState.mapDimensions.height * 0.75);
   
   // Create AI base in the top-right quadrant
   const aiBaseId = uuidv4();
-  const aiBaseX = Math.floor(gameState.map.length * 0.75);
-  const aiBaseY = Math.floor(gameState.map[0].length * 0.25);
+  const aiBaseX = Math.floor(gameState.mapDimensions.width * 0.75);
+  const aiBaseY = Math.floor(gameState.mapDimensions.height * 0.25);
   
   // Make sure the base locations are walkable
   makeAreaWalkable(humanBaseX, humanBaseY, 5, 5);
@@ -231,6 +258,74 @@ function makeAreaWalkable(centerX, centerY, width, height) {
   }
 }
 
+// Function to check if map needs to be resized based on player count
+function checkAndResizeMap() {
+  const playerCount = Object.values(gameState.players).filter(player => player.connected).length;
+  const newDimensions = getMapDimensions(playerCount);
+  
+  // Check if dimensions have changed
+  if (newDimensions.width !== gameState.mapDimensions.width || 
+      newDimensions.height !== gameState.mapDimensions.height) {
+    
+    console.log(`Resizing map from ${gameState.mapDimensions.width}x${gameState.mapDimensions.height} (zoom: ${gameState.mapDimensions.zoomFactor}) to ${newDimensions.width}x${newDimensions.height} (zoom: ${newDimensions.zoomFactor}) based on ${playerCount} players`);
+    
+    // Save old entities
+    const oldEntities = { ...gameState.entities };
+    
+    // Update map dimensions
+    gameState.mapDimensions = newDimensions;
+    
+    // Generate new map
+    gameState.map = generateMap(newDimensions.width, newDimensions.height);
+    
+    // Clear entities
+    gameState.entities = {};
+    
+    // Re-initialize game with bases
+    initializeGame();
+    
+    // Restore player units with adjusted positions
+    Object.values(oldEntities).forEach(entity => {
+      if (entity.type === 'unit' && entity.playerId !== 'ai') {
+        // Calculate relative position in the old map
+        const oldMapWidth = gameState.map[0].length * 32;
+        const oldMapHeight = gameState.map.length * 32;
+        const relativeX = entity.x / oldMapWidth;
+        const relativeY = entity.y / oldMapHeight;
+        
+        // Calculate new position in the new map
+        const newMapWidth = newDimensions.width * 32;
+        const newMapHeight = newDimensions.height * 32;
+        const newX = Math.floor(relativeX * newMapWidth);
+        const newY = Math.floor(relativeY * newMapHeight);
+        
+        // Create a new entity with adjusted position
+        const newEntityId = uuidv4();
+        gameState.entities[newEntityId] = {
+          ...entity,
+          id: newEntityId,
+          x: newX,
+          y: newY,
+          targetX: null,
+          targetY: null,
+          isMoving: false
+        };
+      }
+    });
+    
+    // Broadcast the new map and entities to all players
+    io.emit('mapResized', {
+      mapDimensions: gameState.mapDimensions,
+      map: gameState.map,
+      entities: gameState.entities
+    });
+    
+    return true;
+  }
+  
+  return false;
+}
+
 // Player colors for assignment
 const playerColors = ['red', 'blue', 'green', 'yellow'];
 let nextPlayerColorIndex = 0;
@@ -252,17 +347,23 @@ io.on('connection', (socket) => {
     lastActivity: Date.now()
   };
   
-  // Find the human base by its persistent team identifier
-  let humanBase = null;
-  Object.values(gameState.entities).forEach(entity => {
-    if (entity.type === 'building' && entity.buildingType === 'BASE' && 
-        (entity.playerId === 'human-team' || entity.playerColor === 'blue')) {
-      // Assign this player to the base
-      entity.playerId = playerId;
-      humanBase = entity;
-      console.log(`Assigned human base to player ${playerId}`);
-    }
-  });
+  // Check if map needs to be resized based on new player count
+  const mapResized = checkAndResizeMap();
+  
+  // If map wasn't resized, we need to find the human base
+  if (!mapResized) {
+    // Find the human base by its persistent team identifier
+    let humanBase = null;
+    Object.values(gameState.entities).forEach(entity => {
+      if (entity.type === 'building' && entity.buildingType === 'BASE' && 
+          (entity.playerId === 'human-team' || entity.playerColor === 'blue')) {
+        // Assign this player to the base
+        entity.playerId = playerId;
+        humanBase = entity;
+        console.log(`Assigned human base to player ${playerId}`);
+      }
+    });
+  }
   
   // Send initial game state to the new player
   socket.emit('gameState', {
@@ -271,6 +372,7 @@ io.on('connection', (socket) => {
       players: gameState.players,
       entities: gameState.entities,
       map: gameState.map,
+      mapDimensions: gameState.mapDimensions, // Send map dimensions with zoom factor
       lastUpdateTime: gameState.lastUpdateTime
     }
   });
@@ -281,16 +383,15 @@ io.on('connection', (socket) => {
   });
   
   // Automatically spawn a starting unit for the player near the human base
-  // First, find the human base location if we don't have it yet
-  if (!humanBase) {
-    Object.values(gameState.entities).forEach(entity => {
-      if (entity.type === 'building' && entity.buildingType === 'BASE' && 
-          entity.playerColor === 'blue') {
-        humanBase = entity;
-        console.log(`Found human base for unit spawning`);
-      }
-    });
-  }
+  // First, find the human base location
+  let humanBase = null;
+  Object.values(gameState.entities).forEach(entity => {
+    if (entity.type === 'building' && entity.buildingType === 'BASE' && 
+        (entity.playerId === playerId || entity.playerColor === 'blue')) {
+      humanBase = entity;
+      console.log(`Found human base for unit spawning`);
+    }
+  });
   
   if (humanBase) {
     // Create a unit ID
@@ -349,8 +450,8 @@ io.on('connection', (socket) => {
     console.error(`Could not find human base for unit spawning`);
     
     // Fallback to a fixed position in the bottom-left quadrant if base not found
-    const mapWidth = gameState.map.length * 32;
-    const mapHeight = gameState.map[0].length * 32;
+    const mapWidth = gameState.mapDimensions.width * 32;
+    const mapHeight = gameState.mapDimensions.height * 32;
     const spawnX = Math.floor(mapWidth * 0.25);
     const spawnY = Math.floor(mapHeight * 0.75);
     
@@ -516,6 +617,9 @@ io.on('connection', (socket) => {
           });
         }
       });
+      
+      // Check if map needs to be resized after player disconnection
+      checkAndResizeMap();
     }
   });
 });
@@ -558,8 +662,8 @@ setInterval(() => {
       const newY = entity.y + normalizedDy * moveSpeed;
       
       // Ensure the entity stays within map boundaries
-      const mapWidth = gameState.map[0].length * 32; // Map width in pixels
-      const mapHeight = gameState.map.length * 32; // Map height in pixels
+      const mapWidth = gameState.mapDimensions.width * 32; // Map width in pixels
+      const mapHeight = gameState.mapDimensions.height * 32; // Map height in pixels
       
       entity.x = Math.max(0, Math.min(newX, mapWidth - entity.width));
       entity.y = Math.max(0, Math.min(newY, mapHeight - entity.height));
@@ -578,4 +682,5 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Game client available at http://localhost:${PORT}`);
+  console.log(`Initial map size: ${gameState.mapDimensions.width}x${gameState.mapDimensions.height} (zoom: ${gameState.mapDimensions.zoomFactor})`);
 }); 

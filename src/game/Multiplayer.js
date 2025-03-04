@@ -25,6 +25,7 @@ class Multiplayer {
         this.onUnitCreated = this.onUnitCreated.bind(this);
         this.onUnitsMoved = this.onUnitsMoved.bind(this);
         this.onEntityRemoved = this.onEntityRemoved.bind(this);
+        this.onMapResized = this.onMapResized.bind(this);
     }
     
     /**
@@ -50,6 +51,7 @@ class Multiplayer {
         this.socket.on('unitCreated', this.onUnitCreated);
         this.socket.on('unitsMoved', this.onUnitsMoved);
         this.socket.on('entityRemoved', this.onEntityRemoved);
+        this.socket.on('mapResized', this.onMapResized);
     }
     
     /**
@@ -90,6 +92,12 @@ class Multiplayer {
         this.playerId = data.playerId;
         this.game.playerId = data.playerId;
         
+        // Update map dimensions from server data
+        if (data.gameState && data.gameState.mapDimensions) {
+            console.log('Setting map dimensions from server data:', data.gameState.mapDimensions);
+            this.updateMapDimensions(data.gameState.mapDimensions);
+        }
+        
         // Set the map from server data
         if (data.gameState && data.gameState.map) {
             console.log('Setting map from server data');
@@ -98,25 +106,94 @@ class Multiplayer {
             console.error('No map data received from server');
         }
         
-        // Clear existing entities
-        this.game.entities = [];
-        
-        // Create entities from server data
+        // Process entities from server data
         if (data.gameState && data.gameState.entities) {
-            console.log('Creating entities from server data');
-            Object.values(data.gameState.entities).forEach(entityData => {
-                this.createEntityFromServer(entityData);
-            });
+            console.log('Processing entities from server data');
+            this.game.processServerEntities(data.gameState.entities);
+            
+            // Create initial unit after entities are processed
+            console.log('Creating initial unit for player');
+            this.createInitialUnit();
+        }
+    }
+    
+    /**
+     * Handle map resize event from server
+     */
+    onMapResized(data) {
+        console.log('Received map resize event from server:', data.mapDimensions);
+        
+        // Update map dimensions
+        this.updateMapDimensions(data.mapDimensions);
+        
+        // Update the map tiles
+        if (data.map) {
+            this.game.map.setMapFromServer(data.map);
         }
         
-        // Create a player unit if none exists
-        if (this.game.entities.filter(e => e.isPlayerControlled).length === 0) {
-            console.log('Creating initial player unit');
-            this.createUnit(
-                Config.MAP_WIDTH * Config.TILE_SIZE / 2,
-                Config.MAP_HEIGHT * Config.TILE_SIZE / 2,
-                true
-            );
+        // Update entities
+        if (data.entities) {
+            this.game.processServerEntities(data.entities);
+        }
+        
+        // Reset camera position to ensure it's within bounds
+        this.game.camera.updateDimensions();
+        this.game.camera.clampPosition();
+    }
+    
+    /**
+     * Update map dimensions based on server data
+     */
+    updateMapDimensions(mapDimensions) {
+        if (!mapDimensions) return;
+        
+        // Update Config with new map dimensions
+        Config.MAP_WIDTH = mapDimensions.width;
+        Config.MAP_HEIGHT = mapDimensions.height;
+        
+        // Apply zoom factor if provided
+        if (mapDimensions.zoomFactor) {
+            this.game.camera.zoom = mapDimensions.zoomFactor;
+        }
+        
+        console.log(`Updated map dimensions to ${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
+        
+        // Update camera boundaries
+        this.game.camera.updateDimensions();
+    }
+    
+    /**
+     * Create an initial unit for the player near their base
+     */
+    createInitialUnit() {
+        // Find the player's base
+        const playerBase = this.game.entities.find(entity => 
+            entity.buildingType === 'BASE' && 
+            entity.playerId === this.playerId
+        );
+        
+        if (playerBase) {
+            // Create unit directly adjacent to the player's base
+            // Use a fixed offset that ensures the unit is in a valid position
+            const offsetX = 64; // 2 tiles to the right
+            
+            // Calculate spawn position relative to the base
+            const spawnX = playerBase.x + playerBase.width + offsetX;
+            const spawnY = playerBase.y + (playerBase.height / 2);
+            
+            console.log(`Creating initial unit adjacent to player base at (${spawnX}, ${spawnY})`);
+            
+            // Create the unit directly without setTimeout
+            this.createUnit(spawnX, spawnY, true, 'SOLDIER');
+        } else {
+            console.error('Could not find player base to spawn initial unit');
+            
+            // Fallback to center of map if no base found
+            const centerX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
+            const centerY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
+            
+            console.log(`No player base found, creating unit at center (${centerX}, ${centerY})`);
+            this.createUnit(centerX, centerY, true, 'SOLDIER');
         }
     }
     
@@ -126,33 +203,34 @@ class Multiplayer {
     onGameUpdate(data) {
         this.lastServerUpdate = Date.now();
         
-        // Update entity positions from server
-        Object.entries(data.entities).forEach(([entityId, entityData]) => {
-            // Find matching entity in our game
-            const entity = this.game.entities.find(e => e.id === entityId);
-            
-            if (entity) {
-                // Update existing entity
-                if (entityData.isMoving) {
-                    entity.targetX = entityData.targetX;
-                    entity.targetY = entityData.targetY;
-                    entity.isMoving = true;
-                } else {
-                    entity.isMoving = false;
-                }
+        // Store previous positions before updating
+        this.game.entities.forEach(entity => {
+            if (entity.type === 'unit') {
+                // Store current position as previous position
+                entity.prevX = entity.x;
+                entity.prevY = entity.y;
                 
-                // Smoothly interpolate position
-                entity.serverX = entityData.x;
-                entity.serverY = entityData.y;
-            } else {
-                // Create new entity if it doesn't exist locally
-                this.createEntityFromServer(entityData);
+                // Initialize interpolation time
+                entity.interpolationStartTime = Date.now();
             }
         });
         
-        // Remove entities that no longer exist on the server
-        this.game.entities = this.game.entities.filter(entity => {
-            return entity.id in data.entities || !entity.id;
+        // Update entities from server data
+        this.game.processServerEntities(data.entities);
+        
+        // Store server positions for interpolation
+        this.game.entities.forEach(entity => {
+            if (entity.type === 'unit') {
+                // Store server position for interpolation
+                entity.serverX = entity.x;
+                entity.serverY = entity.y;
+                
+                // Restore current position to previous position for smooth interpolation
+                if (entity.prevX !== undefined && entity.prevY !== undefined) {
+                    entity.x = entity.prevX;
+                    entity.y = entity.prevY;
+                }
+            }
         });
     }
     
@@ -177,7 +255,8 @@ class Multiplayer {
      */
     onUnitCreated(data) {
         console.log('Unit created:', data.unit);
-        this.createEntityFromServer(data.unit);
+        // Process the new unit using the same method
+        this.game.processServerEntities({ [data.unit.id]: data.unit });
     }
     
     /**
@@ -208,6 +287,9 @@ class Multiplayer {
      * Create an entity from server data
      */
     createEntityFromServer(entityData) {
+        // This method is now deprecated in favor of processServerEntities
+        console.warn('createEntityFromServer is deprecated, use processServerEntities instead');
+        
         if (entityData.type === 'unit') {
             const unit = new Unit(
                 entityData.x,
@@ -241,6 +323,28 @@ class Multiplayer {
             // Add to game entities
             this.game.entities.push(unit);
             return unit;
+        } else if (entityData.type === 'building') {
+            const building = new Building(
+                entityData.x,
+                entityData.y,
+                entityData.width,
+                entityData.height,
+                entityData.playerId === this.playerId,
+                entityData.buildingType || 'BASE',
+                entityData.playerColor || 'red'
+            );
+            
+            // Set server-specific properties
+            building.id = entityData.id;
+            building.playerId = entityData.playerId;
+            
+            // Set building attributes from server data
+            if (entityData.health !== undefined) building.health = entityData.health;
+            if (entityData.maxHealth !== undefined) building.maxHealth = entityData.maxHealth;
+            
+            // Add to game entities
+            this.game.entities.push(building);
+            return building;
         }
         
         return null;
@@ -297,12 +401,38 @@ class Multiplayer {
     update(deltaTime) {
         // Interpolate entity positions between server updates
         if (this.connected) {
+            const currentTime = Date.now();
+            
             this.game.entities.forEach(entity => {
-                if (entity.serverX !== undefined && entity.serverY !== undefined) {
-                    // Simple linear interpolation
-                    const t = 0.1; // Interpolation factor
-                    entity.x += (entity.serverX - entity.x) * t;
-                    entity.y += (entity.serverY - entity.y) * t;
+                // Only interpolate units, not buildings
+                if (entity.type === 'unit' && entity.serverX !== undefined && entity.serverY !== undefined) {
+                    // Calculate interpolation progress
+                    const interpolationDuration = 100; // ms, adjust based on server update frequency
+                    const timeSinceUpdate = entity.interpolationStartTime ? 
+                        currentTime - entity.interpolationStartTime : 0;
+                    
+                    // Calculate interpolation factor (0 to 1)
+                    let t = Math.min(timeSinceUpdate / interpolationDuration, 1.0);
+                    
+                    // Apply easing function for smoother movement (ease-out)
+                    t = 1 - Math.pow(1 - t, 2);
+                    
+                    // Apply interpolation
+                    if (t < 1.0) {
+                        // Interpolate between current position and server position
+                        entity.x = entity.prevX + (entity.serverX - entity.prevX) * t;
+                        entity.y = entity.prevY + (entity.serverY - entity.prevY) * t;
+                    } else {
+                        // Reached target position
+                        entity.x = entity.serverX;
+                        entity.y = entity.serverY;
+                    }
+                    
+                    // If unit is not moving, ensure it's exactly at the server position
+                    if (!entity.isMoving && t >= 1.0) {
+                        entity.x = entity.serverX;
+                        entity.y = entity.serverY;
+                    }
                 }
             });
         }
