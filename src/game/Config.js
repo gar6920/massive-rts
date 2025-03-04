@@ -9,7 +9,7 @@ class Config {
     // Map settings
     static MAP_WIDTH = 100; // Number of tiles horizontally
     static MAP_HEIGHT = 100; // Number of tiles vertically
-    static TILE_SIZE = 32; // Size of each tile in pixels
+    static TILE_SIZE = 64; // Size of each tile in pixels - increased for better isometric rendering
     
     // Camera settings
     static CAMERA_SPEED = 10; // Camera movement speed
@@ -17,7 +17,7 @@ class Config {
     static ZOOM_MIN = 0.5; // Minimum zoom level (50%)
     static ZOOM_MAX = 2.0; // Maximum zoom level (200%)
     static ZOOM_SPEED = 0.1; // How much to zoom per mouse wheel tick
-    static ZOOM_DEFAULT = 1.0; // Default zoom level (100%)
+    static ZOOM_DEFAULT = 0.7; // Default zoom level (70%) - reduced to show more of the map
     
     // Unit settings
     static UNIT_SPEED = 2; // Movement speed of units

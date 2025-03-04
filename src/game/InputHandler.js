@@ -276,19 +276,33 @@ class InputHandler {
         const relativeX = (e.clientX - minimapRect.left) / minimapRect.width;
         const relativeY = (e.clientY - minimapRect.top) / minimapRect.height;
         
-        // Convert to world coordinates
-        const worldX = relativeX * Config.MAP_WIDTH * Config.TILE_SIZE;
-        const worldY = relativeY * Config.MAP_HEIGHT * Config.TILE_SIZE;
+        // For isometric view, we need to convert differently
+        // First, adjust for the minimap's isometric representation
+        const adjustedX = (relativeX - 0.5) * 2; // Convert from 0-1 to -1 to 1 (centered)
+        const adjustedY = (relativeY - 0.25) * 4; // Adjust for the 1/4 offset in the minimap
+        
+        // Convert to grid coordinates
+        const gridX = Math.floor((adjustedX + adjustedY) / 2 * Config.MAP_WIDTH);
+        const gridY = Math.floor((adjustedY - adjustedX) / 2 * Config.MAP_HEIGHT);
+        
+        // Clamp to valid grid coordinates
+        const clampedGridX = Math.max(0, Math.min(gridX, Config.MAP_WIDTH - 1));
+        const clampedGridY = Math.max(0, Math.min(gridY, Config.MAP_HEIGHT - 1));
+        
+        // Convert to isometric world coordinates
+        const isoPos = this.game.map.gridToIso(clampedGridX, clampedGridY);
+        
+        console.log(`Minimap click: screen(${relativeX.toFixed(2)}, ${relativeY.toFixed(2)}) -> grid(${clampedGridX}, ${clampedGridY}) -> iso(${isoPos.x.toFixed(2)}, ${isoPos.y.toFixed(2)})`);
         
         // Left click - move camera to this position
         if (e.button === 0) {
             // Center camera on clicked position
-            this.camera.centerOn(worldX, worldY);
+            this.camera.centerOn(isoPos.x, isoPos.y);
         }
         // Right click - move selected units to this position
         else if (e.button === 2) {
             if (this.game.selectedEntities.length > 0) {
-                this.game.handleCommand(worldX, worldY);
+                this.game.handleCommand(isoPos.x, isoPos.y);
             }
         }
     }

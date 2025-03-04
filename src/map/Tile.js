@@ -5,19 +5,21 @@ class Tile {
     /**
      * Initialize a tile
      */
-    constructor(type = 'grass') {
+    constructor(terrainType = 'grass') {
         // Ensure valid tile type
-        this.type = this.validateTileType(type);
+        this.type = this.validateTerrainType(terrainType);
+        this.terrainType = this.type; // For consistency with server data
         this.walkable = this.isWalkable(this.type);
         this.buildable = this.isBuildable(this.type);
         this.resourceType = this.getResourceType(this.type);
         this.resourceAmount = this.resourceType ? Math.floor(Math.random() * 500) + 500 : 0;
+        this.elevation = 0; // Default elevation
     }
     
     /**
-     * Validate and normalize tile type
+     * Validate and normalize terrain type
      */
-    validateTileType(type) {
+    validateTerrainType(type) {
         const validTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
         
         if (!type || typeof type !== 'string') {
@@ -109,9 +111,11 @@ class Tile {
         switch (this.resourceType) {
             case 'wood':
                 this.type = 'grass';
+                this.terrainType = 'grass';
                 break;
             case 'stone':
                 this.type = 'mountain';
+                this.terrainType = 'mountain';
                 break;
             default:
                 break;

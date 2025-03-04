@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Tue 03/04/2025  8:15:55.51 
+Created: Tue 03/04/2025 14:02:23.46 
 ======================================== 
  
  
@@ -568,8 +568,8 @@ class Camera {
      */
     constructor() {
         // Camera position (top-left corner of the viewport in world coordinates)
-        this.x = 25 * 32; // Start at the human base (25, 75)
-        this.y = 75 * 32;
+        this.x = 0;
+        this.y = 0;
         
         // Camera dimensions (viewport size)
         this.width = Config.CANVAS_WIDTH;
@@ -578,10 +578,48 @@ class Camera {
         // Camera zoom level
         this.zoom = Config.ZOOM_DEFAULT;
         
-        console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
+        // Calculate initial boundaries based on current map dimensions
+        this.updateBoundaries();
         
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - this.width;
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - this.height;
+        // Set initial position to center on the map
+        this.centerOnMap();
+        
+        console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
+    }
+
+    /**
+     * Center the camera on the map
+     */
+    centerOnMap() {
+        // For isometric view, we need to adjust the center point
+        // Calculate the center of the map in isometric world coordinates
+        const mapWidth = Config.MAP_WIDTH;
+        const mapHeight = Config.MAP_HEIGHT;
+        const tileSize = Config.TILE_SIZE;
+        
+        // Calculate the center in grid coordinates
+        const centerGridX = mapWidth / 2;
+        const centerGridY = mapHeight / 2;
+        
+        // Convert to isometric coordinates
+        const isoX = (centerGridX - centerGridY) * (tileSize / 2);
+        const isoY = (centerGridX + centerGridY) * (tileSize / 4);
+        
+        // Center the camera on the isometric center
+        this.centerOn(isoX, isoY);
+        
+        console.log(`Camera centered on map at isometric coordinates (${isoX}, ${isoY})`);
+    }
+
+    /**
+     * Update camera boundaries based on current map dimensions
+     */
+    updateBoundaries() {
+        // Calculate maximum camera positions based on map dimensions and zoom
+        this.maxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
+        this.maxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
+        
+        console.log(`Camera boundaries updated: maxX=${this.maxX}, maxY=${this.maxY}`);
     }
 
     /**
@@ -618,9 +656,11 @@ class Camera {
      * Ensure camera stays within map boundaries
      */
     clampPosition() {
-        const effectiveMaxX = (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom);
-        const effectiveMaxY = (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom);
+        // Recalculate effective boundaries based on current zoom
+        const effectiveMaxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
+        const effectiveMaxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
         
+        // Clamp camera position to stay within map boundaries
         this.x = Math.max(0, Math.min(this.x, effectiveMaxX));
         this.y = Math.max(0, Math.min(this.y, effectiveMaxY));
     }
@@ -658,14 +698,20 @@ class Camera {
     }
 
     /**
-     * Update camera dimensions when window is resized
+     * Update camera dimensions when window is resized or map dimensions change
      */
     updateDimensions() {
+        // Update viewport dimensions
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - (this.width / this.zoom);
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - (this.height / this.zoom);
+        
+        // Update boundaries based on current map dimensions
+        this.updateBoundaries();
+        
+        // Ensure camera position is still valid
         this.clampPosition();
+        
+        console.log(`Camera dimensions updated: width=${this.width}, height=${this.height}, map=${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
     }
     
     /**
@@ -688,9 +734,8 @@ class Camera {
         this.x = worldX - (screenX / this.zoom);
         this.y = worldY - (screenY / this.zoom);
         
-        // Update max bounds and clamp position
-        this.maxX = Config.MAP_WIDTH * Config.TILE_SIZE - (this.width / this.zoom);
-        this.maxY = Config.MAP_HEIGHT * Config.TILE_SIZE - (this.height / this.zoom);
+        // Update boundaries and clamp position
+        this.updateBoundaries();
         this.clampPosition();
     }
 }  
@@ -719,7 +764,7 @@ class Config {
     static ZOOM_MIN = 0.5; // Minimum zoom level (50%)
     static ZOOM_MAX = 2.0; // Maximum zoom level (200%)
     static ZOOM_SPEED = 0.1; // How much to zoom per mouse wheel tick
-    static ZOOM_DEFAULT = 1.0; // Default zoom level (100%)
+    static ZOOM_DEFAULT = 0.8; // Default zoom level (80%) - reduced to show more of the map
     
     // Unit settings
     static UNIT_SPEED = 2; // Movement speed of units
@@ -1006,7 +1051,7 @@ class Game {
             height: Math.abs(endY - startY)
         };
         
-        // Select all entities within the selection rectangle
+        // Select only the first entity found within the selection rectangle
         for (const entity of this.entities) {
             if (
                 entity.x + entity.width >= selectionRect.x &&
@@ -1020,8 +1065,10 @@ class Game {
                     continue;
                 }
                 
+                // Select only this entity and exit the loop
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
+                break; // Stop after selecting the first entity
             }
         }
     }
@@ -1497,6 +1544,7 @@ class Multiplayer {
         this.onUnitCreated = this.onUnitCreated.bind(this);
         this.onUnitsMoved = this.onUnitsMoved.bind(this);
         this.onEntityRemoved = this.onEntityRemoved.bind(this);
+        this.onMapResized = this.onMapResized.bind(this);
     }
     
     /**
@@ -1522,6 +1570,7 @@ class Multiplayer {
         this.socket.on('unitCreated', this.onUnitCreated);
         this.socket.on('unitsMoved', this.onUnitsMoved);
         this.socket.on('entityRemoved', this.onEntityRemoved);
+        this.socket.on('mapResized', this.onMapResized);
     }
     
     /**
@@ -1562,6 +1611,12 @@ class Multiplayer {
         this.playerId = data.playerId;
         this.game.playerId = data.playerId;
         
+        // Update map dimensions from server data
+        if (data.gameState && data.gameState.mapDimensions) {
+            console.log('Setting map dimensions from server data:', data.gameState.mapDimensions);
+            this.updateMapDimensions(data.gameState.mapDimensions);
+        }
+        
         // Set the map from server data
         if (data.gameState && data.gameState.map) {
             console.log('Setting map from server data');
@@ -1579,6 +1634,51 @@ class Multiplayer {
             console.log('Creating initial unit for player');
             this.createInitialUnit();
         }
+    }
+    
+    /**
+     * Handle map resize event from server
+     */
+    onMapResized(data) {
+        console.log('Received map resize event from server:', data.mapDimensions);
+        
+        // Update map dimensions
+        this.updateMapDimensions(data.mapDimensions);
+        
+        // Update the map tiles
+        if (data.map) {
+            this.game.map.setMapFromServer(data.map);
+        }
+        
+        // Update entities
+        if (data.entities) {
+            this.game.processServerEntities(data.entities);
+        }
+        
+        // Reset camera position to ensure it's within bounds
+        this.game.camera.updateDimensions();
+        this.game.camera.clampPosition();
+    }
+    
+    /**
+     * Update map dimensions based on server data
+     */
+    updateMapDimensions(mapDimensions) {
+        if (!mapDimensions) return;
+        
+        // Update Config with new map dimensions
+        Config.MAP_WIDTH = mapDimensions.width;
+        Config.MAP_HEIGHT = mapDimensions.height;
+        
+        // Apply zoom factor if provided
+        if (mapDimensions.zoomFactor) {
+            this.game.camera.zoom = mapDimensions.zoomFactor;
+        }
+        
+        console.log(`Updated map dimensions to ${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
+        
+        // Update camera boundaries
+        this.game.camera.updateDimensions();
     }
     
     /**
@@ -1877,8 +1977,30 @@ class Renderer {
         this.camera = game.camera;
         this.map = game.map;
         
+        // Isometric tile dimensions
+        this.tileWidth = Config.TILE_SIZE;
+        this.tileHeight = Config.TILE_SIZE / 2;
+        
         // Preload images
         this.preloadImages();
+        
+        // Track loaded images
+        this.imagesLoaded = false;
+        this.checkImagesLoaded();
+    }
+    
+    /**
+     * Check if all images are loaded
+     */
+    checkImagesLoaded() {
+        // Check if map tile images are loaded
+        const tileImagesLoaded = Object.values(this.map.tileImages).every(img => img.complete);
+        
+        if (tileImagesLoaded) {
+            this.imagesLoaded = true;
+        } else {
+            setTimeout(() => this.checkImagesLoaded(), 100);
+        }
     }
     
     /**
@@ -1926,58 +2048,139 @@ class Renderer {
     }
     
     /**
+     * Convert grid coordinates to isometric screen coordinates
+     */
+    gridToScreen(col, row) {
+        // First convert to isometric world coordinates
+        const isoPos = this.map.gridToIso(col, row);
+        
+        // Then convert to screen coordinates using the camera
+        return this.camera.worldToScreen(isoPos.x, isoPos.y);
+    }
+    
+    /**
      * Render the map tiles
      */
     renderMap() {
         // Calculate visible tile range based on camera position and zoom
-        const startCol = Math.floor(this.camera.x / Config.TILE_SIZE);
-        const endCol = Math.min(
-            startCol + Math.ceil((this.camera.width / this.camera.zoom) / Config.TILE_SIZE) + 1,
-            Config.MAP_WIDTH
-        );
+        // We need to expand the visible range for isometric view
+        const cameraPos = {
+            x: this.camera.x,
+            y: this.camera.y
+        };
         
-        const startRow = Math.floor(this.camera.y / Config.TILE_SIZE);
-        const endRow = Math.min(
-            startRow + Math.ceil((this.camera.height / this.camera.zoom) / Config.TILE_SIZE) + 1,
-            Config.MAP_HEIGHT
-        );
+        // Convert camera position to grid coordinates (approximate)
+        const gridPos = this.map.isoToGrid(cameraPos.x, cameraPos.y);
         
-        // Render only visible tiles
+        // Calculate visible range with a larger buffer to ensure the entire map is visible
+        const buffer = 20; // Increased buffer size to render more tiles beyond visible area
+        const visibleTilesX = Math.ceil((this.camera.width / this.camera.zoom) / (this.tileWidth / 2)) + buffer;
+        const visibleTilesY = Math.ceil((this.camera.height / this.camera.zoom) / (this.tileHeight)) + buffer;
+        
+        // Ensure we start from a negative position to render tiles that might be partially visible
+        const startCol = Math.max(0, gridPos.x - visibleTilesX);
+        const endCol = Math.min(this.map.width, gridPos.x + visibleTilesX);
+        const startRow = Math.max(0, gridPos.y - visibleTilesY);
+        const endRow = Math.min(this.map.height, gridPos.y + visibleTilesY);
+        
+        // Render tiles in a specific order for proper layering (back to front)
         for (let row = startRow; row < endRow; row++) {
             for (let col = startCol; col < endCol; col++) {
                 const tile = this.map.getTile(col, row);
                 if (!tile) continue;
                 
-                const worldX = col * Config.TILE_SIZE;
-                const worldY = row * Config.TILE_SIZE;
+                // Get isometric position
+                const isoPos = this.map.gridToIso(col, row);
                 
-                // Convert world coordinates to screen coordinates
-                const screenPos = this.camera.worldToScreen(worldX, worldY);
+                // Convert to screen coordinates
+                const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
                 
-                // Calculate tile size with zoom
-                const tileSize = Config.TILE_SIZE * this.camera.zoom;
+                // Calculate tile dimensions with zoom
+                const tileWidthZoomed = this.tileWidth * this.camera.zoom;
+                const tileHeightZoomed = this.tileHeight * this.camera.zoom;
                 
                 // Draw the tile
-                this.ctx.fillStyle = this.getTileColor(tile.type);
-                this.ctx.fillRect(
-                    screenPos.x,
-                    screenPos.y,
-                    tileSize,
-                    tileSize
-                );
+                if (this.imagesLoaded) {
+                    // Use the appropriate tile image based on terrain type
+                    const terrainType = tile.terrainType || tile.type;
+                    const tileImage = this.map.getTileImage(terrainType);
+                    
+                    if (tileImage && tileImage.complete) {
+                        // Draw the isometric tile image
+                        this.ctx.drawImage(
+                            tileImage,
+                            screenPos.x - tileWidthZoomed / 2, // Center the image horizontally
+                            screenPos.y - (tileHeightZoomed / 2) - (tile.elevation * 4 * this.camera.zoom), // Adjust for elevation
+                            tileWidthZoomed,
+                            tileWidthZoomed / 2 // Maintain aspect ratio for isometric tiles
+                        );
+                    } else {
+                        // Fallback to colored diamond if image not loaded
+                        this.drawIsometricTile(
+                            screenPos.x,
+                            screenPos.y - (tile.elevation * 4 * this.camera.zoom),
+                            tileWidthZoomed,
+                            tileHeightZoomed,
+                            this.getTileColor(tile.terrainType || tile.type)
+                        );
+                    }
+                } else {
+                    // Fallback to colored diamond if images not loaded yet
+                    this.drawIsometricTile(
+                        screenPos.x,
+                        screenPos.y - (tile.elevation * 4 * this.camera.zoom),
+                        tileWidthZoomed,
+                        tileHeightZoomed,
+                        this.getTileColor(tile.terrainType || tile.type)
+                    );
+                }
                 
                 // Draw grid lines if enabled
                 if (Config.SHOW_GRID) {
-                    this.ctx.strokeStyle = Config.COLORS.GRID;
-                    this.ctx.strokeRect(
+                    this.drawIsometricGrid(
                         screenPos.x,
-                        screenPos.y,
-                        tileSize,
-                        tileSize
+                        screenPos.y - (tile.elevation * 4 * this.camera.zoom),
+                        tileWidthZoomed,
+                        tileHeightZoomed
                     );
                 }
             }
         }
+    }
+    
+    /**
+     * Draw an isometric tile as a diamond shape
+     */
+    drawIsometricTile(x, y, width, height, color) {
+        this.ctx.fillStyle = color;
+        this.ctx.beginPath();
+        
+        // Draw a diamond shape
+        this.ctx.moveTo(x, y - height / 2); // Top point
+        this.ctx.lineTo(x + width / 2, y); // Right point
+        this.ctx.lineTo(x, y + height / 2); // Bottom point
+        this.ctx.lineTo(x - width / 2, y); // Left point
+        this.ctx.closePath();
+        
+        this.ctx.fill();
+    }
+    
+    /**
+     * Draw isometric grid lines
+     */
+    drawIsometricGrid(x, y, width, height) {
+        this.ctx.strokeStyle = Config.COLORS.GRID;
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        
+        // Draw a diamond shape
+        this.ctx.moveTo(x, y - height / 2); // Top point
+        this.ctx.lineTo(x + width / 2, y); // Right point
+        this.ctx.lineTo(x, y + height / 2); // Bottom point
+        this.ctx.lineTo(x - width / 2, y); // Left point
+        this.ctx.closePath();
+        
+        this.ctx.stroke();
     }
     
     /**
@@ -1998,12 +2201,11 @@ class Renderer {
      * Render all entities
      */
     renderEntities() {
-        console.log(`Rendering ${this.game.entities.length} entities`);
+        // Sort entities by y-coordinate for proper layering in isometric view
+        const sortedEntities = [...this.game.entities].sort((a, b) => a.y - b.y);
         
         // Render all entities that are in the visible area
-        for (const entity of this.game.entities) {
-            console.log(`Entity: ${entity.constructor.name}, position: (${entity.x}, ${entity.y})`);
-            
+        for (const entity of sortedEntities) {
             // Skip entities outside the visible area
             if (!this.camera.isVisible(
                 entity.x,
@@ -2011,12 +2213,38 @@ class Renderer {
                 entity.width,
                 entity.height
             )) {
-                console.log(`Entity at (${entity.x}, ${entity.y}) is not visible`);
                 continue;
             }
             
-            // Convert world coordinates to screen coordinates
-            const screenPos = this.camera.worldToScreen(entity.x, entity.y);
+            // Convert world coordinates to isometric screen coordinates
+            // For entities, we need to adjust the position to align with the isometric grid
+            const gridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const gridY = Math.floor(entity.y / Config.TILE_SIZE);
+            
+            // Get the base tile position
+            const baseTile = this.map.getTile(gridX, gridY);
+            const elevation = baseTile ? baseTile.elevation || 0 : 0;
+            
+            // Convert to isometric world coordinates
+            const isoPos = this.map.gridToIso(gridX, gridY);
+            
+            // Adjust for entity's position within the tile
+            const offsetX = entity.x % Config.TILE_SIZE;
+            const offsetY = entity.y % Config.TILE_SIZE;
+            
+            // Convert offset to isometric
+            const isoOffsetX = (offsetX - offsetY) / 2;
+            const isoOffsetY = (offsetX + offsetY) / 4;
+            
+            // Add offset to isometric position
+            isoPos.x += isoOffsetX;
+            isoPos.y += isoOffsetY;
+            
+            // Convert to screen coordinates
+            const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
+            
+            // Adjust for elevation
+            screenPos.y -= elevation * 4 * this.camera.zoom;
             
             // Calculate entity size with zoom
             const width = entity.width * this.camera.zoom;
@@ -2029,13 +2257,12 @@ class Renderer {
                 this.renderBuilding(entity, screenPos, width, height);
             } else {
                 // Fallback for other entity types
-                console.log(`Using fallback rendering for entity type: ${entity.constructor.name}`);
                 this.ctx.fillStyle = entity.isPlayerControlled ? 
                     Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
                     
                 this.ctx.fillRect(
-                    screenPos.x,
-                    screenPos.y,
+                    screenPos.x - width / 2,
+                    screenPos.y - height / 2,
                     width,
                     height
                 );
@@ -2046,8 +2273,8 @@ class Renderer {
                 this.ctx.strokeStyle = Config.COLORS.SELECTION;
                 this.ctx.lineWidth = 2;
                 this.ctx.strokeRect(
-                    screenPos.x - 2,
-                    screenPos.y - 2,
+                    screenPos.x - width / 2 - 2,
+                    screenPos.y - height / 2 - 2,
                     width + 4,
                     height + 4
                 );
@@ -2064,8 +2291,8 @@ class Renderer {
         if (unit.image && unit.image.complete) {
             this.ctx.drawImage(
                 unit.image,
-                screenPos.x,
-                screenPos.y,
+                screenPos.x - width / 2,
+                screenPos.y - height / 2,
                 width,
                 height
             );
@@ -2075,8 +2302,8 @@ class Renderer {
                 Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
                 
             this.ctx.fillRect(
-                screenPos.x,
-                screenPos.y,
+                screenPos.x - width / 2,
+                screenPos.y - height / 2,
                 width,
                 height
             );
@@ -2090,8 +2317,8 @@ class Renderer {
         // Health bar background
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         this.ctx.fillRect(
-            screenPos.x,
-            screenPos.y - healthBarHeight - 2,
+            screenPos.x - width / 2,
+            screenPos.y - height / 2 - healthBarHeight - 2,
             healthBarWidth,
             healthBarHeight
         );
@@ -2099,8 +2326,8 @@ class Renderer {
         // Health bar fill
         this.ctx.fillStyle = this.getHealthColor(healthPercentage);
         this.ctx.fillRect(
-            screenPos.x,
-            screenPos.y - healthBarHeight - 2,
+            screenPos.x - width / 2,
+            screenPos.y - height / 2 - healthBarHeight - 2,
             healthBarWidth * healthPercentage,
             healthBarHeight
         );
@@ -2112,8 +2339,8 @@ class Renderer {
             this.ctx.textAlign = 'center';
             this.ctx.fillText(
                 unit.level.toString(),
-                screenPos.x + width / 2,
-                screenPos.y + height + 12 * this.camera.zoom
+                screenPos.x,
+                screenPos.y + height / 2 + 12 * this.camera.zoom
             );
         }
     }
@@ -2122,41 +2349,31 @@ class Renderer {
      * Render a building with its image and health bar
      */
     renderBuilding(building, screenPos, width, height) {
-        console.log(`Rendering building: ${building.buildingType} at screen position (${screenPos.x}, ${screenPos.y}), world position (${building.x}, ${building.y})`);
-        
         // Always draw a solid base rectangle first
         this.ctx.fillStyle = building.playerColor === 'red' ? 
             '#ff0000' : building.playerColor === 'blue' ? 
             '#0000ff' : '#888888';
             
-        this.ctx.fillRect(
+        // Draw an isometric building base
+        this.drawIsometricBuilding(
             screenPos.x,
             screenPos.y,
             width,
-            height
+            height / 2, // Half height for isometric look
+            this.ctx.fillStyle
         );
         
         // Draw building image if available
         if (building.image && building.image.complete) {
-            console.log(`Drawing building image: ${building.playerColor}_${building.buildingType.toLowerCase()}.svg`);
+            // For isometric view, we need to adjust the image position
             this.ctx.drawImage(
                 building.image,
-                screenPos.x,
-                screenPos.y,
+                screenPos.x - width / 2,
+                screenPos.y - height / 2,
                 width,
                 height
             );
         }
-        
-        // Draw a border
-        this.ctx.strokeStyle = '#000000';
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(
-            screenPos.x,
-            screenPos.y,
-            width,
-            height
-        );
         
         // Draw health bar
         const healthPercentage = building.health / building.maxHealth;
@@ -2166,8 +2383,8 @@ class Renderer {
         // Background
         this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         this.ctx.fillRect(
-            screenPos.x,
-            screenPos.y - healthBarHeight - 2,
+            screenPos.x - width / 2,
+            screenPos.y - height / 2 - healthBarHeight - 2,
             healthBarWidth,
             healthBarHeight
         );
@@ -2175,8 +2392,8 @@ class Renderer {
         // Health
         this.ctx.fillStyle = this.getHealthColor(healthPercentage);
         this.ctx.fillRect(
-            screenPos.x,
-            screenPos.y - healthBarHeight - 2,
+            screenPos.x - width / 2,
+            screenPos.y - height / 2 - healthBarHeight - 2,
             healthBarWidth * healthPercentage,
             healthBarHeight
         );
@@ -2193,9 +2410,77 @@ class Renderer {
         this.ctx.textAlign = 'center';
         this.ctx.fillText(
             baseLabel,
-            screenPos.x + width / 2,
-            screenPos.y + height / 2
+            screenPos.x,
+            screenPos.y
         );
+    }
+    
+    /**
+     * Draw an isometric building
+     */
+    drawIsometricBuilding(x, y, width, height, color) {
+        this.ctx.fillStyle = color;
+        
+        // Draw a 3D isometric building
+        // Top face (roof)
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y - height); // Top point
+        this.ctx.lineTo(x + width / 2, y - height / 2); // Right point
+        this.ctx.lineTo(x, y); // Bottom point
+        this.ctx.lineTo(x - width / 2, y - height / 2); // Left point
+        this.ctx.closePath();
+        this.ctx.fill();
+        
+        // Right face
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y); // Top-left
+        this.ctx.lineTo(x + width / 2, y - height / 2); // Top-right
+        this.ctx.lineTo(x + width / 2, y + height / 2); // Bottom-right
+        this.ctx.lineTo(x, y + height); // Bottom-left
+        this.ctx.closePath();
+        // Darken the right face
+        this.ctx.fillStyle = this.darkenColor(color, 0.7);
+        this.ctx.fill();
+        
+        // Left face
+        this.ctx.beginPath();
+        this.ctx.moveTo(x, y); // Top-right
+        this.ctx.lineTo(x - width / 2, y - height / 2); // Top-left
+        this.ctx.lineTo(x - width / 2, y + height / 2); // Bottom-left
+        this.ctx.lineTo(x, y + height); // Bottom-right
+        this.ctx.closePath();
+        // Darken the left face more
+        this.ctx.fillStyle = this.darkenColor(color, 0.5);
+        this.ctx.fill();
+    }
+    
+    /**
+     * Darken a color by a factor
+     */
+    darkenColor(color, factor) {
+        // Convert hex to RGB
+        let r, g, b;
+        if (color.startsWith('#')) {
+            const hex = color.substring(1);
+            r = parseInt(hex.substring(0, 2), 16);
+            g = parseInt(hex.substring(2, 4), 16);
+            b = parseInt(hex.substring(4, 6), 16);
+        } else if (color.startsWith('rgb')) {
+            const match = color.match(/\d+/g);
+            r = parseInt(match[0]);
+            g = parseInt(match[1]);
+            b = parseInt(match[2]);
+        } else {
+            return color; // Can't darken
+        }
+        
+        // Darken
+        r = Math.floor(r * factor);
+        g = Math.floor(g * factor);
+        b = Math.floor(b * factor);
+        
+        // Convert back to hex
+        return `rgb(${r}, ${g}, ${b})`;
     }
     
     /**
@@ -2264,53 +2549,83 @@ class Renderer {
         this.minimapCtx.clearRect(0, 0, this.minimapCanvas.width, this.minimapCanvas.height);
         
         // Calculate scale factors
-        const scaleX = this.minimapCanvas.width / (Config.MAP_WIDTH * Config.TILE_SIZE);
-        const scaleY = this.minimapCanvas.height / (Config.MAP_HEIGHT * Config.TILE_SIZE);
+        const scaleX = this.minimapCanvas.width / (this.map.width * this.tileWidth / 2);
+        const scaleY = this.minimapCanvas.height / (this.map.height * this.tileHeight);
         
-        // Draw map tiles
-        for (let row = 0; row < Config.MAP_HEIGHT; row++) {
-            for (let col = 0; col < Config.MAP_WIDTH; col++) {
+        // Draw map tiles on minimap
+        for (let row = 0; row < this.map.height; row++) {
+            for (let col = 0; col < this.map.width; col++) {
                 const tile = this.map.getTile(col, row);
                 if (!tile) continue;
                 
-                const x = col * Config.TILE_SIZE * scaleX;
-                const y = row * Config.TILE_SIZE * scaleY;
-                const width = Config.TILE_SIZE * scaleX;
-                const height = Config.TILE_SIZE * scaleY;
+                // Convert to isometric coordinates for minimap
+                const isoPos = this.map.gridToIso(col, row);
                 
-                this.minimapCtx.fillStyle = this.getTileColor(tile.type);
-                this.minimapCtx.fillRect(x, y, width, height);
+                // Scale to minimap size
+                const x = isoPos.x * scaleX + this.minimapCanvas.width / 2;
+                const y = isoPos.y * scaleY + this.minimapCanvas.height / 4;
+                
+                // Draw a small diamond for each tile
+                this.minimapCtx.fillStyle = this.getTileColor(tile.terrainType || tile.type);
+                this.minimapCtx.beginPath();
+                this.minimapCtx.moveTo(x, y - 1); // Top
+                this.minimapCtx.lineTo(x + 1, y); // Right
+                this.minimapCtx.lineTo(x, y + 1); // Bottom
+                this.minimapCtx.lineTo(x - 1, y); // Left
+                this.minimapCtx.closePath();
+                this.minimapCtx.fill();
             }
         }
         
-        // Draw entities
+        // Draw entities on minimap
         for (const entity of this.game.entities) {
-            const x = entity.x * scaleX;
-            const y = entity.y * scaleY;
-            const width = entity.width * scaleX;
-            const height = entity.height * scaleY;
+            // Convert entity position to grid coordinates
+            const gridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const gridY = Math.floor(entity.y / Config.TILE_SIZE);
             
-            // Use the entity's playerColor property to determine the color
-            if (entity.playerColor) {
-                this.minimapCtx.fillStyle = entity.playerColor === 'blue' ? 
-                    Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
-            } else {
-                // Fallback to the old method if playerColor is not available
-                this.minimapCtx.fillStyle = entity.isPlayerControlled ? 
-                    Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
-            }
-            this.minimapCtx.fillRect(x, y, width, height);
+            // Convert to isometric coordinates
+            const isoPos = this.map.gridToIso(gridX, gridY);
+            
+            // Scale to minimap size
+            const x = isoPos.x * scaleX + this.minimapCanvas.width / 2;
+            const y = isoPos.y * scaleY + this.minimapCanvas.height / 4;
+            
+            // Draw a dot for each entity
+            this.minimapCtx.fillStyle = entity.playerColor === 'blue' ? 
+                Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+            
+            this.minimapCtx.beginPath();
+            this.minimapCtx.arc(x, y, 2, 0, Math.PI * 2);
+            this.minimapCtx.fill();
         }
         
         // Draw camera viewport rectangle
-        const viewportX = this.camera.x * scaleX;
-        const viewportY = this.camera.y * scaleY;
-        const viewportWidth = (this.camera.width / this.camera.zoom) * scaleX;
-        const viewportHeight = (this.camera.height / this.camera.zoom) * scaleY;
+        // This is more complex in isometric view, so we'll approximate
+        const viewportCenter = {
+            x: this.camera.x + (this.camera.width / this.camera.zoom) / 2,
+            y: this.camera.y + (this.camera.height / this.camera.zoom) / 2
+        };
         
+        // Convert to grid coordinates
+        const gridPos = this.map.isoToGrid(viewportCenter.x, viewportCenter.y);
+        
+        // Convert back to isometric for minimap
+        const isoCenter = this.map.gridToIso(gridPos.x, gridPos.y);
+        
+        // Scale to minimap
+        const centerX = isoCenter.x * scaleX + this.minimapCanvas.width / 2;
+        const centerY = isoCenter.y * scaleY + this.minimapCanvas.height / 4;
+        
+        // Draw viewport rectangle
+        const viewportSize = 30; // Approximate size
         this.minimapCtx.strokeStyle = 'white';
         this.minimapCtx.lineWidth = 1;
-        this.minimapCtx.strokeRect(viewportX, viewportY, viewportWidth, viewportHeight);
+        this.minimapCtx.strokeRect(
+            centerX - viewportSize / 2,
+            centerY - viewportSize / 2,
+            viewportSize,
+            viewportSize
+        );
     }
     
     /**
@@ -2323,66 +2638,46 @@ class Renderer {
             return;
         }
         
-        // If only one unit is selected, show detailed info
-        if (selectedUnits.length === 1) {
-            const unit = selectedUnits[0];
-            const padding = 10;
-            const lineHeight = 20;
-            
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(
-                this.canvas.width - 200 - padding,
-                padding,
-                200,
-                150
-            );
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'left';
-            
-            let y = padding + lineHeight;
-            
-            this.ctx.fillText(`Unit Type: ${unit.unitType}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Level: ${unit.level}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Health: ${unit.health}/${unit.maxHealth}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Attack: ${unit.attackDamage}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Range: ${unit.attackRange}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Speed: ${unit.speed}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            if (unit.level < 10) { // Max level cap
-                const expNeeded = unit.level * 100;
-                this.ctx.fillText(`XP: ${unit.experience}/${expNeeded}`, this.canvas.width - 190, y);
-            }
-        } else {
-            // If multiple units are selected, show count
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(
-                this.canvas.width - 200 - 10,
-                10,
-                200,
-                40
-            );
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(
-                `${selectedUnits.length} units selected`,
-                this.canvas.width - 110,
-                35
-            );
+        // Only show info for the first selected unit
+        const unit = selectedUnits[0];
+        const padding = 10;
+        const lineHeight = 20;
+        
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(
+            this.canvas.width - 200 - padding,
+            padding,
+            200,
+            150
+        );
+        
+        this.ctx.fillStyle = 'white';
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'left';
+        
+        let y = padding + lineHeight;
+        
+        this.ctx.fillText(`Unit Type: ${unit.unitType}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Level: ${unit.level}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Health: ${unit.health}/${unit.maxHealth}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Attack: ${unit.attackDamage}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Range: ${unit.attackRange}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Speed: ${unit.speed}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        if (unit.level < 10) { // Max level cap
+            const expNeeded = unit.level * 100;
+            this.ctx.fillText(`XP: ${unit.experience}/${expNeeded}`, this.canvas.width - 190, y);
         }
     }
     
@@ -2409,6 +2704,9 @@ class Renderer {
         // Display selected entities count
         const selectedCount = this.game.entities.filter(e => e.isSelected).length;
         this.ctx.fillText(`Selected: ${selectedCount}`, 10, 100);
+        
+        // Display isometric rendering info
+        this.ctx.fillText(`Isometric Mode: Active`, 10, 120);
     }
     
     /**
@@ -2439,6 +2737,23 @@ class Map {
         
         // Initialize with empty tiles
         this.initializeEmptyTiles();
+        
+        // Preload tile images
+        this.tileImages = {};
+        this.preloadTileImages();
+    }
+    
+    /**
+     * Preload tile images for different terrain types
+     */
+    preloadTileImages() {
+        const terrainTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
+        
+        terrainTypes.forEach(terrainType => {
+            const img = new Image();
+            img.src = `/images/terraintiles/${terrainType}.png`;
+            this.tileImages[terrainType] = img;
+        });
     }
     
     /**
@@ -2484,10 +2799,21 @@ class Map {
                 }
                 
                 const serverTile = mapData[y][x];
-                this.tiles[y][x] = new Tile(serverTile.type || 'grass');
-                this.tiles[y][x].walkable = serverTile.walkable !== undefined ? 
-                    serverTile.walkable : 
-                    (serverTile.type !== 'water' && serverTile.type !== 'mountain');
+                // Use terrainType if available, fall back to type for backward compatibility
+                const terrainType = serverTile.terrainType || serverTile.type || 'grass';
+                this.tiles[y][x] = new Tile(terrainType);
+                
+                // Use passable if available, fall back to walkable for backward compatibility
+                this.tiles[y][x].walkable = serverTile.passable !== undefined ? 
+                    serverTile.passable : 
+                    (serverTile.walkable !== undefined ? 
+                        serverTile.walkable : 
+                        (terrainType !== 'water' && terrainType !== 'mountain'));
+                
+                // Store elevation if available
+                if (serverTile.elevation !== undefined) {
+                    this.tiles[y][x].elevation = serverTile.elevation;
+                }
             }
         }
         
@@ -2510,6 +2836,36 @@ class Map {
         }
         
         return this.tiles[y][x];
+    }
+    
+    /**
+     * Get the tile image for a specific terrain type
+     */
+    getTileImage(terrainType) {
+        return this.tileImages[terrainType] || this.tileImages['grass'];
+    }
+    
+    /**
+     * Convert grid coordinates to isometric world coordinates
+     */
+    gridToIso(x, y) {
+        return {
+            x: (x - y) * (Config.TILE_SIZE / 2),
+            y: (x + y) * (Config.TILE_SIZE / 4)
+        };
+    }
+    
+    /**
+     * Convert isometric world coordinates to grid coordinates
+     */
+    isoToGrid(x, y) {
+        const tileHalfWidth = Config.TILE_SIZE / 2;
+        const tileQuarterHeight = Config.TILE_SIZE / 4;
+        
+        return {
+            x: Math.floor((x / tileHalfWidth + y / tileQuarterHeight) / 2),
+            y: Math.floor((y / tileQuarterHeight - x / tileHalfWidth) / 2)
+        };
     }
     
     /**
@@ -2541,19 +2897,21 @@ class Tile {
     /**
      * Initialize a tile
      */
-    constructor(type = 'grass') {
+    constructor(terrainType = 'grass') {
         // Ensure valid tile type
-        this.type = this.validateTileType(type);
+        this.type = this.validateTerrainType(terrainType);
+        this.terrainType = this.type; // For consistency with server data
         this.walkable = this.isWalkable(this.type);
         this.buildable = this.isBuildable(this.type);
         this.resourceType = this.getResourceType(this.type);
         this.resourceAmount = this.resourceType ? Math.floor(Math.random() * 500) + 500 : 0;
+        this.elevation = 0; // Default elevation
     }
     
     /**
-     * Validate and normalize tile type
+     * Validate and normalize terrain type
      */
-    validateTileType(type) {
+    validateTerrainType(type) {
         const validTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
         
         if (!type || typeof type !== 'string') {
@@ -2645,9 +3003,11 @@ class Tile {
         switch (this.resourceType) {
             case 'wood':
                 this.type = 'grass';
+                this.terrainType = 'grass';
                 break;
             case 'stone':
                 this.type = 'mountain';
+                this.terrainType = 'mountain';
                 break;
             default:
                 break;
@@ -2979,6 +3339,7 @@ FILE: package.json
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "canvas": "^3.1.0",
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
     "uuid": "^9.0.1"
@@ -2987,5 +3348,6 @@ FILE: package.json
     "http-server": "^14.1.1",
     "nodemon": "^3.0.1"
   }
-}  
+}
+ 
  

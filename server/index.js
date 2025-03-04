@@ -62,8 +62,8 @@ function generateMap(width, height) {
   console.log(`Generating map with dimensions ${width}x${height}`);
   
   const tiles = [];
-  const tileTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
-  const tileWeights = [0.6, 0.2, 0.1, 0.08, 0.02]; // Probabilities for each tile type
+  const terrainTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
+  const terrainWeights = [0.65, 0.15, 0.1, 0.08, 0.02]; // Adjusted probabilities for each terrain type
   
   // Generate a seed for consistent random generation
   let seed = Math.floor(Math.random() * 1000000);
@@ -74,28 +74,108 @@ function generateMap(width, height) {
     return seed / 233280;
   };
   
-  // Generate initial random tiles
+  // Create noise functions for terrain generation
+  const createNoiseGenerator = (scale, amplitude, octaves) => {
+    const offsets = Array(octaves).fill().map(() => ({
+      x: seededRandom() * 1000,
+      y: seededRandom() * 1000
+    }));
+    
+    return (x, y) => {
+      let value = 0;
+      let totalAmplitude = 0;
+      
+      for (let i = 0; i < octaves; i++) {
+        const currentScale = scale * Math.pow(2, i);
+        const currentAmplitude = amplitude * Math.pow(0.5, i);
+        
+        const nx = (x / currentScale) + offsets[i].x;
+        const ny = (y / currentScale) + offsets[i].y;
+        
+        // Simple value noise
+        const sampleX = Math.floor(nx);
+        const sampleY = Math.floor(ny);
+        const fracX = nx - sampleX;
+        const fracY = ny - sampleY;
+        
+        // Generate 4 corner values
+        const hash1 = (sampleX * 12345 + sampleY * 54321) % 123456;
+        const hash2 = ((sampleX + 1) * 12345 + sampleY * 54321) % 123456;
+        const hash3 = (sampleX * 12345 + (sampleY + 1) * 54321) % 123456;
+        const hash4 = ((sampleX + 1) * 12345 + (sampleY + 1) * 54321) % 123456;
+        
+        const val1 = (hash1 / 123456) * 2 - 1;
+        const val2 = (hash2 / 123456) * 2 - 1;
+        const val3 = (hash3 / 123456) * 2 - 1;
+        const val4 = (hash4 / 123456) * 2 - 1;
+        
+        // Bilinear interpolation
+        const v1 = val1 + fracX * (val2 - val1);
+        const v2 = val3 + fracX * (val4 - val3);
+        const noise = v1 + fracY * (v2 - v1);
+        
+        value += noise * currentAmplitude;
+        totalAmplitude += currentAmplitude;
+      }
+      
+      // Normalize to [0, 1]
+      return (value / totalAmplitude + 1) / 2;
+    };
+  };
+  
+  const elevationNoise = createNoiseGenerator(10, 1.0, 3);
+  const moistureNoise = createNoiseGenerator(15, 1.0, 2);
+  const resourceNoise = createNoiseGenerator(8, 1.0, 2);
+  
+  // Generate initial random tiles in an isometric layout
   for (let y = 0; y < height; y++) {
     const row = [];
     for (let x = 0; x < width; x++) {
-      // Determine tile type based on weights
-      const rand = seededRandom();
-      let tileType = 'grass'; // Default
-      let cumulativeWeight = 0;
+      // Calculate isometric coordinates
+      // In an isometric layout, the diamond shape comes from how we interpret the coordinates
+      // The actual data structure remains a 2D grid
       
-      for (let i = 0; i < tileTypes.length; i++) {
-        cumulativeWeight += tileWeights[i];
-        if (rand < cumulativeWeight) {
-          tileType = tileTypes[i];
-          break;
-        }
+      // Get noise values for this position
+      const elevation = Math.floor(elevationNoise(x, y) * 4); // 0-3 elevation
+      const moisture = moistureNoise(x, y);
+      const resourceValue = resourceNoise(x, y);
+      
+      // Determine terrain type based on elevation and moisture
+      let terrainType;
+      let passable = true;
+      
+      if (elevation === 0 && moisture > 0.7) {
+        // Low elevation with high moisture = water
+        terrainType = 'water';
+        passable = false;
+      } else if (elevation === 3 && moisture < 0.4) {
+        // High elevation with low moisture = mountain
+        terrainType = 'mountain';
+        passable = false;
+      } else if (elevation === 2 && moisture > 0.6) {
+        // Medium-high elevation with high moisture = forest
+        terrainType = 'forest';
+        passable = true;
+      } else if (elevation === 1 && moisture < 0.3) {
+        // Low-medium elevation with low moisture = sand
+        terrainType = 'sand';
+        passable = true;
+      } else {
+        // Default is grass
+        terrainType = 'grass';
+        passable = true;
       }
       
+      // Create the tile with the new data structure
       row.push({
         x: x,
         y: y,
-        type: tileType,
-        walkable: tileType !== 'water' && tileType !== 'mountain'
+        terrainType: terrainType,
+        passable: passable,
+        elevation: elevation,
+        // Keep the old properties for backward compatibility
+        type: terrainType,
+        walkable: passable
       });
     }
     tiles.push(row);
@@ -105,7 +185,7 @@ function generateMap(width, height) {
   const smoothedTiles = JSON.parse(JSON.stringify(tiles)); // Deep copy
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      // Count neighboring tile types
+      // Count neighboring terrain types
       const neighbors = {};
       for (let dy = -1; dy <= 1; dy++) {
         for (let dx = -1; dx <= 1; dx++) {
@@ -115,14 +195,14 @@ function generateMap(width, height) {
           const ny = y + dy;
           
           if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            const neighborType = tiles[ny][nx].type;
+            const neighborType = tiles[ny][nx].terrainType;
             neighbors[neighborType] = (neighbors[neighborType] || 0) + 1;
           }
         }
       }
       
       // Find most common neighbor type
-      let mostCommonType = tiles[y][x].type;
+      let mostCommonType = tiles[y][x].terrainType;
       let maxCount = 0;
       
       for (const type in neighbors) {
@@ -134,8 +214,21 @@ function generateMap(width, height) {
       
       // 50% chance to change to most common neighbor type
       if (maxCount > 4 && seededRandom() < 0.5) {
-        smoothedTiles[y][x].type = mostCommonType;
-        smoothedTiles[y][x].walkable = mostCommonType !== 'water' && mostCommonType !== 'mountain';
+        smoothedTiles[y][x].terrainType = mostCommonType;
+        smoothedTiles[y][x].type = mostCommonType; // For backward compatibility
+        
+        // Update passable status based on terrain type
+        smoothedTiles[y][x].passable = mostCommonType !== 'water' && mostCommonType !== 'mountain';
+        smoothedTiles[y][x].walkable = smoothedTiles[y][x].passable; // For backward compatibility
+        
+        // Adjust elevation based on new terrain type
+        if (mostCommonType === 'mountain') {
+          smoothedTiles[y][x].elevation = 3;
+        } else if (mostCommonType === 'forest') {
+          smoothedTiles[y][x].elevation = 2;
+        } else if (mostCommonType === 'water') {
+          smoothedTiles[y][x].elevation = 0;
+        }
       }
     }
   }
@@ -251,8 +344,11 @@ function makeAreaWalkable(centerX, centerY, width, height) {
   for (let y = centerY - halfHeight; y <= centerY + halfHeight; y++) {
     for (let x = centerX - halfWidth; x <= centerX + halfWidth; x++) {
       if (y >= 0 && y < gameState.map.length && x >= 0 && x < gameState.map[0].length) {
-        gameState.map[y][x].type = 'grass';
-        gameState.map[y][x].walkable = true;
+        gameState.map[y][x].terrainType = 'grass';
+        gameState.map[y][x].type = 'grass'; // For backward compatibility
+        gameState.map[y][x].passable = true;
+        gameState.map[y][x].walkable = true; // For backward compatibility
+        gameState.map[y][x].elevation = 1;
       }
     }
   }

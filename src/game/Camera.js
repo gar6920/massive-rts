@@ -30,23 +30,73 @@ class Camera {
      * Center the camera on the map
      */
     centerOnMap() {
-        // Calculate the center of the map in world coordinates
-        const mapCenterX = (Config.MAP_WIDTH * Config.TILE_SIZE) / 2;
-        const mapCenterY = (Config.MAP_HEIGHT * Config.TILE_SIZE) / 2;
+        // For isometric view, we need to calculate the center differently
+        const mapWidth = Config.MAP_WIDTH;
+        const mapHeight = Config.MAP_HEIGHT;
+        const tileSize = Config.TILE_SIZE;
         
-        // Center the camera on the map
-        this.centerOn(mapCenterX, mapCenterY);
+        // Calculate the center in grid coordinates
+        const centerGridX = mapWidth / 2;
+        const centerGridY = mapHeight / 2;
+        
+        // Convert to isometric coordinates (this is the key calculation)
+        const isoX = (centerGridX - centerGridY) * (tileSize / 2);
+        const isoY = (centerGridX + centerGridY) * (tileSize / 4);
+        
+        // Calculate the isometric map dimensions
+        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
+        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
+        
+        // Calculate the offset to center the map in the viewport
+        // For isometric view, we need a different offset calculation
+        const offsetX = -isoMapWidth / 4;
+        const offsetY = -isoMapHeight / 8;
+        
+        // Center the camera on the isometric center with offset
+        this.centerOn(isoX + offsetX, isoY + offsetY);
+        
+        console.log(`Camera centered on map at isometric coordinates (${isoX}, ${isoY}) with offset (${offsetX}, ${offsetY})`);
     }
 
     /**
      * Update camera boundaries based on current map dimensions
      */
     updateBoundaries() {
-        // Calculate maximum camera positions based on map dimensions and zoom
-        this.maxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
-        this.maxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
+        // For isometric view, we need to calculate boundaries differently
+        const mapWidth = Config.MAP_WIDTH;
+        const mapHeight = Config.MAP_HEIGHT;
+        const tileSize = Config.TILE_SIZE;
         
-        console.log(`Camera boundaries updated: maxX=${this.maxX}, maxY=${this.maxY}`);
+        // Calculate the width and height of the isometric map in world coordinates
+        // In isometric view, the map width is (mapWidth + mapHeight) * tileSize / 2
+        // and the map height is (mapWidth + mapHeight) * tileSize / 4
+        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
+        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
+        
+        // Calculate the center in grid coordinates
+        const centerGridX = mapWidth / 2;
+        const centerGridY = mapHeight / 2;
+        
+        // Convert to isometric coordinates
+        const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
+        const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
+        
+        // Calculate the offset to center the map in the viewport
+        const offsetX = -isoMapWidth / 4;
+        const offsetY = -isoMapHeight / 8;
+        
+        // Calculate maximum camera positions with extra padding
+        // We need to add extra space to ensure the entire map is visible
+        // For the maxY, we need to ensure the player can pan to the bottom of the map
+        this.maxX = isoMapWidth;
+        this.maxY = isoMapHeight;
+        
+        // Add negative boundaries to allow viewing the entire map
+        // These boundaries should be generous to allow the map to be centered
+        this.minX = -isoMapWidth / 2;
+        this.minY = -isoMapHeight / 2;
+        
+        console.log(`Camera boundaries updated: minX=${this.minX}, minY=${this.minY}, maxX=${this.maxX}, maxY=${this.maxY}`);
     }
 
     /**
@@ -83,13 +133,27 @@ class Camera {
      * Ensure camera stays within map boundaries
      */
     clampPosition() {
-        // Recalculate effective boundaries based on current zoom
-        const effectiveMaxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
-        const effectiveMaxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
+        // For isometric view, we need to allow the camera to go slightly outside the map boundaries
+        // to ensure the entire map is visible
+        
+        // Calculate the effective maximum positions based on viewport size
+        // This ensures we can see the bottom of the map
+        const viewportWidth = this.width / this.zoom;
+        const viewportHeight = this.height / this.zoom;
+        
+        // Calculate effective boundaries
+        // For the max boundaries, we need to subtract the viewport size to ensure
+        // we can pan all the way to the bottom/right edges
+        const effectiveMinX = this.minX;
+        const effectiveMinY = this.minY;
+        const effectiveMaxX = Math.max(0, this.maxX - viewportWidth);
+        const effectiveMaxY = Math.max(0, this.maxY - viewportHeight);
         
         // Clamp camera position to stay within map boundaries
-        this.x = Math.max(0, Math.min(this.x, effectiveMaxX));
-        this.y = Math.max(0, Math.min(this.y, effectiveMaxY));
+        this.x = Math.max(effectiveMinX, Math.min(this.x, effectiveMaxX));
+        this.y = Math.max(effectiveMinY, Math.min(this.y, effectiveMaxY));
+        
+        console.log(`Camera position clamped to (${this.x}, ${this.y})`);
     }
 
     /**
@@ -140,29 +204,25 @@ class Camera {
         
         console.log(`Camera dimensions updated: width=${this.width}, height=${this.height}, map=${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
     }
-    
+
     /**
-     * Zoom the camera centered on a specific screen position
+     * Zoom the camera at a specific screen position
      */
     zoomAt(deltaZoom, screenX, screenY) {
-        // Get world position before zoom
-        const worldX = (screenX / this.zoom) + this.x;
-        const worldY = (screenY / this.zoom) + this.y;
+        // Get world coordinates of zoom point before zoom change
+        const worldBefore = this.screenToWorld(screenX, screenY);
         
-        // Adjust zoom level
-        const oldZoom = this.zoom;
-        this.zoom += deltaZoom;
-        this.zoom = Math.max(Config.ZOOM_MIN, Math.min(Config.ZOOM_MAX, this.zoom));
+        // Apply zoom change
+        this.zoom = Math.max(Config.ZOOM_MIN, Math.min(Config.ZOOM_MAX, this.zoom + deltaZoom));
         
-        // If zoom didn't change, exit early
-        if (oldZoom === this.zoom) return;
+        // Get world coordinates of zoom point after zoom change
+        const worldAfter = this.screenToWorld(screenX, screenY);
         
-        // Adjust camera position to keep the point under the mouse in the same position
-        this.x = worldX - (screenX / this.zoom);
-        this.y = worldY - (screenY / this.zoom);
+        // Adjust camera position to keep the zoom point stationary on screen
+        this.x += (worldBefore.x - worldAfter.x);
+        this.y += (worldBefore.y - worldAfter.y);
         
-        // Update boundaries and clamp position
-        this.updateBoundaries();
+        // Ensure camera stays within map boundaries
         this.clampPosition();
     }
 } 

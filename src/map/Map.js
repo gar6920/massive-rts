@@ -12,6 +12,23 @@ class Map {
         
         // Initialize with empty tiles
         this.initializeEmptyTiles();
+        
+        // Preload tile images
+        this.tileImages = {};
+        this.preloadTileImages();
+    }
+    
+    /**
+     * Preload tile images for different terrain types
+     */
+    preloadTileImages() {
+        const terrainTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
+        
+        terrainTypes.forEach(terrainType => {
+            const img = new Image();
+            img.src = `/images/terraintiles/${terrainType}.png`;
+            this.tileImages[terrainType] = img;
+        });
     }
     
     /**
@@ -57,10 +74,21 @@ class Map {
                 }
                 
                 const serverTile = mapData[y][x];
-                this.tiles[y][x] = new Tile(serverTile.type || 'grass');
-                this.tiles[y][x].walkable = serverTile.walkable !== undefined ? 
-                    serverTile.walkable : 
-                    (serverTile.type !== 'water' && serverTile.type !== 'mountain');
+                // Use terrainType if available, fall back to type for backward compatibility
+                const terrainType = serverTile.terrainType || serverTile.type || 'grass';
+                this.tiles[y][x] = new Tile(terrainType);
+                
+                // Use passable if available, fall back to walkable for backward compatibility
+                this.tiles[y][x].walkable = serverTile.passable !== undefined ? 
+                    serverTile.passable : 
+                    (serverTile.walkable !== undefined ? 
+                        serverTile.walkable : 
+                        (terrainType !== 'water' && terrainType !== 'mountain'));
+                
+                // Store elevation if available
+                if (serverTile.elevation !== undefined) {
+                    this.tiles[y][x].elevation = serverTile.elevation;
+                }
             }
         }
         
@@ -83,6 +111,36 @@ class Map {
         }
         
         return this.tiles[y][x];
+    }
+    
+    /**
+     * Get the tile image for a specific terrain type
+     */
+    getTileImage(terrainType) {
+        return this.tileImages[terrainType] || this.tileImages['grass'];
+    }
+    
+    /**
+     * Convert grid coordinates to isometric world coordinates
+     */
+    gridToIso(x, y) {
+        return {
+            x: (x - y) * (Config.TILE_SIZE / 2),
+            y: (x + y) * (Config.TILE_SIZE / 4)
+        };
+    }
+    
+    /**
+     * Convert isometric world coordinates to grid coordinates
+     */
+    isoToGrid(x, y) {
+        const tileHalfWidth = Config.TILE_SIZE / 2;
+        const tileQuarterHeight = Config.TILE_SIZE / 4;
+        
+        return {
+            x: Math.floor((x / tileHalfWidth + y / tileQuarterHeight) / 2),
+            y: Math.floor((y / tileQuarterHeight - x / tileHalfWidth) / 2)
+        };
     }
     
     /**
