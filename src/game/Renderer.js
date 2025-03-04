@@ -11,6 +11,20 @@ class Renderer {
         this.ctx = game.ctx;
         this.camera = game.camera;
         this.map = game.map;
+        
+        // Preload unit images
+        this.preloadUnitImages();
+    }
+    
+    /**
+     * Preload unit images for different player colors
+     */
+    preloadUnitImages() {
+        // Preload soldier images for each player color
+        Config.PLAYER_COLORS.forEach(color => {
+            const img = new Image();
+            img.src = `/images/units/${color}_soldier.svg`;
+        });
     }
     
     /**
@@ -133,16 +147,21 @@ class Renderer {
             const width = entity.width * this.camera.zoom;
             const height = entity.height * this.camera.zoom;
             
-            // Draw the entity
-            this.ctx.fillStyle = entity.isPlayerControlled ? 
-                Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
-                
-            this.ctx.fillRect(
-                screenPos.x,
-                screenPos.y,
-                width,
-                height
-            );
+            // Draw the entity based on its type
+            if (entity instanceof Unit) {
+                this.renderUnit(entity, screenPos, width, height);
+            } else {
+                // Fallback for other entity types
+                this.ctx.fillStyle = entity.isPlayerControlled ? 
+                    Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+                    
+                this.ctx.fillRect(
+                    screenPos.x,
+                    screenPos.y,
+                    width,
+                    height
+                );
+            }
             
             // Draw selection highlight if entity is selected
             if (entity.isSelected) {
@@ -156,6 +175,81 @@ class Renderer {
                 );
                 this.ctx.lineWidth = 1;
             }
+        }
+    }
+    
+    /**
+     * Render a unit with its image and health bar
+     */
+    renderUnit(unit, screenPos, width, height) {
+        // Draw unit image if available
+        if (unit.image && unit.image.complete) {
+            this.ctx.drawImage(
+                unit.image,
+                screenPos.x,
+                screenPos.y,
+                width,
+                height
+            );
+        } else {
+            // Fallback to colored rectangle if image not loaded
+            this.ctx.fillStyle = unit.isPlayerControlled ? 
+                Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+                
+            this.ctx.fillRect(
+                screenPos.x,
+                screenPos.y,
+                width,
+                height
+            );
+        }
+        
+        // Draw health bar
+        const healthBarWidth = width;
+        const healthBarHeight = 4 * this.camera.zoom;
+        const healthPercentage = unit.health / unit.maxHealth;
+        
+        // Health bar background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(
+            screenPos.x,
+            screenPos.y - healthBarHeight - 2,
+            healthBarWidth,
+            healthBarHeight
+        );
+        
+        // Health bar fill
+        this.ctx.fillStyle = this.getHealthColor(healthPercentage);
+        this.ctx.fillRect(
+            screenPos.x,
+            screenPos.y - healthBarHeight - 2,
+            healthBarWidth * healthPercentage,
+            healthBarHeight
+        );
+        
+        // Draw level indicator if level > 1
+        if (unit.level > 1) {
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = `${10 * this.camera.zoom}px Arial`;
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+                unit.level.toString(),
+                screenPos.x + width / 2,
+                screenPos.y + height + 12 * this.camera.zoom
+            );
+        }
+    }
+    
+    /**
+     * Get color for health bar based on percentage
+     */
+    getHealthColor(percentage) {
+        if (percentage > 0.6) {
+            return 'rgb(0, 255, 0)'; // Green
+        } else if (percentage > 0.3) {
+            return 'rgb(255, 255, 0)'; // Yellow
+        } else {
+            return 'rgb(255, 0, 0)'; // Red
         }
     }
     
@@ -184,6 +278,82 @@ class Renderer {
                 selectionBox.height
             );
         }
+        
+        // Render selected unit info
+        this.renderSelectedUnitInfo();
+    }
+    
+    /**
+     * Render information about selected units
+     */
+    renderSelectedUnitInfo() {
+        const selectedUnits = this.game.entities.filter(e => e.isSelected && e instanceof Unit);
+        
+        if (selectedUnits.length === 0) {
+            return;
+        }
+        
+        // If only one unit is selected, show detailed info
+        if (selectedUnits.length === 1) {
+            const unit = selectedUnits[0];
+            const padding = 10;
+            const lineHeight = 20;
+            
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.fillRect(
+                this.canvas.width - 200 - padding,
+                padding,
+                200,
+                150
+            );
+            
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '14px Arial';
+            this.ctx.textAlign = 'left';
+            
+            let y = padding + lineHeight;
+            
+            this.ctx.fillText(`Unit Type: ${unit.unitType}`, this.canvas.width - 190, y);
+            y += lineHeight;
+            
+            this.ctx.fillText(`Level: ${unit.level}`, this.canvas.width - 190, y);
+            y += lineHeight;
+            
+            this.ctx.fillText(`Health: ${unit.health}/${unit.maxHealth}`, this.canvas.width - 190, y);
+            y += lineHeight;
+            
+            this.ctx.fillText(`Attack: ${unit.attackDamage}`, this.canvas.width - 190, y);
+            y += lineHeight;
+            
+            this.ctx.fillText(`Range: ${unit.attackRange}`, this.canvas.width - 190, y);
+            y += lineHeight;
+            
+            this.ctx.fillText(`Speed: ${unit.speed}`, this.canvas.width - 190, y);
+            y += lineHeight;
+            
+            if (unit.level < 10) { // Max level cap
+                const expNeeded = unit.level * 100;
+                this.ctx.fillText(`XP: ${unit.experience}/${expNeeded}`, this.canvas.width - 190, y);
+            }
+        } else {
+            // If multiple units are selected, show count
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            this.ctx.fillRect(
+                this.canvas.width - 200 - 10,
+                10,
+                200,
+                40
+            );
+            
+            this.ctx.fillStyle = 'white';
+            this.ctx.font = '14px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.fillText(
+                `${selectedUnits.length} units selected`,
+                this.canvas.width - 110,
+                35
+            );
+        }
     }
     
     /**
@@ -192,6 +362,7 @@ class Renderer {
     renderDebugInfo() {
         this.ctx.fillStyle = 'white';
         this.ctx.font = '12px Arial';
+        this.ctx.textAlign = 'left';
         
         // Display FPS
         this.ctx.fillText(`FPS: ${this.game.fps.toFixed(1)}`, 10, 20);

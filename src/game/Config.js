@@ -21,7 +21,24 @@ class Config {
     
     // Unit settings
     static UNIT_SPEED = 2; // Movement speed of units
-    static UNIT_SIZE = 24; // Size of units in pixels
+    static UNIT_SIZE = 32; // Size of units in pixels
+    static UNIT_ATTRIBUTES = {
+        SOLDIER: {
+            health: 100,
+            attackDamage: 10,
+            attackRange: 50,
+            attackCooldown: 1000,
+            speed: 2
+        }
+    };
+    
+    // Player settings
+    static PLAYER_COLORS = [
+        'red',
+        'blue',
+        'green',
+        'yellow'
+    ];
     
     // Colors
     static COLORS = {

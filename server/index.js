@@ -129,16 +129,26 @@ const gameState = {
   lastUpdateTime: Date.now()
 };
 
+// Player colors for assignment
+const playerColors = ['red', 'blue', 'green', 'yellow'];
+let nextPlayerColorIndex = 0;
+
 // Handle socket connections
 io.on('connection', (socket) => {
   console.log(`Player connected: ${socket.id}`);
   
   // Create a new player
   const playerId = uuidv4();
+  
+  // Assign player color
+  const playerColor = playerColors[nextPlayerColorIndex % playerColors.length];
+  nextPlayerColorIndex++;
+  
   gameState.players[playerId] = {
     id: playerId,
     socketId: socket.id,
     name: `Player ${Object.keys(gameState.players).length + 1}`,
+    color: playerColor,
     connected: true,
     lastActivity: Date.now()
   };
@@ -182,21 +192,49 @@ io.on('connection', (socket) => {
   
   // Handle unit creation
   socket.on('createUnit', (data) => {
-    const { x, y, isPlayerControlled } = data;
+    const { x, y, isPlayerControlled, unitType = 'SOLDIER' } = data;
     const unitId = uuidv4();
+    
+    // Get player color
+    const playerColor = gameState.players[playerId].color;
+    
+    // Get unit attributes from config
+    const unitAttributes = {
+      SOLDIER: {
+        health: 100,
+        attackDamage: 10,
+        attackRange: 50,
+        attackCooldown: 1000,
+        speed: 2
+      }
+    }[unitType] || {
+      health: 100,
+      attackDamage: 10,
+      attackRange: 50,
+      attackCooldown: 1000,
+      speed: 2
+    };
     
     // Create a new unit in the game state
     gameState.entities[unitId] = {
       id: unitId,
       type: 'unit',
+      unitType: unitType,
+      playerColor: playerColor,
       x: x,
       y: y,
-      width: 24, // Config.UNIT_SIZE
-      height: 24, // Config.UNIT_SIZE
+      width: 32, // Config.UNIT_SIZE
+      height: 32, // Config.UNIT_SIZE
       playerId: playerId,
       isPlayerControlled: isPlayerControlled,
-      health: 100,
-      speed: 2, // Config.UNIT_SPEED
+      health: unitAttributes.health,
+      maxHealth: unitAttributes.health,
+      attackDamage: unitAttributes.attackDamage,
+      attackRange: unitAttributes.attackRange,
+      attackCooldown: unitAttributes.attackCooldown,
+      speed: unitAttributes.speed,
+      level: 1,
+      experience: 0,
       targetX: null,
       targetY: null,
       isMoving: false,

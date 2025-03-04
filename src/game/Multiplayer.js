@@ -205,18 +205,61 @@ class Multiplayer {
     }
     
     /**
-     * Create a new unit and send to server
+     * Create an entity from server data
      */
-    createUnit(x, y, isPlayerControlled) {
+    createEntityFromServer(entityData) {
+        if (entityData.type === 'unit') {
+            const unit = new Unit(
+                entityData.x,
+                entityData.y,
+                entityData.width,
+                entityData.height,
+                entityData.playerId === this.playerId,
+                entityData.unitType || 'SOLDIER',
+                entityData.playerColor || 'red'
+            );
+            
+            // Set server-specific properties
+            unit.id = entityData.id;
+            unit.playerId = entityData.playerId;
+            
+            // Set unit attributes from server data
+            if (entityData.health !== undefined) unit.health = entityData.health;
+            if (entityData.maxHealth !== undefined) unit.maxHealth = entityData.maxHealth;
+            if (entityData.attackDamage !== undefined) unit.attackDamage = entityData.attackDamage;
+            if (entityData.attackRange !== undefined) unit.attackRange = entityData.attackRange;
+            if (entityData.attackCooldown !== undefined) unit.attackCooldown = entityData.attackCooldown;
+            if (entityData.speed !== undefined) unit.speed = entityData.speed;
+            if (entityData.level !== undefined) unit.level = entityData.level;
+            if (entityData.experience !== undefined) unit.experience = entityData.experience;
+            
+            // Set movement properties
+            if (entityData.targetX !== undefined) unit.targetX = entityData.targetX;
+            if (entityData.targetY !== undefined) unit.targetY = entityData.targetY;
+            if (entityData.isMoving !== undefined) unit.isMoving = entityData.isMoving;
+            
+            // Add to game entities
+            this.game.entities.push(unit);
+            return unit;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * Create a new unit
+     */
+    createUnit(x, y, isPlayerControlled, unitType = 'SOLDIER') {
         if (!this.connected) {
-            this.pendingCommands.push(() => this.createUnit(x, y, isPlayerControlled));
+            console.error('Cannot create unit: not connected to server');
             return;
         }
         
         this.socket.emit('createUnit', {
             x,
             y,
-            isPlayerControlled
+            isPlayerControlled,
+            unitType
         });
     }
     
@@ -234,32 +277,6 @@ class Multiplayer {
             targetX,
             targetY
         });
-    }
-    
-    /**
-     * Create an entity from server data
-     */
-    createEntityFromServer(entityData) {
-        if (entityData.type === 'unit') {
-            const unit = new Unit(
-                entityData.x,
-                entityData.y,
-                entityData.width,
-                entityData.height,
-                entityData.playerId === this.playerId
-            );
-            
-            // Set server-specific properties
-            unit.id = entityData.id;
-            unit.playerId = entityData.playerId;
-            unit.health = entityData.health;
-            
-            // Add to game entities
-            this.game.entities.push(unit);
-            return unit;
-        }
-        
-        return null;
     }
     
     /**

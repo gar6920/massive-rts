@@ -36,7 +36,8 @@ class Game {
      * Start the game
      */
     start() {
-        // Connect to multiplayer server
+        // Initialize multiplayer
+        this.multiplayer = new Multiplayer(this);
         this.multiplayer.connect();
         
         // Start the game loop
@@ -233,5 +234,27 @@ class Game {
         this.canvas.width = Config.CANVAS_WIDTH;
         this.canvas.height = Config.CANVAS_HEIGHT;
         this.renderer.handleResize();
+    }
+    
+    /**
+     * Create a test player unit
+     */
+    createTestUnit() {
+        // In multiplayer mode, units are created by the server
+        if (this.multiplayer && this.multiplayer.connected) {
+            return;
+        }
+        
+        // For single player testing only
+        const unit = new Unit(
+            Config.MAP_WIDTH * Config.TILE_SIZE / 2,
+            Config.MAP_HEIGHT * Config.TILE_SIZE / 2,
+            Config.UNIT_SIZE,
+            Config.UNIT_SIZE,
+            true,
+            'SOLDIER',
+            'red'
+        );
+        this.entities.push(unit);
     }
 } 
