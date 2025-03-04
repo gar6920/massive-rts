@@ -83,6 +83,83 @@ class Game {
     }
     
     /**
+     * Process entities received from the server
+     */
+    processServerEntities(serverEntities) {
+        if (!serverEntities) return;
+        
+        console.log('Processing server entities:', Object.keys(serverEntities).length);
+        console.log('Entity types:', Object.values(serverEntities).map(e => e.type).join(', '));
+        
+        // Clear existing entities if this is a full update
+        if (this.entities.length === 0) {
+            this.entities = [];
+        }
+        
+        // Process each entity from the server
+        Object.values(serverEntities).forEach(serverEntity => {
+            console.log(`Processing entity: ${serverEntity.id}, type: ${serverEntity.type}, position: (${serverEntity.x}, ${serverEntity.y})`);
+            
+            // Check if this entity already exists
+            let entity = this.entities.find(e => e.id === serverEntity.id);
+            
+            if (!entity) {
+                // Create a new entity based on its type
+                if (serverEntity.type === 'unit') {
+                    entity = new Unit(
+                        serverEntity.x,
+                        serverEntity.y,
+                        serverEntity.width,
+                        serverEntity.height,
+                        serverEntity.playerId === this.playerId,
+                        serverEntity.unitType,
+                        serverEntity.playerColor
+                    );
+                } else if (serverEntity.type === 'building') {
+                    console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
+                    entity = new Building(
+                        serverEntity.x,
+                        serverEntity.y,
+                        serverEntity.width,
+                        serverEntity.height,
+                        serverEntity.playerId === this.playerId,
+                        serverEntity.buildingType,
+                        serverEntity.playerColor
+                    );
+                }
+                
+                if (entity) {
+                    // Set additional properties
+                    entity.id = serverEntity.id;
+                    entity.playerId = serverEntity.playerId;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    
+                    // Add to entities array
+                    this.entities.push(entity);
+                    console.log(`Added new ${serverEntity.type} from server:`, entity);
+                }
+            } else {
+                // Update existing entity
+                if (serverEntity.type === 'unit') {
+                    // Only update position for units, not buildings
+                    entity.x = serverEntity.x;
+                    entity.y = serverEntity.y;
+                    entity.targetX = serverEntity.targetX;
+                    entity.targetY = serverEntity.targetY;
+                    entity.isMoving = serverEntity.isMoving;
+                }
+                
+                // Update health for all entities
+                entity.health = serverEntity.health;
+                entity.maxHealth = serverEntity.maxHealth;
+            }
+        });
+        
+        console.log(`Total entities after processing: ${this.entities.length}`);
+    }
+    
+    /**
      * Handle entity selection
      */
     handleEntitySelection(worldX, worldY) {
@@ -142,7 +219,7 @@ class Game {
             height: Math.abs(endY - startY)
         };
         
-        // Select all entities within the selection rectangle
+        // Select only the first entity found within the selection rectangle
         for (const entity of this.entities) {
             if (
                 entity.x + entity.width >= selectionRect.x &&
@@ -156,8 +233,10 @@ class Game {
                     continue;
                 }
                 
+                // Select only this entity and exit the loop
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
+                break; // Stop after selecting the first entity
             }
         }
     }
@@ -242,6 +321,27 @@ class Game {
     createTestUnit() {
         // In multiplayer mode, units are created by the server
         if (this.multiplayer && this.multiplayer.connected) {
+            // Find the player's base
+            const playerBase = this.entities.find(entity => 
+                entity.buildingType === 'BASE' && 
+                entity.playerId === this.playerId
+            );
+            
+            if (playerBase) {
+                // Create unit near the player's base
+                const spawnX = playerBase.x + playerBase.width + 10;
+                const spawnY = playerBase.y + playerBase.height / 2;
+                
+                console.log(`Creating unit near player base at (${spawnX}, ${spawnY})`);
+                this.multiplayer.createUnit(spawnX, spawnY, true, 'SOLDIER');
+            } else {
+                // Fallback to center of map if no base found
+                const centerX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
+                const centerY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
+                
+                console.log(`No player base found, creating unit at center (${centerX}, ${centerY})`);
+                this.multiplayer.createUnit(centerX, centerY, true, 'SOLDIER');
+            }
             return;
         }
         
@@ -256,5 +356,25 @@ class Game {
             'red'
         );
         this.entities.push(unit);
+    }
+    
+    /**
+     * Create a unit at the specified position
+     */
+    createUnitAt(x, y) {
+        if (this.multiplayer && this.multiplayer.connected) {
+            this.multiplayer.createUnit(x, y, true, 'SOLDIER');
+        } else {
+            const unit = new Unit(
+                x,
+                y,
+                Config.UNIT_SIZE,
+                Config.UNIT_SIZE,
+                true,
+                'SOLDIER',
+                'blue'
+            );
+            this.entities.push(unit);
+        }
     }
 } 

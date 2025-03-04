@@ -458,66 +458,46 @@ class Renderer {
             return;
         }
         
-        // If only one unit is selected, show detailed info
-        if (selectedUnits.length === 1) {
-            const unit = selectedUnits[0];
-            const padding = 10;
-            const lineHeight = 20;
-            
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(
-                this.canvas.width - 200 - padding,
-                padding,
-                200,
-                150
-            );
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'left';
-            
-            let y = padding + lineHeight;
-            
-            this.ctx.fillText(`Unit Type: ${unit.unitType}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Level: ${unit.level}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Health: ${unit.health}/${unit.maxHealth}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Attack: ${unit.attackDamage}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Range: ${unit.attackRange}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            this.ctx.fillText(`Speed: ${unit.speed}`, this.canvas.width - 190, y);
-            y += lineHeight;
-            
-            if (unit.level < 10) { // Max level cap
-                const expNeeded = unit.level * 100;
-                this.ctx.fillText(`XP: ${unit.experience}/${expNeeded}`, this.canvas.width - 190, y);
-            }
-        } else {
-            // If multiple units are selected, show count
-            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-            this.ctx.fillRect(
-                this.canvas.width - 200 - 10,
-                10,
-                200,
-                40
-            );
-            
-            this.ctx.fillStyle = 'white';
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText(
-                `${selectedUnits.length} units selected`,
-                this.canvas.width - 110,
-                35
-            );
+        // Only show info for the first selected unit
+        const unit = selectedUnits[0];
+        const padding = 10;
+        const lineHeight = 20;
+        
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(
+            this.canvas.width - 200 - padding,
+            padding,
+            200,
+            150
+        );
+        
+        this.ctx.fillStyle = 'white';
+        this.ctx.font = '14px Arial';
+        this.ctx.textAlign = 'left';
+        
+        let y = padding + lineHeight;
+        
+        this.ctx.fillText(`Unit Type: ${unit.unitType}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Level: ${unit.level}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Health: ${unit.health}/${unit.maxHealth}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Attack: ${unit.attackDamage}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Range: ${unit.attackRange}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        this.ctx.fillText(`Speed: ${unit.speed}`, this.canvas.width - 190, y);
+        y += lineHeight;
+        
+        if (unit.level < 10) { // Max level cap
+            const expNeeded = unit.level * 100;
+            this.ctx.fillText(`XP: ${unit.experience}/${expNeeded}`, this.canvas.width - 190, y);
         }
     }
     
