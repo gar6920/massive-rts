@@ -697,14 +697,10 @@ io.on('connection', (socket) => {
         playerId: playerId
       });
       
-      // Remove player's units but keep bases (with team identifiers)
+      // Remove player units, but NOT their base
       Object.keys(gameState.entities).forEach(entityId => {
         const entity = gameState.entities[entityId];
-        // Only remove entities that belong directly to the player
-        // Skip entities with team-based identifiers (bases)
-        if (entity.playerId === playerId && 
-            entity.playerId !== 'human-team' && 
-            entity.playerId !== 'ai-team') {
+        if (entity.playerId === playerId && entity.buildingType !== 'BASE') {
           delete gameState.entities[entityId];
           
           // Broadcast entity removal
