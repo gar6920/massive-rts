@@ -69,6 +69,10 @@ class InputHandler {
                 // Deselect all units
                 this.game.deselectAll();
                 break;
+            case 'c':
+                // Center the camera on the map
+                this.camera.centerOnMap();
+                break;
         }
         
         // Handle camera movement with arrow keys

@@ -172,29 +172,52 @@ class Multiplayer {
             entity.playerId === this.playerId
         );
         
+        let unitX, unitY;
+        
         if (playerBase) {
             // Create unit directly adjacent to the player's base
             // Use a fixed offset that ensures the unit is in a valid position
             const offsetX = 64; // 2 tiles to the right
             
             // Calculate spawn position relative to the base
-            const spawnX = playerBase.x + playerBase.width + offsetX;
-            const spawnY = playerBase.y + (playerBase.height / 2);
+            unitX = playerBase.x + playerBase.width + offsetX;
+            unitY = playerBase.y + (playerBase.height / 2);
             
-            console.log(`Creating initial unit adjacent to player base at (${spawnX}, ${spawnY})`);
+            console.log(`Creating initial unit adjacent to player base at (${unitX}, ${unitY})`);
             
             // Create the unit directly without setTimeout
-            this.createUnit(spawnX, spawnY, true, 'SOLDIER');
+            this.createUnit(unitX, unitY, true, 'SOLDIER');
         } else {
             console.error('Could not find player base to spawn initial unit');
             
             // Fallback to center of map if no base found
-            const centerX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
-            const centerY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
+            unitX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
+            unitY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
             
-            console.log(`No player base found, creating unit at center (${centerX}, ${centerY})`);
-            this.createUnit(centerX, centerY, true, 'SOLDIER');
+            console.log(`No player base found, creating unit at center (${unitX}, ${unitY})`);
+            this.createUnit(unitX, unitY, true, 'SOLDIER');
         }
+        
+        // Center the camera on the unit's position and zoom in
+        setTimeout(() => {
+            // Convert grid coordinates to isometric coordinates for proper centering
+            const tileSize = Config.TILE_SIZE;
+            const gridX = unitX / tileSize;
+            const gridY = unitY / tileSize;
+            const isoX = (gridX - gridY) * (tileSize / 2);
+            const isoY = (gridX + gridY) * (tileSize / 4);
+            
+            console.log(`Centering camera on player unit at isometric position (${isoX}, ${isoY})`);
+            
+            // Center the camera on the unit
+            this.game.camera.centerOn(isoX, isoY);
+            
+            // Set an appropriate zoom level for the initial view
+            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
+            
+            // Ensure camera stays within boundaries
+            this.game.camera.clampPosition();
+        }, 100); // Short delay to ensure the unit is fully created
     }
     
     /**
@@ -255,8 +278,30 @@ class Multiplayer {
      */
     onUnitCreated(data) {
         console.log('Unit created:', data.unit);
+        
         // Process the new unit using the same method
         this.game.processServerEntities({ [data.unit.id]: data.unit });
+        
+        // If this is a player-controlled unit, center the camera on it
+        if (data.unit.playerId === this.playerId) {
+            // Convert grid coordinates to isometric coordinates for proper centering
+            const tileSize = Config.TILE_SIZE;
+            const gridX = data.unit.x / tileSize;
+            const gridY = data.unit.y / tileSize;
+            const isoX = (gridX - gridY) * (tileSize / 2);
+            const isoY = (gridX + gridY) * (tileSize / 4);
+            
+            console.log(`Centering camera on new player unit at isometric position (${isoX}, ${isoY})`);
+            
+            // Center the camera on the unit
+            this.game.camera.centerOn(isoX, isoY);
+            
+            // Set an appropriate zoom level
+            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
+            
+            // Ensure camera stays within boundaries
+            this.game.camera.clampPosition();
+        }
     }
     
     /**

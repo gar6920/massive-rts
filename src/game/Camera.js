@@ -20,8 +20,8 @@ class Camera {
         // Calculate initial boundaries based on current map dimensions
         this.updateBoundaries();
         
-        // Set initial position to center on the map
-        this.centerOnMap();
+        // We'll center on player units later when they're created
+        // Don't call centerOnMap() here
         
         console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
     }
@@ -30,32 +30,35 @@ class Camera {
      * Center the camera on the map
      */
     centerOnMap() {
-        // For isometric view, we need to calculate the center differently
+        // Calculate the map dimensions in isometric coordinates
         const mapWidth = Config.MAP_WIDTH;
         const mapHeight = Config.MAP_HEIGHT;
         const tileSize = Config.TILE_SIZE;
+        
+        // Calculate the isometric map width and height
+        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
+        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
         
         // Calculate the center in grid coordinates
         const centerGridX = mapWidth / 2;
         const centerGridY = mapHeight / 2;
         
-        // Convert to isometric coordinates (this is the key calculation)
-        const isoX = (centerGridX - centerGridY) * (tileSize / 2);
-        const isoY = (centerGridX + centerGridY) * (tileSize / 4);
+        // Convert to isometric coordinates
+        const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
+        const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
         
-        // Calculate the isometric map dimensions
-        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
-        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
+        // Calculate the viewport dimensions in world space
+        const viewportWorldWidth = this.width / this.zoom;
+        const viewportWorldHeight = this.height / this.zoom;
         
-        // Calculate the offset to center the map in the viewport
-        // For isometric view, we need a different offset calculation
-        const offsetX = -isoMapWidth / 4;
-        const offsetY = -isoMapHeight / 8;
+        // Set camera position to center on the map
+        this.x = isoCenterX - (viewportWorldWidth / 2);
+        this.y = isoCenterY - (viewportWorldHeight / 2);
         
-        // Center the camera on the isometric center with offset
-        this.centerOn(isoX + offsetX, isoY + offsetY);
+        // Ensure camera stays within boundaries
+        this.clampPosition();
         
-        console.log(`Camera centered on map at isometric coordinates (${isoX}, ${isoY}) with offset (${offsetX}, ${offsetY})`);
+        console.log(`Camera centered on map at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
     }
 
     /**
@@ -81,20 +84,21 @@ class Camera {
         const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
         const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
         
-        // Calculate the offset to center the map in the viewport
-        const offsetX = -isoMapWidth / 4;
-        const offsetY = -isoMapHeight / 8;
+        // Calculate the viewport dimensions in world space
+        const viewportWorldWidth = this.width / this.zoom;
+        const viewportWorldHeight = this.height / this.zoom;
         
-        // Calculate maximum camera positions with extra padding
-        // We need to add extra space to ensure the entire map is visible
-        // For the maxY, we need to ensure the player can pan to the bottom of the map
-        this.maxX = isoMapWidth;
-        this.maxY = isoMapHeight;
+        // Calculate maximum camera positions
+        // We need to ensure the camera can't move so far that the map is off-screen
+        // For isometric maps, we need more generous boundaries
+        const extraPadding = Math.max(viewportWorldWidth, viewportWorldHeight) * 0.5;
         
-        // Add negative boundaries to allow viewing the entire map
-        // These boundaries should be generous to allow the map to be centered
-        this.minX = -isoMapWidth / 2;
-        this.minY = -isoMapHeight / 2;
+        // Set more balanced boundaries
+        // The key is to make the boundaries symmetrical around the map center
+        this.maxX = isoCenterX + isoMapWidth/2 + extraPadding;
+        this.maxY = isoCenterY + isoMapHeight/2 + extraPadding;
+        this.minX = isoCenterX - isoMapWidth/2 - extraPadding;
+        this.minY = isoCenterY - isoMapHeight/2 - extraPadding;
         
         console.log(`Camera boundaries updated: minX=${this.minX}, minY=${this.minY}, maxX=${this.maxX}, maxY=${this.maxY}`);
     }
@@ -206,23 +210,104 @@ class Camera {
     }
 
     /**
-     * Zoom the camera at a specific screen position
+     * Zoom at a specific point (mouse position)
+     * @param {number} deltaZoom - Amount to change zoom by
+     * @param {number} clientX - Mouse X position in screen coordinates
+     * @param {number} clientY - Mouse Y position in screen coordinates
      */
-    zoomAt(deltaZoom, screenX, screenY) {
-        // Get world coordinates of zoom point before zoom change
-        const worldBefore = this.screenToWorld(screenX, screenY);
+    zoomAt(deltaZoom, clientX, clientY) {
+        // Store the world point that we're zooming at
+        const worldPoint = this.screenToWorld(clientX, clientY);
+        const worldX = worldPoint.x;
+        const worldY = worldPoint.y;
         
-        // Apply zoom change
-        this.zoom = Math.max(Config.ZOOM_MIN, Math.min(Config.ZOOM_MAX, this.zoom + deltaZoom));
+        // Store the old zoom value
+        const oldZoom = this.zoom;
         
-        // Get world coordinates of zoom point after zoom change
-        const worldAfter = this.screenToWorld(screenX, screenY);
+        // Update zoom level with constraints
+        this.zoom += deltaZoom;
+        this.zoom = Math.max(Config.ZOOM_MIN, Math.min(Config.ZOOM_MAX, this.zoom));
         
-        // Adjust camera position to keep the zoom point stationary on screen
-        this.x += (worldBefore.x - worldAfter.x);
-        this.y += (worldBefore.y - worldAfter.y);
+        // If zoom didn't actually change, exit early
+        if (this.zoom === oldZoom) return;
         
-        // Ensure camera stays within map boundaries
+        // Calculate new camera position to keep the mouse point fixed in world space
+        const mouseXRatio = clientX / this.width;
+        const mouseYRatio = clientY / this.height;
+        
+        // Calculate the viewport dimensions in world space
+        const viewportWorldWidth = this.width / this.zoom;
+        const viewportWorldHeight = this.height / this.zoom;
+        
+        // Set the new camera position
+        this.x = worldX - (mouseXRatio * viewportWorldWidth);
+        this.y = worldY - (mouseYRatio * viewportWorldHeight);
+        
+        // Ensure camera stays within boundaries
         this.clampPosition();
+        
+        console.log(`Zoomed to ${this.zoom.toFixed(2)} at world point (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+    }
+
+    /**
+     * Center the camera on player units
+     * @param {Array} entities - All game entities
+     * @param {string} playerId - The current player's ID
+     */
+    centerOnPlayerUnits(entities, playerId) {
+        if (!entities || entities.length === 0) {
+            console.log("No entities to center on, centering on map instead");
+            this.centerOnMap();
+            return;
+        }
+        
+        // Find player-controlled units
+        const playerUnits = entities.filter(entity => 
+            entity.playerId === playerId && 
+            entity.type === 'UNIT'
+        );
+        
+        // If no player units found, try to find player base
+        if (playerUnits.length === 0) {
+            const playerBase = entities.find(entity => 
+                entity.playerId === playerId && 
+                entity.type === 'BUILDING' && 
+                entity.buildingType === 'BASE'
+            );
+            
+            if (playerBase) {
+                console.log(`Centering camera on player base at (${playerBase.x}, ${playerBase.y})`);
+                this.centerOn(playerBase.x + playerBase.width/2, playerBase.y + playerBase.height/2);
+                
+                // Zoom in a bit to focus on the base
+                this.zoom = Config.ZOOM_DEFAULT * 1.2;
+                this.clampPosition();
+                return;
+            }
+        } else {
+            // Calculate average position of all player units
+            let avgX = 0;
+            let avgY = 0;
+            
+            playerUnits.forEach(unit => {
+                avgX += unit.x;
+                avgY += unit.y;
+            });
+            
+            avgX /= playerUnits.length;
+            avgY /= playerUnits.length;
+            
+            console.log(`Centering camera on ${playerUnits.length} player units at (${avgX}, ${avgY})`);
+            this.centerOn(avgX, avgY);
+            
+            // Zoom in a bit to focus on the units
+            this.zoom = Config.ZOOM_DEFAULT * 1.2;
+            this.clampPosition();
+            return;
+        }
+        
+        // Fallback to centering on map if no player entities found
+        console.log("No player entities found, centering on map instead");
+        this.centerOnMap();
     }
 } 
