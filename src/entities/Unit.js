@@ -48,13 +48,15 @@ class Unit extends Entity {
      * Load the unit image based on player color and unit type
      */
     loadImage() {
-        const imagePath = `/images/units/${this.playerColor}_${this.unitType.toLowerCase()}.svg`;
+        const imagePath = `/images/units/${this.playerColor}_${this.unitType.toLowerCase()}.png`;
+        console.log(`Loading unit image: ${imagePath}`);
         this.image = new Image();
         this.image.src = imagePath;
         this.image.onerror = () => {
             console.error(`Failed to load unit image: ${imagePath}`);
             // Fallback to default image if available
-            this.image.src = '/images/units/red_soldier.svg';
+            console.log(`Attempting to load fallback image: /images/units/${this.unitType.toLowerCase()}.png`);
+            this.image.src = `/images/units/${this.unitType.toLowerCase()}.png`;
         };
     }
     

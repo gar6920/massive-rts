@@ -258,6 +258,9 @@ class Renderer {
             // Convert grid coordinates to isometric world coordinates
             const isoPos = this.map.gridToIso(gridX, gridY);
             
+            // Add debug logging
+            console.log(`Entity: ${entity.constructor.name}, Position: (${entity.x}, ${entity.y}), Grid: (${gridX}, ${gridY}), Iso: (${isoPos.x}, ${isoPos.y})`);
+            
             // Convert world coordinates to screen coordinates
             const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
             
@@ -266,9 +269,9 @@ class Renderer {
             const entityHeight = entity.height * this.camera.zoom;
             
             // Render the entity based on its type
-            if (entity.type === 'unit') {
+            if (entity instanceof Unit) {
                 this.renderUnit(entity, screenPos, entityWidth, entityHeight);
-            } else if (entity.type === 'building') {
+            } else if (entity instanceof Building) {
                 this.renderBuilding(entity, screenPos, entityWidth, entityHeight);
             }
         }
@@ -280,6 +283,7 @@ class Renderer {
     renderUnit(unit, screenPos, width, height) {
         // Draw unit image if available
         if (unit.image && unit.image.complete) {
+            console.log(`Rendering unit image: ${unit.unitType} at (${screenPos.x}, ${screenPos.y}), size: ${width}x${height}`);
             this.ctx.drawImage(
                 unit.image,
                 screenPos.x - width / 2,
@@ -289,6 +293,7 @@ class Renderer {
             );
         } else {
             // Fallback to colored rectangle if image not loaded
+            console.log(`Fallback rendering for unit: ${unit.unitType} at (${screenPos.x}, ${screenPos.y})`);
             this.ctx.fillStyle = unit.isPlayerControlled ? 
                 Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
                 
@@ -357,6 +362,7 @@ class Renderer {
         // Draw building image if available
         if (building.image && building.image.complete) {
             // For isometric view, we need to adjust the image position
+            console.log(`Rendering building image: ${building.buildingType} at (${screenPos.x}, ${screenPos.y}), size: ${width}x${height}`);
             this.ctx.drawImage(
                 building.image,
                 screenPos.x - width / 2,
@@ -364,6 +370,8 @@ class Renderer {
                 width,
                 height
             );
+        } else {
+            console.log(`Fallback rendering for building: ${building.buildingType} at (${screenPos.x}, ${screenPos.y})`);
         }
         
         // Draw health bar

@@ -41,13 +41,15 @@ class Building extends Entity {
    * Load the building image based on player color and building type
    */
   loadImage() {
-    const imagePath = `/images/buildings/${this.playerColor}_${this.buildingType.toLowerCase()}.svg`;
+    const imagePath = `/images/buildings/${this.playerColor}_${this.buildingType.toLowerCase()}.png`;
     console.log(`Loading building image: ${imagePath}`);
     this.image = new Image();
     this.image.src = imagePath;
     this.image.onerror = (e) => {
       console.error(`Failed to load building image: ${imagePath}`, e);
       // Fallback to a colored rectangle
+      console.log(`Attempting to load fallback image: /images/buildings/${this.buildingType.toLowerCase()}.png`);
+      this.image.src = `/images/buildings/${this.buildingType.toLowerCase()}.png`;
     };
     this.image.onload = () => {
       console.log(`Successfully loaded building image: ${imagePath}`);
