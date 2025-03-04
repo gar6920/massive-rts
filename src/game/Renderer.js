@@ -279,8 +279,73 @@ class Renderer {
             );
         }
         
+        // Render minimap
+        this.renderMinimap();
+        
         // Render selected unit info
         this.renderSelectedUnitInfo();
+    }
+    
+    /**
+     * Render the minimap
+     */
+    renderMinimap() {
+        const minimapElement = document.getElementById('minimap');
+        if (!minimapElement) return;
+        
+        // Create a canvas for the minimap if it doesn't exist
+        if (!this.minimapCanvas) {
+            this.minimapCanvas = document.createElement('canvas');
+            this.minimapCanvas.width = 180; // Slightly smaller than the container
+            this.minimapCanvas.height = 180;
+            this.minimapCtx = this.minimapCanvas.getContext('2d');
+            minimapElement.appendChild(this.minimapCanvas);
+        }
+        
+        // Clear the minimap
+        this.minimapCtx.clearRect(0, 0, this.minimapCanvas.width, this.minimapCanvas.height);
+        
+        // Calculate scale factors
+        const scaleX = this.minimapCanvas.width / (Config.MAP_WIDTH * Config.TILE_SIZE);
+        const scaleY = this.minimapCanvas.height / (Config.MAP_HEIGHT * Config.TILE_SIZE);
+        
+        // Draw map tiles
+        for (let row = 0; row < Config.MAP_HEIGHT; row++) {
+            for (let col = 0; col < Config.MAP_WIDTH; col++) {
+                const tile = this.map.getTile(col, row);
+                if (!tile) continue;
+                
+                const x = col * Config.TILE_SIZE * scaleX;
+                const y = row * Config.TILE_SIZE * scaleY;
+                const width = Config.TILE_SIZE * scaleX;
+                const height = Config.TILE_SIZE * scaleY;
+                
+                this.minimapCtx.fillStyle = this.getTileColor(tile.type);
+                this.minimapCtx.fillRect(x, y, width, height);
+            }
+        }
+        
+        // Draw entities
+        for (const entity of this.game.entities) {
+            const x = entity.x * scaleX;
+            const y = entity.y * scaleY;
+            const width = entity.width * scaleX;
+            const height = entity.height * scaleY;
+            
+            this.minimapCtx.fillStyle = entity.isPlayerControlled ? 
+                Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+            this.minimapCtx.fillRect(x, y, width, height);
+        }
+        
+        // Draw camera viewport rectangle
+        const viewportX = this.camera.x * scaleX;
+        const viewportY = this.camera.y * scaleY;
+        const viewportWidth = (this.camera.width / this.camera.zoom) * scaleX;
+        const viewportHeight = (this.camera.height / this.camera.zoom) * scaleY;
+        
+        this.minimapCtx.strokeStyle = 'white';
+        this.minimapCtx.lineWidth = 1;
+        this.minimapCtx.strokeRect(viewportX, viewportY, viewportWidth, viewportHeight);
     }
     
     /**

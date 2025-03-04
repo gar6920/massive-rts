@@ -24,6 +24,9 @@ class InputHandler {
         this.selectionEndY = 0;
         this.isSelecting = false;
         
+        // Minimap element
+        this.minimapElement = document.getElementById('minimap');
+        
         // Bind event handlers
         this.setupEventListeners();
     }
@@ -45,6 +48,10 @@ class InputHandler {
         
         // Prevent context menu from appearing on right-click
         this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Minimap events
+        this.minimapElement.addEventListener('mousedown', this.handleMinimapClick.bind(this));
+        this.minimapElement.addEventListener('contextmenu', (e) => e.preventDefault());
         
         // Window resize event
         window.addEventListener('resize', this.handleResize.bind(this));
@@ -253,5 +260,35 @@ class InputHandler {
             width: Math.abs(this.selectionEndX - this.selectionStartX),
             height: Math.abs(this.selectionEndY - this.selectionStartY)
         };
+    }
+    
+    /**
+     * Handle minimap clicks
+     */
+    handleMinimapClick(e) {
+        e.stopPropagation(); // Prevent event from bubbling to canvas
+        
+        // Get minimap dimensions
+        const minimapRect = this.minimapElement.getBoundingClientRect();
+        
+        // Calculate relative position within minimap (0-1)
+        const relativeX = (e.clientX - minimapRect.left) / minimapRect.width;
+        const relativeY = (e.clientY - minimapRect.top) / minimapRect.height;
+        
+        // Convert to world coordinates
+        const worldX = relativeX * Config.MAP_WIDTH * Config.TILE_SIZE;
+        const worldY = relativeY * Config.MAP_HEIGHT * Config.TILE_SIZE;
+        
+        // Left click - move camera to this position
+        if (e.button === 0) {
+            // Center camera on clicked position
+            this.camera.centerOn(worldX, worldY);
+        }
+        // Right click - move selected units to this position
+        else if (e.button === 2) {
+            if (this.game.selectedEntities.length > 0) {
+                this.game.handleCommand(worldX, worldY);
+            }
+        }
     }
 } 

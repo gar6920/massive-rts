@@ -44,14 +44,14 @@ canvas {
 #resourcesPanel {
     position: absolute;
     top: 10px;
-    left: 10px;
+    left: 220px;
     width: 200px;
 }
 
 #minimap {
     position: absolute;
-    bottom: 10px;
-    right: 10px;
+    top: 10px;
+    left: 10px;
     width: 200px;
     height: 200px;
 }

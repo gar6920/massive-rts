@@ -37,8 +37,11 @@ class Camera {
      * Center the camera on a specific world position
      */
     centerOn(worldX, worldY) {
-        this.x = worldX - this.width / 2;
-        this.y = worldY - this.height / 2;
+        // Calculate the position to center the camera on the given world coordinates
+        this.x = worldX - (this.width / this.zoom / 2);
+        this.y = worldY - (this.height / this.zoom / 2);
+        
+        // Ensure camera stays within map boundaries
         this.clampPosition();
     }
 
