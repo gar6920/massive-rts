@@ -300,7 +300,10 @@ class Multiplayer {
         unitIds.forEach(unitId => {
             const unit = this.game.entities.find(e => e.id === unitId);
             if (unit) {
-                unit.moveTo(targetX, targetY);
+                // Set the target for the unit to move to
+                unit.targetX = targetX;
+                unit.targetY = targetY;
+                unit.isMoving = true;
             }
         });
     }

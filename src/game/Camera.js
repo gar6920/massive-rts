@@ -184,11 +184,19 @@ class Camera {
      * Check if a world position is visible on screen
      */
     isVisible(worldX, worldY, width, height) {
+        // For units, convert Cartesian coordinates to isometric before checking visibility
+        const isoX = (worldX - worldY) / 2;
+        const isoY = (worldX + worldY) / 4;
+        
+        // Use a larger bounding box for visibility check to account for isometric conversion
+        const boundingWidth = Math.max(width, height) * 2;
+        const boundingHeight = Math.max(width, height) * 2;
+        
         return (
-            worldX + width > this.x &&
-            worldX < this.x + (this.width / this.zoom) &&
-            worldY + height > this.y &&
-            worldY < this.y + (this.height / this.zoom)
+            isoX + boundingWidth > this.x &&
+            isoX - boundingWidth < this.x + (this.width / this.zoom) &&
+            isoY + boundingHeight > this.y &&
+            isoY - boundingHeight < this.y + (this.height / this.zoom)
         );
     }
 

@@ -72,8 +72,9 @@ class Unit extends Entity {
      * Update unit state
      */
     update(deltaTime, game) {
-        // Handle movement if we have a target
-        if (this.isMoving && this.targetX !== null && this.targetY !== null) {
+        // Only use local movement if we're not receiving server updates
+        // This prevents conflicts with the interpolation in Game.updateEntities
+        if (this.serverX === undefined && this.isMoving && this.targetX !== null && this.targetY !== null) {
             this.moveTowardsTarget(deltaTime);
         }
         

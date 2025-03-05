@@ -76,9 +76,28 @@ class Game {
         // Update multiplayer
         this.multiplayer.update(deltaTime);
         
+        // Update entity positions with interpolation
+        this.updateEntities(deltaTime);
+        
         // Update all entities
         for (const entity of this.entities) {
             entity.update(deltaTime, this);
+        }
+    }
+    
+    /**
+     * Interpolate entity positions smoothly between server updates
+     */
+    updateEntities(deltaTime) {
+        const interpolationFactor = 0.1; // adjust for smoothness
+        
+        for (const entity of this.entities) {
+            // Only apply interpolation to units, not buildings
+            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
+                // Smoothly interpolate between current position and server position
+                entity.x += (entity.serverX - entity.x) * interpolationFactor;
+                entity.y += (entity.serverY - entity.y) * interpolationFactor;
+            }
         }
     }
     
@@ -115,6 +134,9 @@ class Game {
                         serverEntity.unitType,
                         serverEntity.playerColor
                     );
+                    // Initialize server position properties for interpolation
+                    entity.serverX = serverEntity.x;
+                    entity.serverY = serverEntity.y;
                 } else if (serverEntity.type === 'building') {
                     console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
                     entity = new Building(
@@ -142,12 +164,16 @@ class Game {
             } else {
                 // Update existing entity
                 if (serverEntity.type === 'unit') {
-                    // Only update position for units, not buildings
-                    entity.x = serverEntity.x;
-                    entity.y = serverEntity.y;
+                    // For units, store server position for interpolation instead of direct update
+                    entity.serverX = serverEntity.x;
+                    entity.serverY = serverEntity.y;
                     entity.targetX = serverEntity.targetX;
                     entity.targetY = serverEntity.targetY;
                     entity.isMoving = serverEntity.isMoving;
+                } else {
+                    // For non-moving entities like buildings, update position directly
+                    entity.x = serverEntity.x;
+                    entity.y = serverEntity.y;
                 }
                 
                 // Update health for all entities

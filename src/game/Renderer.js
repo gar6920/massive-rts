@@ -251,18 +251,31 @@ class Renderer {
         const sortedEntities = [...this.game.entities].sort((a, b) => a.y - b.y);
         
         for (const entity of sortedEntities) {
-            // Convert entity position to grid coordinates
-            const gridX = Math.floor(entity.x / Config.TILE_SIZE);
-            const gridY = Math.floor(entity.y / Config.TILE_SIZE);
+            if (!this.camera.isVisible(entity.x, entity.y, entity.width, entity.height)) {
+                continue; // Skip this entity and move to the next one
+            }
             
-            // Convert grid coordinates to isometric world coordinates
-            const isoPos = this.map.gridToIso(gridX, gridY);
+            let screenPos;
             
-            // Add debug logging
-            console.log(`Entity: ${entity.constructor.name}, Position: (${entity.x}, ${entity.y}), Grid: (${gridX}, ${gridY}), Iso: (${isoPos.x}, ${isoPos.y})`);
-            
-            // Convert world coordinates to screen coordinates
-            const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
+            if (entity instanceof Building) {
+                // For buildings, use the grid-based conversion
+                // Convert entity position to grid coordinates
+                const gridX = Math.floor(entity.x / Config.TILE_SIZE);
+                const gridY = Math.floor(entity.y / Config.TILE_SIZE);
+                
+                // Convert grid coordinates to isometric world coordinates
+                const isoPos = this.map.gridToIso(gridX, gridY);
+                
+                // Convert world coordinates to screen coordinates
+                screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
+            } else {
+                // For units, use the direct Cartesian-to-isometric conversion
+                const isoX = (entity.x - entity.y) / 2;
+                const isoY = (entity.x + entity.y) / 4;
+                
+                // Convert to screen coordinates
+                screenPos = this.camera.worldToScreen(isoX, isoY);
+            }
             
             // Calculate entity dimensions with zoom
             const entityWidth = entity.width * this.camera.zoom;
