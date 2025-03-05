@@ -243,7 +243,8 @@ const gameState = {
   entities: {},
   map: null, // Will be initialized based on player count
   mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 }, // Default starting dimensions with zoom
-  lastUpdateTime: Date.now()
+  lastUpdateTime: Date.now(),
+  serverStartTime: Date.now() // Add server start time
 };
 
 // Initialize the map with default dimensions
@@ -469,7 +470,8 @@ io.on('connection', (socket) => {
       entities: gameState.entities,
       map: gameState.map,
       mapDimensions: gameState.mapDimensions, // Send map dimensions with zoom factor
-      lastUpdateTime: gameState.lastUpdateTime
+      lastUpdateTime: gameState.lastUpdateTime,
+      serverStartTime: gameState.serverStartTime // Include server start time
     }
   });
   
@@ -765,7 +767,8 @@ setInterval(() => {
   // Broadcast updated game state to all players
   io.emit('gameUpdate', {
     entities: gameState.entities,
-    timestamp: currentTime
+    timestamp: currentTime,
+    serverStartTime: gameState.serverStartTime // Include server start time
   });
 }, UPDATE_INTERVAL);
 

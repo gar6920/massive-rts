@@ -14,6 +14,7 @@ class Multiplayer {
         this.serverEntities = {}; // Entities from the server
         this.pendingCommands = []; // Commands waiting to be sent
         this.lastServerUpdate = 0;
+        this.serverStartTime = null; // Store server start time
         
         // Bind methods
         this.onConnect = this.onConnect.bind(this);
@@ -91,6 +92,12 @@ class Multiplayer {
         console.log('Received initial game state from server');
         this.playerId = data.playerId;
         this.game.playerId = data.playerId;
+        
+        // Store server start time
+        if (data.gameState && data.gameState.serverStartTime) {
+            console.log('Setting server start time:', new Date(data.gameState.serverStartTime));
+            this.serverStartTime = data.gameState.serverStartTime;
+        }
         
         // Update map dimensions from server data
         if (data.gameState && data.gameState.mapDimensions) {
@@ -225,6 +232,11 @@ class Multiplayer {
      */
     onGameUpdate(data) {
         const currentTime = Date.now();
+        
+        // Update server start time if provided
+        if (data.serverStartTime && (!this.serverStartTime || this.serverStartTime !== data.serverStartTime)) {
+            this.serverStartTime = data.serverStartTime;
+        }
 
         Object.values(data.entities).forEach(serverEntity => {
             let localEntity = this.game.entities.find(e => e.id === serverEntity.id);
@@ -451,5 +463,27 @@ class Multiplayer {
                 }
             }
         });
+    }
+    
+    /**
+     * Get the elapsed time since the server started
+     * @returns {string} Formatted elapsed time (HH:MM:SS)
+     */
+    getElapsedTime() {
+        if (!this.serverStartTime) {
+            return "00:00:00";
+        }
+        
+        // Calculate elapsed time in seconds
+        const elapsedMs = Date.now() - this.serverStartTime;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        
+        // Calculate hours, minutes, and seconds
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
+        
+        // Format as HH:MM:SS
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 } 

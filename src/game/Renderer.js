@@ -551,6 +551,9 @@ class Renderer {
      * Render UI elements
      */
     renderUI() {
+        // Render elapsed time at the top of the screen
+        this.renderElapsedTime();
+        
         // Render selection box if dragging
         const selectionBox = this.game.inputHandler.getSelectionBox();
         if (selectionBox) {
@@ -578,6 +581,30 @@ class Renderer {
         
         // Render selected unit info
         this.renderSelectedUnitInfo();
+        
+        // Render debug info if enabled
+        if (Config.DEBUG_MODE) {
+            this.renderDebugInfo();
+        }
+    }
+    
+    /**
+     * Render the elapsed time since the server started
+     */
+    renderElapsedTime() {
+        const elapsedTime = this.game.multiplayer.getElapsedTime();
+        
+        // Set up text style
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        
+        // Draw background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(this.canvas.width / 2 - 80, 10, 160, 30);
+        
+        // Draw text
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(`Time Elapsed: ${elapsedTime}`, this.canvas.width / 2, 30);
     }
     
     /**
