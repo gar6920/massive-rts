@@ -69,7 +69,7 @@ class Config {
     
     // Debug settings
     static DEBUG_MODE = true; // Enable/disable debug information
-    static SHOW_GRID = true; // Show grid lines
+    static SHOW_GRID = false; // Show grid lines
     
     // Update the canvas dimensions when the window is resized
     static updateDimensions() {

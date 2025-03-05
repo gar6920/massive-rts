@@ -16,6 +16,99 @@ const io = new Server(server, {
   }
 });
 
+// Game state management
+const gameState = {
+  players: {},
+  entities: {},
+  map: null,
+  mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 },
+  lastUpdateTime: Date.now(),
+  serverStartTime: Date.now(),
+  isRunning: false
+};
+
+// Function to start the game
+function startGame() {
+  console.log('Starting game...');
+  
+  // Reset game state
+  gameState.players = {};
+  gameState.entities = {};
+  gameState.isRunning = true;
+  gameState.serverStartTime = Date.now();
+  gameState.lastUpdateTime = Date.now();
+  gameState.mapDimensions = getMapDimensions(0); // Initialize with default dimensions
+  
+  // Generate initial map
+  console.log('Generating initial map...');
+  gameState.map = generateMap(gameState.mapDimensions.width, gameState.mapDimensions.height);
+  
+  // Initialize game with bases
+  console.log('Initializing game with bases...');
+  initializeGame();
+  
+  // Notify all connected clients
+  console.log('Notifying clients of game start...');
+  io.emit('serverStarted', {
+    message: 'Game started',
+    gameState: {
+      players: gameState.players,
+      entities: gameState.entities,
+      map: gameState.map,
+      mapDimensions: gameState.mapDimensions,
+      lastUpdateTime: gameState.lastUpdateTime,
+      serverStartTime: gameState.serverStartTime
+    }
+  });
+  
+  console.log('Game started successfully');
+}
+
+// Function to stop the game
+function stopGame() {
+  console.log('Stopping game...');
+  
+  // Notify all clients before clearing state
+  io.emit('serverShutdown', { 
+    message: 'Server is shutting down. Please wait for reconnection.' 
+  });
+  
+  // Clear game state
+  gameState.isRunning = false;
+  gameState.players = {};
+  gameState.entities = {};
+  
+  console.log('Game stopped successfully');
+}
+
+// Start game on server initialization
+startGame();
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM signal');
+  stopGame();
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT signal');
+  stopGame();
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+
+// Server startup event
+server.on('listening', () => {
+  console.log(`Server started on port ${process.env.PORT || 3000}`);
+  startGame(); // Ensure game is started when server is ready
+});
+
 // Serve static files from the public directory
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/src', express.static(path.join(__dirname, '../src')));
@@ -237,100 +330,86 @@ function generateMap(width, height) {
   return smoothedTiles;
 }
 
-// Game state
-const gameState = {
-  players: {},
-  entities: {},
-  map: null, // Will be initialized based on player count
-  mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 }, // Default starting dimensions with zoom
-  lastUpdateTime: Date.now(),
-  serverStartTime: Date.now() // Add server start time
-};
-
-// Initialize the map with default dimensions
-gameState.map = generateMap(gameState.mapDimensions.width, gameState.mapDimensions.height);
-
-// Initialize the game with bases and AI unit
-initializeGame();
-
 // Function to initialize the game with bases and AI unit
 function initializeGame() {
-  console.log('Initializing game with bases');
-  
-  // Create human base in the bottom-left quadrant
-  const humanBaseId = uuidv4();
-  const humanBaseX = Math.floor(gameState.mapDimensions.width * 0.25);
-  const humanBaseY = Math.floor(gameState.mapDimensions.height * 0.75);
-  
-  // Create AI base in the top-right quadrant
-  const aiBaseId = uuidv4();
-  const aiBaseX = Math.floor(gameState.mapDimensions.width * 0.75);
-  const aiBaseY = Math.floor(gameState.mapDimensions.height * 0.25);
-  
-  // Make sure the base locations are walkable
-  makeAreaWalkable(humanBaseX, humanBaseY, 5, 5);
-  makeAreaWalkable(aiBaseX, aiBaseY, 5, 5);
-  
-  // Add human base to entities with persistent team identifier
-  gameState.entities[humanBaseId] = {
-    id: humanBaseId,
-    type: 'building',
-    buildingType: 'BASE',
-    playerColor: 'blue',
-    x: humanBaseX * 32,
-    y: humanBaseY * 32,
-    width: 5 * 32,
-    height: 5 * 32,
-    playerId: 'human-team',
-    isPlayerControlled: true,
-    health: 1000,
-    maxHealth: 1000
-  };
-  
-  // Add AI base to entities
-  gameState.entities[aiBaseId] = {
-    id: aiBaseId,
-    type: 'building',
-    buildingType: 'BASE',
-    playerColor: 'red',
-    x: aiBaseX * 32,
-    y: aiBaseY * 32,
-    width: 5 * 32,
-    height: 5 * 32,
-    playerId: 'ai-team',
-    isPlayerControlled: false,
-    health: 1000,
-    maxHealth: 1000
-  };
-  
-  // Create an AI unit near the AI base
-  const aiUnitId = uuidv4();
-  gameState.entities[aiUnitId] = {
-    id: aiUnitId,
-    type: 'unit',
-    unitType: 'SOLDIER',
-    playerColor: 'red',
-    x: aiBaseX * 32 - 64,
-    y: aiBaseY * 32 + 80,
-    width: 32,
-    height: 32,
-    playerId: 'ai-team',
-    isPlayerControlled: false,
-    health: 100,
-    maxHealth: 100,
-    attackDamage: 10,
-    attackRange: 50,
-    attackCooldown: 1000,
-    speed: 2,
-    level: 1,
-    experience: 0,
-    targetX: null,
-    targetY: null,
-    isMoving: false,
-    lastUpdateTime: Date.now()
-  };
-  
-  console.log('Game initialized with bases and AI unit');
+    console.log('Initializing game with shared human base');
+
+    // Create shared human base in the bottom-left quadrant
+    const humanBaseId = uuidv4();
+    const humanBaseX = Math.floor(gameState.mapDimensions.width * 0.25);
+    const humanBaseY = Math.floor(gameState.mapDimensions.height * 0.75);
+
+    // Define the human base, shared by all players
+    gameState.entities[humanBaseId] = {
+        id: humanBaseId,
+        type: 'building',
+        buildingType: 'BASE',
+        playerColor: 'blue',
+        x: humanBaseX * 32,
+        y: humanBaseY * 32,
+        width: 5 * 32,
+        height: 5 * 32,
+        playerId: 'human-team',  // Shared team ID, not tied to a single player
+        isPlayerControlled: true,
+        health: 1000,
+        maxHealth: 1000
+    };
+
+    console.log('Initialized shared human base for team "human-team"');
+
+    // Create AI base in the top-right quadrant
+    const aiBaseId = uuidv4();
+    const aiBaseX = Math.floor(gameState.mapDimensions.width * 0.75);
+    const aiBaseY = Math.floor(gameState.mapDimensions.height * 0.25);
+
+    // Make sure the base locations are walkable
+    makeAreaWalkable(humanBaseX, humanBaseY, 5, 5);
+    makeAreaWalkable(aiBaseX, aiBaseY, 5, 5);
+
+    // Add AI base to entities
+    gameState.entities[aiBaseId] = {
+        id: aiBaseId,
+        type: 'building',
+        buildingType: 'BASE',
+        playerColor: 'red',
+        x: aiBaseX * 32,
+        y: aiBaseY * 32,
+        width: 5 * 32,
+        height: 5 * 32,
+        playerId: 'ai-team',
+        isPlayerControlled: false,
+        health: 1000,
+        maxHealth: 1000
+    };
+
+    // Create an AI unit near the AI base
+    const aiUnitId = uuidv4();
+    gameState.entities[aiUnitId] = {
+        id: aiUnitId,
+        type: 'unit',
+        unitType: 'SOLDIER',
+        playerColor: 'red',
+        x: aiBaseX * 32 - 64,
+        y: aiBaseY * 32 + 80,
+        width: 32,
+        height: 32,
+        playerId: 'ai-team',
+        isPlayerControlled: false,
+        health: 100,
+        maxHealth: 100,
+        attackDamage: 10,
+        attackRange: 50,
+        attackCooldown: 1000,
+        speed: 2,
+        level: 1,
+        experience: 0,
+        targetX: null,
+        targetY: null,
+        isMoving: false,
+        lastUpdateTime: Date.now()
+    };
+
+    console.log('Game initialized with shared human base and AI entities');
 }
 
 // Function to make an area walkable (for base placement)
@@ -425,24 +504,29 @@ let nextPlayerColorIndex = 0;
 
 // Function to create a unit for a player
 function createPlayerUnit(playerId) {
-    // Find the player's base
-    const playerBase = Object.values(gameState.entities).find(entity => 
+    console.log(`\n=== Creating Player Unit ===`);
+    // Find the shared human base
+    const humanBase = Object.values(gameState.entities).find(entity => 
         entity.type === 'building' && 
         entity.buildingType === 'BASE' && 
-        entity.playerId === playerId
+        entity.playerId === 'human-team'
     );
 
-    if (!playerBase) {
-        console.error(`Could not find base for player ${playerId}`);
+    if (!humanBase) {
+        console.error('Failed to create unit: Shared human base not found!');
+        console.log('Current entities:', Object.keys(gameState.entities));
         return null;
     }
 
-    // Create unit adjacent to the player's base
-    const offsetX = 64; // 2 tiles to the right
-    const unitX = playerBase.x + playerBase.width + offsetX;
-    const unitY = playerBase.y + (playerBase.height / 2);
+    console.log(`Found shared base at position: (${humanBase.x}, ${humanBase.y})`);
 
-    // Create the unit with a unique ID
+    // Position the new unit near the base
+    const unitX = humanBase.x + humanBase.width + 64;
+    const unitY = humanBase.y + (humanBase.height / 2);
+
+    console.log(`Positioning new unit at: (${unitX}, ${unitY})`);
+
+    // Create the unit with the player's unique ID
     const unitId = uuidv4();
     const unit = {
         id: unitId,
@@ -460,16 +544,17 @@ function createPlayerUnit(playerId) {
         speed: 2,
         level: 1,
         experience: 0,
-        isPlayerControlled: true,
-        playerId: playerId,
+        playerId: playerId,  // Use the individual player's ID
         playerColor: 'blue',
+        isPlayerControlled: true,
         targetX: null,
         targetY: null,
         isMoving: false,
         lastUpdateTime: Date.now()
     };
 
-    console.log(`Created new unit for player ${playerId} at position (${unitX}, ${unitY})`);
+    console.log(`Created unit ${unit.id} for player ${playerId}`);
+    console.log(`=== Unit Creation Complete ===\n`);
     return unit;
 }
 
@@ -477,132 +562,142 @@ function createPlayerUnit(playerId) {
 io.on('connection', (socket) => {
   console.log(`New player connected: ${socket.id}`);
   
-  // Generate a unique player ID
   const playerId = uuidv4();
   
-  // Add player to game state
+  // Assign the player to the human team
   gameState.players[playerId] = {
     id: playerId,
     socketId: socket.id,
     name: `Player ${Object.keys(gameState.players).length + 1}`,
-    color: 'blue', // Always blue for human player
+    teamId: 'human-team',  // Links player to the shared base
+    color: 'blue',
     connected: true,
     lastActivity: Date.now()
   };
-  
-  // Check if map needs to be resized based on new player count
-  const mapResized = checkAndResizeMap();
-  
-  // If map wasn't resized, we need to find the human base
-  if (!mapResized) {
-    // Find the human base by its persistent team identifier
-    let humanBase = null;
-    Object.values(gameState.entities).forEach(entity => {
-      if (entity.type === 'building' && entity.buildingType === 'BASE' && 
-          (entity.playerId === 'human-team' || entity.playerColor === 'blue')) {
-        // Assign this player to the base
-        entity.playerId = playerId;
-        humanBase = entity;
-        console.log(`Assigned human base to player ${playerId}`);
-      }
-    });
-  }
 
-  // Filter entities to only include buildings for initial state
-  const buildingEntities = {};
-  Object.entries(gameState.entities).forEach(([id, entity]) => {
-    if (entity.type === 'building') {
-      buildingEntities[id] = entity;
-    }
-  });
+  console.log(`Player ${playerId} joined team "human-team"`);
   
-  // Send initial game state to the new player (only map and buildings)
+  // Send current game state to the connecting client
   socket.emit('gameState', {
+    status: gameState.isRunning ? 'active' : 'ended',
     playerId: playerId,
-    gameState: {
+    gameState: gameState.isRunning ? {
       players: gameState.players,
-      entities: buildingEntities,
+      entities: gameState.entities,
       map: gameState.map,
       mapDimensions: gameState.mapDimensions,
       lastUpdateTime: gameState.lastUpdateTime,
       serverStartTime: gameState.serverStartTime
-    }
-  });
-  
-  // Broadcast new player to all other players
-  socket.broadcast.emit('playerJoined', {
-    player: gameState.players[playerId]
+    } : null
   });
 
+  // Handle rejoin attempts
+  socket.on('rejoinGame', (data) => {
+    const { oldPlayerId } = data;
+    let rejoinPlayerId = playerId;
+    
+    if (oldPlayerId && gameState.players[oldPlayerId] && !gameState.players[oldPlayerId].connected) {
+      // Reclaim old player ID if available
+      rejoinPlayerId = oldPlayerId;
+      gameState.players[rejoinPlayerId].socketId = socket.id;
+      gameState.players[rejoinPlayerId].connected = true;
+      console.log(`Player ${rejoinPlayerId} rejoined team "human-team"`);
+    } else {
+      // Create new player entry
+      gameState.players[rejoinPlayerId] = {
+        id: rejoinPlayerId,
+        socketId: socket.id,
+        name: `Player ${Object.keys(gameState.players).length + 1}`,
+        teamId: 'human-team',  // Links player to the shared base
+        color: 'blue',
+        connected: true,
+        lastActivity: Date.now()
+      };
+      console.log(`New player ${rejoinPlayerId} joined team "human-team"`);
+    }
+    
+    // Send current game state
+    socket.emit('gameState', {
+      status: 'active',
+      playerId: rejoinPlayerId,
+      gameState: {
+        players: gameState.players,
+        entities: gameState.entities,
+        map: gameState.map,
+        mapDimensions: gameState.mapDimensions,
+        lastUpdateTime: gameState.lastUpdateTime,
+        serverStartTime: gameState.serverStartTime
+      }
+    });
+    
+    // Notify other players
+    socket.broadcast.emit('playerJoined', {
+      player: gameState.players[rejoinPlayerId]
+    });
+  });
+  
   // Handle join game request
   socket.on('joinGame', (data) => {
-    const playerId = data.playerId;
-    console.log(`Player ${playerId} joining game`);
-
-    if (gameState.players[playerId]) {
-      // Create the unit explicitly
-      const newUnit = createPlayerUnit(playerId);
-      if (!newUnit) {
-        socket.emit('joinGameError', { message: "Could not create unit." });
-        return;
-      }
-
-      // IMPORTANT: Add unit to game state explicitly
-      gameState.entities[newUnit.id] = newUnit;
-      console.log(`Added unit ${newUnit.id} to game state for player ${playerId}`);
-
-      // Broadcast to ALL clients (including the one who joined)
-      io.emit('unitCreated', { unit: newUnit });
-      console.log(`Broadcasted unitCreated event for unit ${newUnit.id}`);
-
-      // Confirm join to requesting client explicitly
-      socket.emit('joinGameSuccess', { unit: newUnit });
-      console.log(`Sent joinGameSuccess to player ${playerId}`);
-    } else {
-      console.error(`Player ${playerId} not found in gameState.players`);
-      socket.emit('joinGameError', { message: "Player not found." });
+    // Check if game is running
+    if (!gameState.isRunning) {
+      console.log('Join game rejected: Game not running');
+      socket.emit('joinGameError', { message: 'Game has ended' });
+      return;
     }
+    
+    const playerId = data.playerId;
+    console.log(`\n=== Join Game Request ===`);
+    console.log(`Player ${playerId} requesting to join game`);
+    console.log(`Current players:`, Object.keys(gameState.players));
+
+    if (!gameState.players[playerId]) {
+      console.error(`Join game error: Player ${playerId} not found in gameState.players`);
+      socket.emit('joinGameError', { message: "Player not found." });
+      return;
+    }
+
+    // Log the state before creating unit
+    console.log(`Creating unit for player ${playerId}`);
+    console.log(`Player team: ${gameState.players[playerId].teamId}`);
+
+    // Create the unit explicitly
+    const newUnit = createPlayerUnit(playerId);
+    if (!newUnit) {
+      console.error(`Failed to create unit for player ${playerId}`);
+      socket.emit('joinGameError', { message: "Could not create unit." });
+      return;
+    }
+
+    // Log the new unit details
+    console.log(`Successfully created unit:`, {
+      unitId: newUnit.id,
+      playerId: newUnit.playerId,
+      position: { x: newUnit.x, y: newUnit.y }
+    });
+
+    // Add unit to game state explicitly
+    gameState.entities[newUnit.id] = newUnit;
+    console.log(`Added unit ${newUnit.id} to game state`);
+    console.log(`Total entities in game:`, Object.keys(gameState.entities).length);
+
+    // Broadcast to ALL clients (including the one who joined)
+    io.emit('unitCreated', { unit: newUnit });
+    console.log(`Broadcasted unitCreated event for unit ${newUnit.id}`);
+
+    // Confirm join to requesting client explicitly
+    socket.emit('joinGameSuccess', { unit: newUnit });
+    console.log(`Sent joinGameSuccess to player ${playerId}`);
+    console.log(`=== Join Game Complete ===\n`);
   });
   
-  // Handle player disconnection
-  socket.on('disconnect', () => {
-    console.log(`Player disconnected: ${socket.id}`);
-    
-    // Find the player by socket ID
-    const playerId = Object.keys(gameState.players).find(
-      id => gameState.players[id].socketId === socket.id
-    );
-    
-    if (playerId) {
-      // Mark player as disconnected
-      gameState.players[playerId].connected = false;
-      gameState.players[playerId].lastActivity = Date.now();
-      
-      // Broadcast player disconnection to all other players
-      socket.broadcast.emit('playerLeft', {
-        playerId: playerId
-      });
-      
-      // Remove player units, but NOT their base
-      Object.keys(gameState.entities).forEach(entityId => {
-        const entity = gameState.entities[entityId];
-        if (entity.playerId === playerId && entity.buildingType !== 'BASE') {
-          delete gameState.entities[entityId];
-          
-          // Broadcast entity removal
-          io.emit('entityRemoved', {
-            entityId: entityId
-          });
-        }
-      });
-      
-      // Check if map needs to be resized after player disconnection
-      checkAndResizeMap();
-    }
-  });
-
   // Handle unit movement
   socket.on('moveUnits', (data) => {
+    // Check if game is running
+    if (!gameState.isRunning) {
+      socket.emit('moveUnitsError', { message: 'Game has ended' });
+      return;
+    }
+    
     console.log(`Received moveUnits command: units ${data.unitIds.join(", ")} to target (${data.targetX}, ${data.targetY})`);
     
     // Validate the data
@@ -648,6 +743,43 @@ io.on('connection', (socket) => {
       targetX: data.targetX,
       targetY: data.targetY
     });
+  });
+  
+  // Handle player disconnection
+  socket.on('disconnect', () => {
+    console.log(`Player disconnected: ${socket.id}`);
+    
+    // Find the player by socket ID
+    const playerId = Object.keys(gameState.players).find(
+      id => gameState.players[id].socketId === socket.id
+    );
+    
+    if (playerId && gameState.isRunning) {
+      // Mark player as disconnected but keep their data for potential rejoin
+      gameState.players[playerId].connected = false;
+      gameState.players[playerId].lastActivity = Date.now();
+      
+      // Broadcast player disconnection to all other players
+      socket.broadcast.emit('playerLeft', {
+        playerId: playerId
+      });
+      
+      // Remove player units, but NOT their base
+      Object.keys(gameState.entities).forEach(entityId => {
+        const entity = gameState.entities[entityId];
+        if (entity.playerId === playerId && entity.buildingType !== 'BASE') {
+          delete gameState.entities[entityId];
+          
+          // Broadcast entity removal
+          io.emit('entityRemoved', {
+            entityId: entityId
+          });
+        }
+      });
+      
+      // Check if map needs to be resized after player disconnection
+      checkAndResizeMap();
+    }
   });
 });
 

@@ -117,11 +117,6 @@ class Game {
         console.log('Processing server entities:', Object.keys(serverEntities).length);
         console.log('Entity types:', Object.values(serverEntities).map(e => e.type).join(', '));
         
-        // Clear existing entities if this is a full update
-        if (this.entities.length === 0) {
-            this.entities = [];
-        }
-        
         // Process each entity from the server
         Object.values(serverEntities).forEach(serverEntity => {
             console.log(`Processing entity: ${serverEntity.id}, type: ${serverEntity.type}, position: (${serverEntity.x}, ${serverEntity.y})`);
@@ -132,6 +127,7 @@ class Game {
             if (!entity) {
                 // Create a new entity based on its type
                 if (serverEntity.type === 'unit') {
+                    console.log(`Creating new unit: ${serverEntity.id}, playerId: ${serverEntity.playerId}`);
                     entity = new Unit(
                         serverEntity.x,
                         serverEntity.y,
@@ -142,12 +138,31 @@ class Game {
                         serverEntity.playerColor
                     );
                     
-                    // Explicitly initialize interpolation properties
+                    // Set all unit properties from server
+                    entity.id = serverEntity.id;
+                    entity.playerId = serverEntity.playerId;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    entity.attackDamage = serverEntity.attackDamage;
+                    entity.attackRange = serverEntity.attackRange;
+                    entity.attackCooldown = serverEntity.attackCooldown;
+                    entity.speed = serverEntity.speed;
+                    entity.level = serverEntity.level;
+                    entity.experience = serverEntity.experience;
+                    entity.targetX = serverEntity.targetX;
+                    entity.targetY = serverEntity.targetY;
+                    entity.isMoving = serverEntity.isMoving;
+                    
+                    // Initialize interpolation properties
                     entity.prevX = serverEntity.x;
                     entity.prevY = serverEntity.y;
                     entity.serverX = serverEntity.x;
                     entity.serverY = serverEntity.y;
                     entity.interpolationStartTime = Date.now();
+                    
+                    // Add to entities array
+                    this.entities.push(entity);
+                    console.log(`Added new unit to game:`, entity);
                     
                 } else if (serverEntity.type === 'building') {
                     console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
@@ -160,10 +175,8 @@ class Game {
                         serverEntity.buildingType,
                         serverEntity.playerColor
                     );
-                }
-                
-                if (entity) {
-                    // Set additional properties
+                    
+                    // Set building properties
                     entity.id = serverEntity.id;
                     entity.playerId = serverEntity.playerId;
                     entity.health = serverEntity.health;
@@ -171,7 +184,7 @@ class Game {
                     
                     // Add to entities array
                     this.entities.push(entity);
-                    console.log(`Added new ${serverEntity.type} from server:`, entity);
+                    console.log(`Added new building to game:`, entity);
                 }
             } else {
                 // Update existing entity
@@ -185,18 +198,17 @@ class Game {
                     entity.targetX = serverEntity.targetX;
                     entity.targetY = serverEntity.targetY;
                     entity.isMoving = serverEntity.isMoving;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
                 } else {
                     // For non-moving entities like buildings, update position directly
                     entity.x = serverEntity.x;
                     entity.y = serverEntity.y;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
                 }
-                
-                // Update health for all entities
-                entity.health = serverEntity.health;
-                entity.maxHealth = serverEntity.maxHealth;
-                
-                // Make sure isPlayerControlled is set correctly
-                entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
             }
         });
         
@@ -207,14 +219,8 @@ class Game {
      * Handle entity selection
      */
     handleEntitySelection(worldX, worldY) {
-        console.log(`Handling selection at world coordinates (${worldX}, ${worldY})`);
-
-        const gridPos = this.map.isoToGrid(worldX, worldY);
-        const gridX = gridPos.x;
-        const gridY = gridPos.y;
-        
-        console.log(`Converted to grid coordinates (${gridX}, ${gridY})`);
-
+        const gridX = Math.floor(worldX / 32);
+        const gridY = Math.floor(worldY / 32);
         let entitySelected = false;
 
         // Deselect all entities first
@@ -223,36 +229,28 @@ class Game {
         }
         this.selectedEntities = [];
 
-        // Check if any entity was clicked
         for (const entity of this.entities) {
-            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
-            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
-            
-            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
+            const entityGridX = Math.floor(entity.x / 32);
+            const entityGridY = Math.floor(entity.y / 32);
 
             if (gridX === entityGridX && gridY === entityGridY) {
-                console.log(`Entity ${entity.id} is at the clicked grid position`);
-                
-                // Only select entities that belong to the player and are player-controlled
-                if (entity.playerId !== this.multiplayer.playerId || !entity.isPlayerControlled) {
-                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId} or is not player-controlled, not selecting`);
-                    continue;
+                if (entity.type === 'building' && entity.playerId === 'human-team') {
+                    console.log(`Selecting shared human base`);
+                    entity.isSelected = true;
+                    this.selectedEntities.push(entity);
+                    entitySelected = true;
+                } else if (entity.type === 'unit') {
+                    if (entity.playerId === this.multiplayer.playerId) {
+                        console.log(`Selecting my unit ${entity.id}`);
+                        entity.isSelected = true;
+                        this.selectedEntities.push(entity);
+                        entitySelected = true;
+                    } else {
+                        console.log(`Skipping unit ${entity.id} - not mine`);
+                    }
                 }
-                
-                // Select this entity
-                entity.isSelected = true;
-                this.selectedEntities.push(entity);
-                entitySelected = true;
-                
-                // Log selection for debugging
-                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}, Player: ${entity.playerId}`);
-                break; // Only select one entity for now
+                if (entitySelected) break;
             }
-        }
-        
-        // If no entity was selected, this might be a map click
-        if (!entitySelected) {
-            console.log(`No entity selected at grid (${gridX}, ${gridY})`);
         }
     }
     
@@ -297,12 +295,17 @@ class Game {
                 entityGridX >= selectionRect.x &&
                 entityGridX <= selectionRect.x + selectionRect.width &&
                 entityGridY >= selectionRect.y &&
-                entityGridY <= selectionRect.y + selectionRect.height &&
-                entity.isPlayerControlled // Only select player-controlled units
+                entityGridY <= selectionRect.y + selectionRect.height
             ) {
-                // Only select entities that belong to the player
-                if (entity.playerId !== this.multiplayer.playerId) {
-                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId}, not selecting`);
+                // For units, only select those owned by the player
+                if (entity.type === 'unit' && entity.playerId !== this.multiplayer.playerId) {
+                    console.log(`Unit ${entity.id} belongs to player ${entity.playerId}, not selecting`);
+                    continue;
+                }
+                
+                // For buildings, only select the shared base
+                if (entity.type === 'building' && entity.playerId !== 'human-team') {
+                    console.log(`Building ${entity.id} is not the shared base, not selecting`);
                     continue;
                 }
                 
@@ -314,7 +317,7 @@ class Game {
                 // For debugging
                 console.log(`Selected entity in box: ${entity.constructor.name}, ID: ${entity.id}`);
             } else {
-                console.log(`Entity ${entity.id} not in selection box or not player-controlled`);
+                console.log(`Entity ${entity.id} not in selection box`);
             }
         }
         

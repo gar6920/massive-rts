@@ -96,6 +96,7 @@ class Multiplayer {
         console.log('Received initial game state from server');
         this.playerId = data.playerId;
         this.game.playerId = data.playerId;
+        console.log(`My playerId is: ${this.playerId}`);
         
         // Store server start time
         if (data.gameState && data.gameState.serverStartTime) {
@@ -283,30 +284,24 @@ class Multiplayer {
      * Handle new unit creation
      */
     onUnitCreated(data) {
-        const unit = data.unit;
-        console.log("Received new unit from server:", unit);
-
-        // Explicitly process and add the new unit
-        this.game.processServerEntities({ [unit.id]: unit });
-
-        // If the unit belongs to this player, center camera on it immediately
-        if (unit.playerId === this.playerId) {
-            const tileSize = Config.TILE_SIZE;
-            const gridX = unit.x / tileSize;
-            const gridY = unit.y / tileSize;
-            const isoX = (gridX - gridY) * (tileSize / 2);
-            const isoY = (gridX + gridY) * (tileSize / 4);
-
-            console.log(`Centering camera on player unit at (${isoX}, ${isoY})`);
-
-            // Explicitly center camera
-            this.game.camera.centerOn(isoX, isoY);
-            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
-            this.game.camera.clampPosition();
+        console.log('\n=== Unit Created Event ===');
+        console.log('Received unit created event:', data);
+        
+        if (data.unit) {
+            console.log(`Processing new unit - ID: ${data.unit.id}, PlayerId: ${data.unit.playerId}`);
+            // Add the new unit to the game
+            this.game.processServerEntities({ [data.unit.id]: data.unit });
+            console.log('Unit added to game entities');
+            
+            // If this is our unit, center the camera on it
+            if (data.unit.playerId === this.playerId) {
+                console.log('Unit belongs to this player, centering camera');
+                this.game.camera.centerOn(data.unit.x, data.unit.y);
+            }
+        } else {
+            console.error('Unit created event received but no unit data present');
         }
-
-        // Explicitly request rendering to immediately display the unit
-        this.game.renderer.render();
+        console.log('=== Unit Created Complete ===\n');
     }
     
     /**
@@ -497,16 +492,25 @@ class Multiplayer {
      * Handle successful game join
      */
     onJoinGameSuccess(data) {
-        console.log('Successfully joined game, received unit:', data.unit);
+        console.log('\n=== Join Game Success ===');
+        console.log('Received join game success with unit:', data.unit);
         
-        // Note: We don't need to process the unit here as it will come through
-        // the unitCreated event that the server broadcasts to all clients
-        
-        // Remove the join button
-        const joinContainer = document.getElementById('joinContainer');
-        if (joinContainer) {
-            joinContainer.remove();
+        if (data.unit) {
+            console.log(`Unit details - ID: ${data.unit.id}, PlayerId: ${data.unit.playerId}, Position: (${data.unit.x}, ${data.unit.y})`);
+            // Process the new unit
+            this.game.processServerEntities({ [data.unit.id]: data.unit });
+            console.log('Unit processed and added to game');
+        } else {
+            console.error('Join game success but no unit data received');
         }
+        
+        // Remove join button
+        const joinButton = document.getElementById('joinButton');
+        if (joinButton) {
+            joinButton.remove();
+            console.log('Join button removed');
+        }
+        console.log('=== Join Game Complete ===\n');
     }
     
     /**
