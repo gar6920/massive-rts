@@ -281,6 +281,11 @@ class Renderer {
      * Render a unit with its image and health bar
      */
     renderUnit(unit, screenPos, width, height) {
+        // Debug logging for selection
+        if (unit.isSelected) {
+            console.log(`Rendering selected unit: ${unit.id}, isPlayerControlled: ${unit.isPlayerControlled}, playerId: ${unit.playerId}, position: (${screenPos.x}, ${screenPos.y})`);
+        }
+        
         // Draw unit image if available
         if (unit.image && unit.image.complete) {
             console.log(`Rendering unit image: ${unit.unitType} at (${screenPos.x}, ${screenPos.y}), size: ${width}x${height}`);
@@ -303,6 +308,40 @@ class Renderer {
                 width,
                 height
             );
+        }
+        
+        // Draw selection indicator if unit is selected
+        if (unit.isSelected) {
+            console.log(`Drawing selection indicator for unit ${unit.id} at (${screenPos.x}, ${screenPos.y}) with radius ${(width / 2) + 5 * this.camera.zoom}`);
+            
+            // Draw a glowing selection circle around the unit
+            this.ctx.strokeStyle = Config.COLORS.SELECTION || '#00ff00';
+            this.ctx.lineWidth = 2 * this.camera.zoom;
+            
+            // Draw circle around unit
+            this.ctx.beginPath();
+            this.ctx.arc(
+                screenPos.x,
+                screenPos.y,
+                (width / 2) + 5 * this.camera.zoom,
+                0,
+                Math.PI * 2
+            );
+            this.ctx.stroke();
+            
+            // Add a semi-transparent fill for better visibility
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            this.ctx.beginPath();
+            this.ctx.arc(
+                screenPos.x,
+                screenPos.y,
+                (width / 2) + 5 * this.camera.zoom,
+                0,
+                Math.PI * 2
+            );
+            this.ctx.fill();
+            
+            console.log(`Selection indicator drawn with color ${Config.COLORS.SELECTION}`);
         }
         
         // Draw health bar

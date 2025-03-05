@@ -111,7 +111,7 @@ class Game {
                         serverEntity.y,
                         serverEntity.width,
                         serverEntity.height,
-                        serverEntity.playerId === this.playerId,
+                        serverEntity.playerId === this.multiplayer.playerId,
                         serverEntity.unitType,
                         serverEntity.playerColor
                     );
@@ -122,7 +122,7 @@ class Game {
                         serverEntity.y,
                         serverEntity.width,
                         serverEntity.height,
-                        serverEntity.playerId === this.playerId,
+                        serverEntity.playerId === this.multiplayer.playerId,
                         serverEntity.buildingType,
                         serverEntity.playerColor
                     );
@@ -153,6 +153,9 @@ class Game {
                 // Update health for all entities
                 entity.health = serverEntity.health;
                 entity.maxHealth = serverEntity.maxHealth;
+                
+                // Make sure isPlayerControlled is set correctly
+                entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
             }
         });
         
@@ -163,24 +166,35 @@ class Game {
      * Handle entity selection
      */
     handleEntitySelection(worldX, worldY) {
-        let entitySelected = false;
+        console.log(`Handling selection at world coordinates (${worldX}, ${worldY})`);
+
+        const gridPos = this.map.isoToGrid(worldX, worldY);
+        const gridX = gridPos.x;
+        const gridY = gridPos.y;
         
+        console.log(`Converted to grid coordinates (${gridX}, ${gridY})`);
+
+        let entitySelected = false;
+
         // Deselect all entities first
         for (const entity of this.entities) {
             entity.isSelected = false;
         }
         this.selectedEntities = [];
-        
+
         // Check if any entity was clicked
         for (const entity of this.entities) {
-            if (
-                worldX >= entity.x &&
-                worldX <= entity.x + entity.width &&
-                worldY >= entity.y &&
-                worldY <= entity.y + entity.height
-            ) {
-                // Only select entities that belong to the player
-                if (entity.playerId !== this.multiplayer.playerId) {
+            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
+            
+            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
+
+            if (gridX === entityGridX && gridY === entityGridY) {
+                console.log(`Entity ${entity.id} is at the clicked grid position`);
+                
+                // Only select entities that belong to the player and are player-controlled
+                if (entity.playerId !== this.multiplayer.playerId || !entity.isPlayerControlled) {
+                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId} or is not player-controlled, not selecting`);
                     continue;
                 }
                 
@@ -188,16 +202,16 @@ class Game {
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
                 entitySelected = true;
+                
+                // Log selection for debugging
+                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}, Player: ${entity.playerId}`);
                 break; // Only select one entity for now
             }
         }
         
         // If no entity was selected, this might be a map click
         if (!entitySelected) {
-            // Get the tile at this position
-            const tileX = Math.floor(worldX / Config.TILE_SIZE);
-            const tileY = Math.floor(worldY / Config.TILE_SIZE);
-            console.log(`Clicked on tile: (${tileX}, ${tileY})`);
+            console.log(`No entity selected at grid (${gridX}, ${gridY})`);
         }
     }
     
@@ -205,40 +219,65 @@ class Game {
      * Select entities within a box
      */
     selectEntitiesInBox(startX, startY, endX, endY) {
+        console.log(`Selecting entities in box from world (${startX.toFixed(2)}, ${startY.toFixed(2)}) to (${endX.toFixed(2)}, ${endY.toFixed(2)})`);
+        
+        // Convert isometric world coordinates to grid coordinates
+        const startGridPos = this.map.isoToGrid(startX, startY);
+        const endGridPos = this.map.isoToGrid(endX, endY);
+        
+        console.log(`Selection box in grid coordinates: from (${startGridPos.x.toFixed(2)}, ${startGridPos.y.toFixed(2)}) to (${endGridPos.x.toFixed(2)}, ${endGridPos.y.toFixed(2)})`);
+        
         // Deselect all entities first
         for (const entity of this.entities) {
             entity.isSelected = false;
         }
         this.selectedEntities = [];
         
-        // Calculate selection rectangle
+        // Calculate selection rectangle in grid coordinates
         const selectionRect = {
-            x: Math.min(startX, endX),
-            y: Math.min(startY, endY),
-            width: Math.abs(endX - startX),
-            height: Math.abs(endY - startY)
+            x: Math.min(startGridPos.x, endGridPos.x),
+            y: Math.min(startGridPos.y, endGridPos.y),
+            width: Math.abs(endGridPos.x - startGridPos.x),
+            height: Math.abs(endGridPos.y - startGridPos.y)
         };
         
-        // Select only the first entity found within the selection rectangle
+        console.log(`Selection rectangle in grid: (${selectionRect.x.toFixed(2)}, ${selectionRect.y.toFixed(2)}) with size ${selectionRect.width.toFixed(2)}x${selectionRect.height.toFixed(2)}`);
+        
+        // Select entities found within the selection rectangle
+        let entitiesSelected = 0;
         for (const entity of this.entities) {
+            // Convert entity position to grid coordinates
+            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
+            
+            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
+            
             if (
-                entity.x + entity.width >= selectionRect.x &&
-                entity.x <= selectionRect.x + selectionRect.width &&
-                entity.y + entity.height >= selectionRect.y &&
-                entity.y <= selectionRect.y + selectionRect.height &&
+                entityGridX >= selectionRect.x &&
+                entityGridX <= selectionRect.x + selectionRect.width &&
+                entityGridY >= selectionRect.y &&
+                entityGridY <= selectionRect.y + selectionRect.height &&
                 entity.isPlayerControlled // Only select player-controlled units
             ) {
                 // Only select entities that belong to the player
                 if (entity.playerId !== this.multiplayer.playerId) {
+                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId}, not selecting`);
                     continue;
                 }
                 
-                // Select only this entity and exit the loop
+                // Select this entity
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
-                break; // Stop after selecting the first entity
+                entitiesSelected++;
+                
+                // For debugging
+                console.log(`Selected entity in box: ${entity.constructor.name}, ID: ${entity.id}`);
+            } else {
+                console.log(`Entity ${entity.id} not in selection box or not player-controlled`);
             }
         }
+        
+        console.log(`Selected ${entitiesSelected} entities in box selection`);
     }
     
     /**
@@ -270,6 +309,7 @@ class Game {
         };
         
         // Select all entities within the selection rectangle
+        let entitiesSelected = 0;
         for (const entity of this.entities) {
             if (
                 entity.x + entity.width >= selectionRect.x &&
@@ -285,8 +325,14 @@ class Game {
                 
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
+                entitiesSelected++;
+                
+                // For debugging
+                console.log(`Selected entity in area: ${entity.constructor.name}, ID: ${entity.id}`);
             }
         }
+        
+        console.log(`Selected ${entitiesSelected} entities in area selection`);
     }
     
     /**
@@ -295,14 +341,29 @@ class Game {
     handleCommand(worldX, worldY) {
         if (this.selectedEntities.length === 0) return;
 
+        console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+        
+        // Correctly convert from isometric world coordinates to grid coordinates
+        const gridPos = this.map.isoToGrid(worldX, worldY);
+        const tileX = Math.floor(gridPos.x);
+        const tileY = Math.floor(gridPos.y);
+        
+        console.log(`Converted to grid coordinates: (${tileX}, ${tileY})`);
+        
+        // Convert grid coordinates to cartesian coordinates for server
+        const cartesianX = tileX * Config.TILE_SIZE;
+        const cartesianY = tileY * Config.TILE_SIZE;
+        
+        console.log(`Units moving to cartesian coordinates: (${cartesianX}, ${cartesianY})`);
+
         // Get IDs of selected units for multiplayer
         const selectedUnitIds = this.selectedEntities
             .filter(entity => entity instanceof Unit)
             .map(entity => entity.id);
         
         if (selectedUnitIds.length > 0) {
-            // Send movement command to server
-            this.multiplayer.moveUnits(selectedUnitIds, worldX, worldY);
+            // Send movement command to server with cartesian coordinates
+            this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
         }
     }
     

@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Tue 03/04/2025 14:02:23.46 
+Created: Tue 03/04/2025 19:23:35.27 
 ======================================== 
  
  
@@ -50,13 +50,15 @@ class Building extends Entity {
    * Load the building image based on player color and building type
    */
   loadImage() {
-    const imagePath = `/images/buildings/${this.playerColor}_${this.buildingType.toLowerCase()}.svg`;
+    const imagePath = `/images/buildings/${this.playerColor}_${this.buildingType.toLowerCase()}.png`;
     console.log(`Loading building image: ${imagePath}`);
     this.image = new Image();
     this.image.src = imagePath;
     this.image.onerror = (e) => {
       console.error(`Failed to load building image: ${imagePath}`, e);
       // Fallback to a colored rectangle
+      console.log(`Attempting to load fallback image: /images/buildings/${this.buildingType.toLowerCase()}.png`);
+      this.image.src = `/images/buildings/${this.buildingType.toLowerCase()}.png`;
     };
     this.image.onload = () => {
       console.log(`Successfully loaded building image: ${imagePath}`);
@@ -360,13 +362,15 @@ class Unit extends Entity {
      * Load the unit image based on player color and unit type
      */
     loadImage() {
-        const imagePath = `/images/units/${this.playerColor}_${this.unitType.toLowerCase()}.svg`;
+        const imagePath = `/images/units/${this.playerColor}_${this.unitType.toLowerCase()}.png`;
+        console.log(`Loading unit image: ${imagePath}`);
         this.image = new Image();
         this.image.src = imagePath;
         this.image.onerror = () => {
             console.error(`Failed to load unit image: ${imagePath}`);
             // Fallback to default image if available
-            this.image.src = '/images/units/red_soldier.svg';
+            console.log(`Attempting to load fallback image: /images/units/${this.unitType.toLowerCase()}.png`);
+            this.image.src = `/images/units/${this.unitType.toLowerCase()}.png`;
         };
     }
     
@@ -398,13 +402,14 @@ class Unit extends Entity {
      */
     moveTowardsTarget(deltaTime) {
         // Calculate direction to target
-        const center = this.getCenter();
-        const dx = this.targetX - center.x;
-        const dy = this.targetY - center.y;
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         // If we're close enough to the target, stop moving
-        if (distance < 5) {
+        if (distance < 1) {
+            this.x = this.targetX;
+            this.y = this.targetY;
             this.isMoving = false;
             this.targetX = null;
             this.targetY = null;
@@ -412,7 +417,7 @@ class Unit extends Entity {
         }
         
         // Normalize direction and apply speed
-        const moveSpeed = this.speed * (deltaTime / 1000);
+        const moveSpeed = Config.UNIT_SPEED * (deltaTime / 1000);
         const normalizedDx = dx / distance;
         const normalizedDy = dy / distance;
         
@@ -556,6 +561,81 @@ class Unit extends Entity {
  
  
 ======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\BuildingImageLoader.js 
+======================================== 
+ 
+/**
+ * Handles loading and managing building images
+ */
+class BuildingImageLoader {
+    /**
+     * Initialize the building image loader
+     */
+    constructor() {
+        // Building types
+        this.buildingTypes = ['BASE', 'BARRACKS', 'TOWER', 'FARM', 'MINE'];
+        
+        // Player colors
+        this.playerColors = ['red', 'blue', 'green', 'yellow'];
+        
+        // Store loaded images
+        this.images = {};
+        
+        // Load all building images
+        this.loadBuildingImages();
+        
+        console.log('BuildingImageLoader initialized');
+    }
+    
+    /**
+     * Load all building images
+     */
+    loadBuildingImages() {
+        // Load default building images
+        this.buildingTypes.forEach(buildingType => {
+            const img = new Image();
+            img.src = `/images/buildings/${buildingType.toLowerCase()}.png`;
+            this.images[buildingType] = img;
+            
+            // Log when image loads or fails
+            img.onload = () => console.log(`Loaded building image: ${buildingType}`);
+            img.onerror = () => console.warn(`Failed to load building image: ${buildingType}`);
+            
+            // Load player-colored variants
+            this.playerColors.forEach(color => {
+                const coloredImg = new Image();
+                coloredImg.src = `/images/buildings/${buildingType.toLowerCase()}_${color}.png`;
+                this.images[`${buildingType}_${color}`] = coloredImg;
+                
+                // Log when image loads or fails
+                coloredImg.onload = () => console.log(`Loaded building image: ${buildingType}_${color}`);
+                coloredImg.onerror = () => console.warn(`Failed to load building image: ${buildingType}_${color}`);
+            });
+        });
+    }
+    
+    /**
+     * Get the image for a specific building type and player color
+     */
+    getBuildingImage(buildingType, playerColor = null) {
+        if (playerColor) {
+            const coloredImage = this.images[`${buildingType}_${playerColor}`];
+            if (coloredImage) return coloredImage;
+        }
+        
+        return this.images[buildingType] || null;
+    }
+    
+    /**
+     * Check if all images are loaded
+     */
+    areAllImagesLoaded() {
+        return Object.values(this.images).every(img => img.complete);
+    }
+}  
+ 
+ 
+======================================== 
 FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Camera.js 
 ======================================== 
  
@@ -581,8 +661,8 @@ class Camera {
         // Calculate initial boundaries based on current map dimensions
         this.updateBoundaries();
         
-        // Set initial position to center on the map
-        this.centerOnMap();
+        // We'll center on player units later when they're created
+        // Don't call centerOnMap() here
         
         console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
     }
@@ -591,35 +671,77 @@ class Camera {
      * Center the camera on the map
      */
     centerOnMap() {
-        // For isometric view, we need to adjust the center point
-        // Calculate the center of the map in isometric world coordinates
+        // Calculate the map dimensions in isometric coordinates
         const mapWidth = Config.MAP_WIDTH;
         const mapHeight = Config.MAP_HEIGHT;
         const tileSize = Config.TILE_SIZE;
+        
+        // Calculate the isometric map width and height
+        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
+        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
         
         // Calculate the center in grid coordinates
         const centerGridX = mapWidth / 2;
         const centerGridY = mapHeight / 2;
         
         // Convert to isometric coordinates
-        const isoX = (centerGridX - centerGridY) * (tileSize / 2);
-        const isoY = (centerGridX + centerGridY) * (tileSize / 4);
+        const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
+        const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
         
-        // Center the camera on the isometric center
-        this.centerOn(isoX, isoY);
+        // Calculate the viewport dimensions in world space
+        const viewportWorldWidth = this.width / this.zoom;
+        const viewportWorldHeight = this.height / this.zoom;
         
-        console.log(`Camera centered on map at isometric coordinates (${isoX}, ${isoY})`);
+        // Set camera position to center on the map
+        this.x = isoCenterX - (viewportWorldWidth / 2);
+        this.y = isoCenterY - (viewportWorldHeight / 2);
+        
+        // Ensure camera stays within boundaries
+        this.clampPosition();
+        
+        console.log(`Camera centered on map at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
     }
 
     /**
      * Update camera boundaries based on current map dimensions
      */
     updateBoundaries() {
-        // Calculate maximum camera positions based on map dimensions and zoom
-        this.maxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
-        this.maxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
+        // For isometric view, we need to calculate boundaries differently
+        const mapWidth = Config.MAP_WIDTH;
+        const mapHeight = Config.MAP_HEIGHT;
+        const tileSize = Config.TILE_SIZE;
         
-        console.log(`Camera boundaries updated: maxX=${this.maxX}, maxY=${this.maxY}`);
+        // Calculate the width and height of the isometric map in world coordinates
+        // In isometric view, the map width is (mapWidth + mapHeight) * tileSize / 2
+        // and the map height is (mapWidth + mapHeight) * tileSize / 4
+        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
+        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
+        
+        // Calculate the center in grid coordinates
+        const centerGridX = mapWidth / 2;
+        const centerGridY = mapHeight / 2;
+        
+        // Convert to isometric coordinates
+        const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
+        const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
+        
+        // Calculate the viewport dimensions in world space
+        const viewportWorldWidth = this.width / this.zoom;
+        const viewportWorldHeight = this.height / this.zoom;
+        
+        // Calculate maximum camera positions
+        // We need to ensure the camera can't move so far that the map is off-screen
+        // For isometric maps, we need more generous boundaries
+        const extraPadding = Math.max(viewportWorldWidth, viewportWorldHeight) * 0.5;
+        
+        // Set more balanced boundaries
+        // The key is to make the boundaries symmetrical around the map center
+        this.maxX = isoCenterX + isoMapWidth/2 + extraPadding;
+        this.maxY = isoCenterY + isoMapHeight/2 + extraPadding;
+        this.minX = isoCenterX - isoMapWidth/2 - extraPadding;
+        this.minY = isoCenterY - isoMapHeight/2 - extraPadding;
+        
+        console.log(`Camera boundaries updated: minX=${this.minX}, minY=${this.minY}, maxX=${this.maxX}, maxY=${this.maxY}`);
     }
 
     /**
@@ -656,13 +778,27 @@ class Camera {
      * Ensure camera stays within map boundaries
      */
     clampPosition() {
-        // Recalculate effective boundaries based on current zoom
-        const effectiveMaxX = Math.max(0, (Config.MAP_WIDTH * Config.TILE_SIZE) - (this.width / this.zoom));
-        const effectiveMaxY = Math.max(0, (Config.MAP_HEIGHT * Config.TILE_SIZE) - (this.height / this.zoom));
+        // For isometric view, we need to allow the camera to go slightly outside the map boundaries
+        // to ensure the entire map is visible
+        
+        // Calculate the effective maximum positions based on viewport size
+        // This ensures we can see the bottom of the map
+        const viewportWidth = this.width / this.zoom;
+        const viewportHeight = this.height / this.zoom;
+        
+        // Calculate effective boundaries
+        // For the max boundaries, we need to subtract the viewport size to ensure
+        // we can pan all the way to the bottom/right edges
+        const effectiveMinX = this.minX;
+        const effectiveMinY = this.minY;
+        const effectiveMaxX = Math.max(0, this.maxX - viewportWidth);
+        const effectiveMaxY = Math.max(0, this.maxY - viewportHeight);
         
         // Clamp camera position to stay within map boundaries
-        this.x = Math.max(0, Math.min(this.x, effectiveMaxX));
-        this.y = Math.max(0, Math.min(this.y, effectiveMaxY));
+        this.x = Math.max(effectiveMinX, Math.min(this.x, effectiveMaxX));
+        this.y = Math.max(effectiveMinY, Math.min(this.y, effectiveMaxY));
+        
+        console.log(`Camera position clamped to (${this.x}, ${this.y})`);
     }
 
     /**
@@ -713,30 +849,107 @@ class Camera {
         
         console.log(`Camera dimensions updated: width=${this.width}, height=${this.height}, map=${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
     }
-    
+
     /**
-     * Zoom the camera centered on a specific screen position
+     * Zoom at a specific point (mouse position)
+     * @param {number} deltaZoom - Amount to change zoom by
+     * @param {number} clientX - Mouse X position in screen coordinates
+     * @param {number} clientY - Mouse Y position in screen coordinates
      */
-    zoomAt(deltaZoom, screenX, screenY) {
-        // Get world position before zoom
-        const worldX = (screenX / this.zoom) + this.x;
-        const worldY = (screenY / this.zoom) + this.y;
+    zoomAt(deltaZoom, clientX, clientY) {
+        // Store the world point that we're zooming at
+        const worldPoint = this.screenToWorld(clientX, clientY);
+        const worldX = worldPoint.x;
+        const worldY = worldPoint.y;
         
-        // Adjust zoom level
+        // Store the old zoom value
         const oldZoom = this.zoom;
+        
+        // Update zoom level with constraints
         this.zoom += deltaZoom;
         this.zoom = Math.max(Config.ZOOM_MIN, Math.min(Config.ZOOM_MAX, this.zoom));
         
-        // If zoom didn't change, exit early
-        if (oldZoom === this.zoom) return;
+        // If zoom didn't actually change, exit early
+        if (this.zoom === oldZoom) return;
         
-        // Adjust camera position to keep the point under the mouse in the same position
-        this.x = worldX - (screenX / this.zoom);
-        this.y = worldY - (screenY / this.zoom);
+        // Calculate new camera position to keep the mouse point fixed in world space
+        const mouseXRatio = clientX / this.width;
+        const mouseYRatio = clientY / this.height;
         
-        // Update boundaries and clamp position
-        this.updateBoundaries();
+        // Calculate the viewport dimensions in world space
+        const viewportWorldWidth = this.width / this.zoom;
+        const viewportWorldHeight = this.height / this.zoom;
+        
+        // Set the new camera position
+        this.x = worldX - (mouseXRatio * viewportWorldWidth);
+        this.y = worldY - (mouseYRatio * viewportWorldHeight);
+        
+        // Ensure camera stays within boundaries
         this.clampPosition();
+        
+        console.log(`Zoomed to ${this.zoom.toFixed(2)} at world point (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+    }
+
+    /**
+     * Center the camera on player units
+     * @param {Array} entities - All game entities
+     * @param {string} playerId - The current player's ID
+     */
+    centerOnPlayerUnits(entities, playerId) {
+        if (!entities || entities.length === 0) {
+            console.log("No entities to center on, centering on map instead");
+            this.centerOnMap();
+            return;
+        }
+        
+        // Find player-controlled units
+        const playerUnits = entities.filter(entity => 
+            entity.playerId === playerId && 
+            entity.type === 'UNIT'
+        );
+        
+        // If no player units found, try to find player base
+        if (playerUnits.length === 0) {
+            const playerBase = entities.find(entity => 
+                entity.playerId === playerId && 
+                entity.type === 'BUILDING' && 
+                entity.buildingType === 'BASE'
+            );
+            
+            if (playerBase) {
+                console.log(`Centering camera on player base at (${playerBase.x}, ${playerBase.y})`);
+                this.centerOn(playerBase.x + playerBase.width/2, playerBase.y + playerBase.height/2);
+                
+                // Zoom in a bit to focus on the base
+                this.zoom = Config.ZOOM_DEFAULT * 1.2;
+                this.clampPosition();
+                return;
+            }
+        } else {
+            // Calculate average position of all player units
+            let avgX = 0;
+            let avgY = 0;
+            
+            playerUnits.forEach(unit => {
+                avgX += unit.x;
+                avgY += unit.y;
+            });
+            
+            avgX /= playerUnits.length;
+            avgY /= playerUnits.length;
+            
+            console.log(`Centering camera on ${playerUnits.length} player units at (${avgX}, ${avgY})`);
+            this.centerOn(avgX, avgY);
+            
+            // Zoom in a bit to focus on the units
+            this.zoom = Config.ZOOM_DEFAULT * 1.2;
+            this.clampPosition();
+            return;
+        }
+        
+        // Fallback to centering on map if no player entities found
+        console.log("No player entities found, centering on map instead");
+        this.centerOnMap();
     }
 }  
  
@@ -756,7 +969,7 @@ class Config {
     // Map settings
     static MAP_WIDTH = 100; // Number of tiles horizontally
     static MAP_HEIGHT = 100; // Number of tiles vertically
-    static TILE_SIZE = 32; // Size of each tile in pixels
+    static TILE_SIZE = 64; // Size of each tile in pixels - increased for better isometric rendering
     
     // Camera settings
     static CAMERA_SPEED = 10; // Camera movement speed
@@ -764,7 +977,7 @@ class Config {
     static ZOOM_MIN = 0.5; // Minimum zoom level (50%)
     static ZOOM_MAX = 2.0; // Maximum zoom level (200%)
     static ZOOM_SPEED = 0.1; // How much to zoom per mouse wheel tick
-    static ZOOM_DEFAULT = 0.8; // Default zoom level (80%) - reduced to show more of the map
+    static ZOOM_DEFAULT = 0.7; // Default zoom level (70%) - reduced to show more of the map
     
     // Unit settings
     static UNIT_SPEED = 2; // Movement speed of units
@@ -943,7 +1156,7 @@ class Game {
                         serverEntity.y,
                         serverEntity.width,
                         serverEntity.height,
-                        serverEntity.playerId === this.playerId,
+                        serverEntity.playerId === this.multiplayer.playerId,
                         serverEntity.unitType,
                         serverEntity.playerColor
                     );
@@ -954,7 +1167,7 @@ class Game {
                         serverEntity.y,
                         serverEntity.width,
                         serverEntity.height,
-                        serverEntity.playerId === this.playerId,
+                        serverEntity.playerId === this.multiplayer.playerId,
                         serverEntity.buildingType,
                         serverEntity.playerColor
                     );
@@ -985,6 +1198,9 @@ class Game {
                 // Update health for all entities
                 entity.health = serverEntity.health;
                 entity.maxHealth = serverEntity.maxHealth;
+                
+                // Make sure isPlayerControlled is set correctly
+                entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
             }
         });
         
@@ -995,24 +1211,35 @@ class Game {
      * Handle entity selection
      */
     handleEntitySelection(worldX, worldY) {
-        let entitySelected = false;
+        console.log(`Handling selection at world coordinates (${worldX}, ${worldY})`);
+
+        const gridPos = this.map.isoToGrid(worldX, worldY);
+        const gridX = gridPos.x;
+        const gridY = gridPos.y;
         
+        console.log(`Converted to grid coordinates (${gridX}, ${gridY})`);
+
+        let entitySelected = false;
+
         // Deselect all entities first
         for (const entity of this.entities) {
             entity.isSelected = false;
         }
         this.selectedEntities = [];
-        
+
         // Check if any entity was clicked
         for (const entity of this.entities) {
-            if (
-                worldX >= entity.x &&
-                worldX <= entity.x + entity.width &&
-                worldY >= entity.y &&
-                worldY <= entity.y + entity.height
-            ) {
-                // Only select entities that belong to the player
-                if (entity.playerId !== this.multiplayer.playerId) {
+            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
+            
+            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
+
+            if (gridX === entityGridX && gridY === entityGridY) {
+                console.log(`Entity ${entity.id} is at the clicked grid position`);
+                
+                // Only select entities that belong to the player and are player-controlled
+                if (entity.playerId !== this.multiplayer.playerId || !entity.isPlayerControlled) {
+                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId} or is not player-controlled, not selecting`);
                     continue;
                 }
                 
@@ -1020,16 +1247,16 @@ class Game {
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
                 entitySelected = true;
+                
+                // Log selection for debugging
+                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}, Player: ${entity.playerId}`);
                 break; // Only select one entity for now
             }
         }
         
         // If no entity was selected, this might be a map click
         if (!entitySelected) {
-            // Get the tile at this position
-            const tileX = Math.floor(worldX / Config.TILE_SIZE);
-            const tileY = Math.floor(worldY / Config.TILE_SIZE);
-            console.log(`Clicked on tile: (${tileX}, ${tileY})`);
+            console.log(`No entity selected at grid (${gridX}, ${gridY})`);
         }
     }
     
@@ -1037,40 +1264,65 @@ class Game {
      * Select entities within a box
      */
     selectEntitiesInBox(startX, startY, endX, endY) {
+        console.log(`Selecting entities in box from world (${startX.toFixed(2)}, ${startY.toFixed(2)}) to (${endX.toFixed(2)}, ${endY.toFixed(2)})`);
+        
+        // Convert isometric world coordinates to grid coordinates
+        const startGridPos = this.map.isoToGrid(startX, startY);
+        const endGridPos = this.map.isoToGrid(endX, endY);
+        
+        console.log(`Selection box in grid coordinates: from (${startGridPos.x.toFixed(2)}, ${startGridPos.y.toFixed(2)}) to (${endGridPos.x.toFixed(2)}, ${endGridPos.y.toFixed(2)})`);
+        
         // Deselect all entities first
         for (const entity of this.entities) {
             entity.isSelected = false;
         }
         this.selectedEntities = [];
         
-        // Calculate selection rectangle
+        // Calculate selection rectangle in grid coordinates
         const selectionRect = {
-            x: Math.min(startX, endX),
-            y: Math.min(startY, endY),
-            width: Math.abs(endX - startX),
-            height: Math.abs(endY - startY)
+            x: Math.min(startGridPos.x, endGridPos.x),
+            y: Math.min(startGridPos.y, endGridPos.y),
+            width: Math.abs(endGridPos.x - startGridPos.x),
+            height: Math.abs(endGridPos.y - startGridPos.y)
         };
         
-        // Select only the first entity found within the selection rectangle
+        console.log(`Selection rectangle in grid: (${selectionRect.x.toFixed(2)}, ${selectionRect.y.toFixed(2)}) with size ${selectionRect.width.toFixed(2)}x${selectionRect.height.toFixed(2)}`);
+        
+        // Select entities found within the selection rectangle
+        let entitiesSelected = 0;
         for (const entity of this.entities) {
+            // Convert entity position to grid coordinates
+            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
+            
+            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
+            
             if (
-                entity.x + entity.width >= selectionRect.x &&
-                entity.x <= selectionRect.x + selectionRect.width &&
-                entity.y + entity.height >= selectionRect.y &&
-                entity.y <= selectionRect.y + selectionRect.height &&
+                entityGridX >= selectionRect.x &&
+                entityGridX <= selectionRect.x + selectionRect.width &&
+                entityGridY >= selectionRect.y &&
+                entityGridY <= selectionRect.y + selectionRect.height &&
                 entity.isPlayerControlled // Only select player-controlled units
             ) {
                 // Only select entities that belong to the player
                 if (entity.playerId !== this.multiplayer.playerId) {
+                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId}, not selecting`);
                     continue;
                 }
                 
-                // Select only this entity and exit the loop
+                // Select this entity
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
-                break; // Stop after selecting the first entity
+                entitiesSelected++;
+                
+                // For debugging
+                console.log(`Selected entity in box: ${entity.constructor.name}, ID: ${entity.id}`);
+            } else {
+                console.log(`Entity ${entity.id} not in selection box or not player-controlled`);
             }
         }
+        
+        console.log(`Selected ${entitiesSelected} entities in box selection`);
     }
     
     /**
@@ -1102,6 +1354,7 @@ class Game {
         };
         
         // Select all entities within the selection rectangle
+        let entitiesSelected = 0;
         for (const entity of this.entities) {
             if (
                 entity.x + entity.width >= selectionRect.x &&
@@ -1117,8 +1370,14 @@ class Game {
                 
                 entity.isSelected = true;
                 this.selectedEntities.push(entity);
+                entitiesSelected++;
+                
+                // For debugging
+                console.log(`Selected entity in area: ${entity.constructor.name}, ID: ${entity.id}`);
             }
         }
+        
+        console.log(`Selected ${entitiesSelected} entities in area selection`);
     }
     
     /**
@@ -1127,14 +1386,29 @@ class Game {
     handleCommand(worldX, worldY) {
         if (this.selectedEntities.length === 0) return;
 
+        console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+        
+        // Correctly convert from isometric world coordinates to grid coordinates
+        const gridPos = this.map.isoToGrid(worldX, worldY);
+        const tileX = Math.floor(gridPos.x);
+        const tileY = Math.floor(gridPos.y);
+        
+        console.log(`Converted to grid coordinates: (${tileX}, ${tileY})`);
+        
+        // Convert grid coordinates to cartesian coordinates for server
+        const cartesianX = tileX * Config.TILE_SIZE;
+        const cartesianY = tileY * Config.TILE_SIZE;
+        
+        console.log(`Units moving to cartesian coordinates: (${cartesianX}, ${cartesianY})`);
+
         // Get IDs of selected units for multiplayer
         const selectedUnitIds = this.selectedEntities
             .filter(entity => entity instanceof Unit)
             .map(entity => entity.id);
         
         if (selectedUnitIds.length > 0) {
-            // Send movement command to server
-            this.multiplayer.moveUnits(selectedUnitIds, worldX, worldY);
+            // Send movement command to server with cartesian coordinates
+            this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
         }
     }
     
@@ -1287,6 +1561,10 @@ class InputHandler {
                 // Deselect all units
                 this.game.deselectAll();
                 break;
+            case 'c':
+                // Center the camera on the map
+                this.camera.centerOnMap();
+                break;
         }
         
         // Handle camera movement with arrow keys
@@ -1320,6 +1598,7 @@ class InputHandler {
             
             // Check if clicked on an entity
             const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+            console.log(`Mouse down at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
             this.game.handleEntitySelection(worldPos.x, worldPos.y);
         }
         // Right mouse button
@@ -1345,6 +1624,7 @@ class InputHandler {
                 // Finalize selection box
                 const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
                 const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
+                console.log(`Selection box from (${startWorld.x.toFixed(2)}, ${startWorld.y.toFixed(2)}) to (${endWorld.x.toFixed(2)}, ${endWorld.y.toFixed(2)})`);
                 this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
                 this.isSelecting = false;
             }
@@ -1494,19 +1774,33 @@ class InputHandler {
         const relativeX = (e.clientX - minimapRect.left) / minimapRect.width;
         const relativeY = (e.clientY - minimapRect.top) / minimapRect.height;
         
-        // Convert to world coordinates
-        const worldX = relativeX * Config.MAP_WIDTH * Config.TILE_SIZE;
-        const worldY = relativeY * Config.MAP_HEIGHT * Config.TILE_SIZE;
+        // For isometric view, we need to convert differently
+        // First, adjust for the minimap's isometric representation
+        const adjustedX = (relativeX - 0.5) * 2; // Convert from 0-1 to -1 to 1 (centered)
+        const adjustedY = (relativeY - 0.25) * 4; // Adjust for the 1/4 offset in the minimap
+        
+        // Convert to grid coordinates
+        const gridX = Math.floor((adjustedX + adjustedY) / 2 * Config.MAP_WIDTH);
+        const gridY = Math.floor((adjustedY - adjustedX) / 2 * Config.MAP_HEIGHT);
+        
+        // Clamp to valid grid coordinates
+        const clampedGridX = Math.max(0, Math.min(gridX, Config.MAP_WIDTH - 1));
+        const clampedGridY = Math.max(0, Math.min(gridY, Config.MAP_HEIGHT - 1));
+        
+        // Convert to isometric world coordinates
+        const isoPos = this.game.map.gridToIso(clampedGridX, clampedGridY);
+        
+        console.log(`Minimap click: screen(${relativeX.toFixed(2)}, ${relativeY.toFixed(2)}) -> grid(${clampedGridX}, ${clampedGridY}) -> iso(${isoPos.x.toFixed(2)}, ${isoPos.y.toFixed(2)})`);
         
         // Left click - move camera to this position
         if (e.button === 0) {
             // Center camera on clicked position
-            this.camera.centerOn(worldX, worldY);
+            this.camera.centerOn(isoPos.x, isoPos.y);
         }
         // Right click - move selected units to this position
         else if (e.button === 2) {
             if (this.game.selectedEntities.length > 0) {
-                this.game.handleCommand(worldX, worldY);
+                this.game.handleCommand(isoPos.x, isoPos.y);
             }
         }
     }
@@ -1691,29 +1985,52 @@ class Multiplayer {
             entity.playerId === this.playerId
         );
         
+        let unitX, unitY;
+        
         if (playerBase) {
             // Create unit directly adjacent to the player's base
             // Use a fixed offset that ensures the unit is in a valid position
             const offsetX = 64; // 2 tiles to the right
             
             // Calculate spawn position relative to the base
-            const spawnX = playerBase.x + playerBase.width + offsetX;
-            const spawnY = playerBase.y + (playerBase.height / 2);
+            unitX = playerBase.x + playerBase.width + offsetX;
+            unitY = playerBase.y + (playerBase.height / 2);
             
-            console.log(`Creating initial unit adjacent to player base at (${spawnX}, ${spawnY})`);
+            console.log(`Creating initial unit adjacent to player base at (${unitX}, ${unitY})`);
             
             // Create the unit directly without setTimeout
-            this.createUnit(spawnX, spawnY, true, 'SOLDIER');
+            this.createUnit(unitX, unitY, true, 'SOLDIER');
         } else {
             console.error('Could not find player base to spawn initial unit');
             
             // Fallback to center of map if no base found
-            const centerX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
-            const centerY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
+            unitX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
+            unitY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
             
-            console.log(`No player base found, creating unit at center (${centerX}, ${centerY})`);
-            this.createUnit(centerX, centerY, true, 'SOLDIER');
+            console.log(`No player base found, creating unit at center (${unitX}, ${unitY})`);
+            this.createUnit(unitX, unitY, true, 'SOLDIER');
         }
+        
+        // Center the camera on the unit's position and zoom in
+        setTimeout(() => {
+            // Convert grid coordinates to isometric coordinates for proper centering
+            const tileSize = Config.TILE_SIZE;
+            const gridX = unitX / tileSize;
+            const gridY = unitY / tileSize;
+            const isoX = (gridX - gridY) * (tileSize / 2);
+            const isoY = (gridX + gridY) * (tileSize / 4);
+            
+            console.log(`Centering camera on player unit at isometric position (${isoX}, ${isoY})`);
+            
+            // Center the camera on the unit
+            this.game.camera.centerOn(isoX, isoY);
+            
+            // Set an appropriate zoom level for the initial view
+            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
+            
+            // Ensure camera stays within boundaries
+            this.game.camera.clampPosition();
+        }, 100); // Short delay to ensure the unit is fully created
     }
     
     /**
@@ -1774,8 +2091,30 @@ class Multiplayer {
      */
     onUnitCreated(data) {
         console.log('Unit created:', data.unit);
+        
         // Process the new unit using the same method
         this.game.processServerEntities({ [data.unit.id]: data.unit });
+        
+        // If this is a player-controlled unit, center the camera on it
+        if (data.unit.playerId === this.playerId) {
+            // Convert grid coordinates to isometric coordinates for proper centering
+            const tileSize = Config.TILE_SIZE;
+            const gridX = data.unit.x / tileSize;
+            const gridY = data.unit.y / tileSize;
+            const isoX = (gridX - gridY) * (tileSize / 2);
+            const isoY = (gridX + gridY) * (tileSize / 4);
+            
+            console.log(`Centering camera on new player unit at isometric position (${isoX}, ${isoY})`);
+            
+            // Center the camera on the unit
+            this.game.camera.centerOn(isoX, isoY);
+            
+            // Set an appropriate zoom level
+            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
+            
+            // Ensure camera stays within boundaries
+            this.game.camera.clampPosition();
+        }
     }
     
     /**
@@ -1993,30 +2332,24 @@ class Renderer {
      * Check if all images are loaded
      */
     checkImagesLoaded() {
-        // Check if map tile images are loaded
-        const tileImagesLoaded = Object.values(this.map.tileImages).every(img => img.complete);
+        // Check if all tile images are loaded
+        const allImagesLoaded = Object.values(this.map.tileImages).every(img => img.complete);
         
-        if (tileImagesLoaded) {
+        if (allImagesLoaded) {
             this.imagesLoaded = true;
+            console.log('All images loaded successfully');
         } else {
+            // Check again in 100ms
             setTimeout(() => this.checkImagesLoaded(), 100);
         }
     }
     
     /**
-     * Preload unit and building images for different player colors
+     * Preload any additional images needed for rendering
      */
     preloadImages() {
-        // Preload soldier images for each player color
-        Config.PLAYER_COLORS.forEach(color => {
-            // Preload unit images
-            const unitImg = new Image();
-            unitImg.src = `/images/units/${color}_soldier.svg`;
-            
-            // Preload building images
-            const baseImg = new Image();
-            baseImg.src = `/images/buildings/${color}_base.svg`;
-        });
+        // Preload unit and building images here if needed
+        // For now, we're just using the tile images preloaded by the Map class
     }
     
     /**
@@ -2027,34 +2360,29 @@ class Renderer {
     }
     
     /**
-     * Render the entire game scene
+     * Main render function
      */
     render() {
         this.clear();
         
-        // Render map tiles
+        // Render map
         this.renderMap();
         
-        // Render entities (units, buildings)
+        // Render entities
         this.renderEntities();
         
-        // Render UI elements
+        // Render UI
         this.renderUI();
-        
-        // Render debug information if enabled
-        if (Config.DEBUG_MODE) {
-            this.renderDebugInfo();
-        }
     }
     
     /**
-     * Convert grid coordinates to isometric screen coordinates
+     * Convert grid coordinates to screen coordinates
      */
     gridToScreen(col, row) {
-        // First convert to isometric world coordinates
+        // Convert grid coordinates to isometric world coordinates
         const isoPos = this.map.gridToIso(col, row);
         
-        // Then convert to screen coordinates using the camera
+        // Convert world coordinates to screen coordinates
         return this.camera.worldToScreen(isoPos.x, isoPos.y);
     }
     
@@ -2063,36 +2391,58 @@ class Renderer {
      */
     renderMap() {
         // Calculate visible tile range based on camera position and zoom
-        // We need to expand the visible range for isometric view
-        const cameraPos = {
+        // For isometric view, we need a different approach to determine visible tiles
+        
+        // Convert camera position to grid coordinates
+        const cameraWorldPos = {
             x: this.camera.x,
             y: this.camera.y
         };
         
-        // Convert camera position to grid coordinates (approximate)
-        const gridPos = this.map.isoToGrid(cameraPos.x, cameraPos.y);
+        // Get the viewport dimensions in world coordinates
+        const viewportWidth = this.camera.width / this.camera.zoom;
+        const viewportHeight = this.camera.height / this.camera.zoom;
         
-        // Calculate visible range with a larger buffer to ensure the entire map is visible
-        const buffer = 20; // Increased buffer size to render more tiles beyond visible area
-        const visibleTilesX = Math.ceil((this.camera.width / this.camera.zoom) / (this.tileWidth / 2)) + buffer;
-        const visibleTilesY = Math.ceil((this.camera.height / this.camera.zoom) / (this.tileHeight)) + buffer;
+        // Calculate the viewport corners in world coordinates
+        const viewportCorners = [
+            { x: cameraWorldPos.x, y: cameraWorldPos.y }, // Top-left
+            { x: cameraWorldPos.x + viewportWidth, y: cameraWorldPos.y }, // Top-right
+            { x: cameraWorldPos.x, y: cameraWorldPos.y + viewportHeight }, // Bottom-left
+            { x: cameraWorldPos.x + viewportWidth, y: cameraWorldPos.y + viewportHeight } // Bottom-right
+        ];
         
-        // Ensure we start from a negative position to render tiles that might be partially visible
-        const startCol = Math.max(0, gridPos.x - visibleTilesX);
-        const endCol = Math.min(this.map.width, gridPos.x + visibleTilesX);
-        const startRow = Math.max(0, gridPos.y - visibleTilesY);
-        const endRow = Math.min(this.map.height, gridPos.y + visibleTilesY);
+        // Convert viewport corners to grid coordinates
+        const gridCorners = viewportCorners.map(corner => this.map.isoToGrid(corner.x, corner.y));
         
-        // Render tiles in a specific order for proper layering (back to front)
-        for (let row = startRow; row < endRow; row++) {
-            for (let col = startCol; col < endCol; col++) {
-                const tile = this.map.getTile(col, row);
+        // Find the min and max grid coordinates that cover the viewport
+        let minGridX = Math.floor(Math.min(...gridCorners.map(corner => corner.x)));
+        let maxGridX = Math.ceil(Math.max(...gridCorners.map(corner => corner.x)));
+        let minGridY = Math.floor(Math.min(...gridCorners.map(corner => corner.y)));
+        let maxGridY = Math.ceil(Math.max(...gridCorners.map(corner => corner.y)));
+        
+        // Add a buffer to ensure we render tiles that are partially visible
+        const buffer = 15;
+        minGridX = Math.max(0, minGridX - buffer);
+        minGridY = Math.max(0, minGridY - buffer);
+        maxGridX = Math.min(this.map.width, maxGridX + buffer);
+        maxGridY = Math.min(this.map.height, maxGridY + buffer);
+        
+        // Render tiles in the correct order for isometric view (back to front)
+        // This ensures proper overlapping of tiles
+        for (let sum = minGridX + minGridY; sum <= maxGridX + maxGridY; sum++) {
+            for (let gridX = minGridX; gridX <= maxGridX; gridX++) {
+                const gridY = sum - gridX;
+                
+                if (gridY < minGridY || gridY > maxGridY) continue;
+                
+                // Get the tile at this grid position
+                const tile = this.map.getTile(gridX, gridY);
                 if (!tile) continue;
                 
-                // Get isometric position
-                const isoPos = this.map.gridToIso(col, row);
+                // Convert grid coordinates to isometric world coordinates
+                const isoPos = this.map.gridToIso(gridX, gridY);
                 
-                // Convert to screen coordinates
+                // Convert world coordinates to screen coordinates
                 const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
                 
                 // Calculate tile dimensions with zoom
@@ -2109,16 +2459,16 @@ class Renderer {
                         // Draw the isometric tile image
                         this.ctx.drawImage(
                             tileImage,
-                            screenPos.x - tileWidthZoomed / 2, // Center the image horizontally
-                            screenPos.y - (tileHeightZoomed / 2) - (tile.elevation * 4 * this.camera.zoom), // Adjust for elevation
+                            screenPos.x - (tileWidthZoomed / 2), // Center the image horizontally
+                            screenPos.y - (tileHeightZoomed / 2), // Center the image vertically
                             tileWidthZoomed,
-                            tileWidthZoomed / 2 // Maintain aspect ratio for isometric tiles
+                            tileHeightZoomed
                         );
                     } else {
                         // Fallback to colored diamond if image not loaded
                         this.drawIsometricTile(
                             screenPos.x,
-                            screenPos.y - (tile.elevation * 4 * this.camera.zoom),
+                            screenPos.y,
                             tileWidthZoomed,
                             tileHeightZoomed,
                             this.getTileColor(tile.terrainType || tile.type)
@@ -2128,7 +2478,7 @@ class Renderer {
                     // Fallback to colored diamond if images not loaded yet
                     this.drawIsometricTile(
                         screenPos.x,
-                        screenPos.y - (tile.elevation * 4 * this.camera.zoom),
+                        screenPos.y,
                         tileWidthZoomed,
                         tileHeightZoomed,
                         this.getTileColor(tile.terrainType || tile.type)
@@ -2139,7 +2489,7 @@ class Renderer {
                 if (Config.SHOW_GRID) {
                     this.drawIsometricGrid(
                         screenPos.x,
-                        screenPos.y - (tile.elevation * 4 * this.camera.zoom),
+                        screenPos.y,
                         tileWidthZoomed,
                         tileHeightZoomed
                     );
@@ -2149,13 +2499,13 @@ class Renderer {
     }
     
     /**
-     * Draw an isometric tile as a diamond shape
+     * Draw an isometric tile (diamond shape)
      */
     drawIsometricTile(x, y, width, height, color) {
         this.ctx.fillStyle = color;
-        this.ctx.beginPath();
         
         // Draw a diamond shape
+        this.ctx.beginPath();
         this.ctx.moveTo(x, y - height / 2); // Top point
         this.ctx.lineTo(x + width / 2, y); // Right point
         this.ctx.lineTo(x, y + height / 2); // Bottom point
@@ -2171,9 +2521,9 @@ class Renderer {
     drawIsometricGrid(x, y, width, height) {
         this.ctx.strokeStyle = Config.COLORS.GRID;
         this.ctx.lineWidth = 1;
-        this.ctx.beginPath();
         
         // Draw a diamond shape
+        this.ctx.beginPath();
         this.ctx.moveTo(x, y - height / 2); // Top point
         this.ctx.lineTo(x + width / 2, y); // Right point
         this.ctx.lineTo(x, y + height / 2); // Bottom point
@@ -2184,7 +2534,7 @@ class Renderer {
     }
     
     /**
-     * Get color for a tile type
+     * Get the color for a tile type
      */
     getTileColor(tileType) {
         switch (tileType) {
@@ -2198,87 +2548,35 @@ class Renderer {
     }
     
     /**
-     * Render all entities
+     * Render all game entities
      */
     renderEntities() {
-        // Sort entities by y-coordinate for proper layering in isometric view
+        // Sort entities by their y-coordinate for proper depth ordering in isometric view
         const sortedEntities = [...this.game.entities].sort((a, b) => a.y - b.y);
         
-        // Render all entities that are in the visible area
         for (const entity of sortedEntities) {
-            // Skip entities outside the visible area
-            if (!this.camera.isVisible(
-                entity.x,
-                entity.y,
-                entity.width,
-                entity.height
-            )) {
-                continue;
-            }
-            
-            // Convert world coordinates to isometric screen coordinates
-            // For entities, we need to adjust the position to align with the isometric grid
+            // Convert entity position to grid coordinates
             const gridX = Math.floor(entity.x / Config.TILE_SIZE);
             const gridY = Math.floor(entity.y / Config.TILE_SIZE);
             
-            // Get the base tile position
-            const baseTile = this.map.getTile(gridX, gridY);
-            const elevation = baseTile ? baseTile.elevation || 0 : 0;
-            
-            // Convert to isometric world coordinates
+            // Convert grid coordinates to isometric world coordinates
             const isoPos = this.map.gridToIso(gridX, gridY);
             
-            // Adjust for entity's position within the tile
-            const offsetX = entity.x % Config.TILE_SIZE;
-            const offsetY = entity.y % Config.TILE_SIZE;
+            // Add debug logging
+            console.log(`Entity: ${entity.constructor.name}, Position: (${entity.x}, ${entity.y}), Grid: (${gridX}, ${gridY}), Iso: (${isoPos.x}, ${isoPos.y})`);
             
-            // Convert offset to isometric
-            const isoOffsetX = (offsetX - offsetY) / 2;
-            const isoOffsetY = (offsetX + offsetY) / 4;
-            
-            // Add offset to isometric position
-            isoPos.x += isoOffsetX;
-            isoPos.y += isoOffsetY;
-            
-            // Convert to screen coordinates
+            // Convert world coordinates to screen coordinates
             const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
             
-            // Adjust for elevation
-            screenPos.y -= elevation * 4 * this.camera.zoom;
+            // Calculate entity dimensions with zoom
+            const entityWidth = entity.width * this.camera.zoom;
+            const entityHeight = entity.height * this.camera.zoom;
             
-            // Calculate entity size with zoom
-            const width = entity.width * this.camera.zoom;
-            const height = entity.height * this.camera.zoom;
-            
-            // Draw the entity based on its type
-            if (entity.constructor.name === 'Unit' || entity instanceof Unit) {
-                this.renderUnit(entity, screenPos, width, height);
-            } else if (entity.constructor.name === 'Building' || entity.buildingType) {
-                this.renderBuilding(entity, screenPos, width, height);
-            } else {
-                // Fallback for other entity types
-                this.ctx.fillStyle = entity.isPlayerControlled ? 
-                    Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
-                    
-                this.ctx.fillRect(
-                    screenPos.x - width / 2,
-                    screenPos.y - height / 2,
-                    width,
-                    height
-                );
-            }
-            
-            // Draw selection highlight if entity is selected
-            if (entity.isSelected) {
-                this.ctx.strokeStyle = Config.COLORS.SELECTION;
-                this.ctx.lineWidth = 2;
-                this.ctx.strokeRect(
-                    screenPos.x - width / 2 - 2,
-                    screenPos.y - height / 2 - 2,
-                    width + 4,
-                    height + 4
-                );
-                this.ctx.lineWidth = 1;
+            // Render the entity based on its type
+            if (entity instanceof Unit) {
+                this.renderUnit(entity, screenPos, entityWidth, entityHeight);
+            } else if (entity instanceof Building) {
+                this.renderBuilding(entity, screenPos, entityWidth, entityHeight);
             }
         }
     }
@@ -2287,8 +2585,14 @@ class Renderer {
      * Render a unit with its image and health bar
      */
     renderUnit(unit, screenPos, width, height) {
+        // Debug logging for selection
+        if (unit.isSelected) {
+            console.log(`Rendering selected unit: ${unit.id}, isPlayerControlled: ${unit.isPlayerControlled}, playerId: ${unit.playerId}, position: (${screenPos.x}, ${screenPos.y})`);
+        }
+        
         // Draw unit image if available
         if (unit.image && unit.image.complete) {
+            console.log(`Rendering unit image: ${unit.unitType} at (${screenPos.x}, ${screenPos.y}), size: ${width}x${height}`);
             this.ctx.drawImage(
                 unit.image,
                 screenPos.x - width / 2,
@@ -2298,6 +2602,7 @@ class Renderer {
             );
         } else {
             // Fallback to colored rectangle if image not loaded
+            console.log(`Fallback rendering for unit: ${unit.unitType} at (${screenPos.x}, ${screenPos.y})`);
             this.ctx.fillStyle = unit.isPlayerControlled ? 
                 Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
                 
@@ -2307,6 +2612,40 @@ class Renderer {
                 width,
                 height
             );
+        }
+        
+        // Draw selection indicator if unit is selected
+        if (unit.isSelected) {
+            console.log(`Drawing selection indicator for unit ${unit.id} at (${screenPos.x}, ${screenPos.y}) with radius ${(width / 2) + 5 * this.camera.zoom}`);
+            
+            // Draw a glowing selection circle around the unit
+            this.ctx.strokeStyle = Config.COLORS.SELECTION || '#00ff00';
+            this.ctx.lineWidth = 2 * this.camera.zoom;
+            
+            // Draw circle around unit
+            this.ctx.beginPath();
+            this.ctx.arc(
+                screenPos.x,
+                screenPos.y,
+                (width / 2) + 5 * this.camera.zoom,
+                0,
+                Math.PI * 2
+            );
+            this.ctx.stroke();
+            
+            // Add a semi-transparent fill for better visibility
+            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
+            this.ctx.beginPath();
+            this.ctx.arc(
+                screenPos.x,
+                screenPos.y,
+                (width / 2) + 5 * this.camera.zoom,
+                0,
+                Math.PI * 2
+            );
+            this.ctx.fill();
+            
+            console.log(`Selection indicator drawn with color ${Config.COLORS.SELECTION}`);
         }
         
         // Draw health bar
@@ -2366,6 +2705,7 @@ class Renderer {
         // Draw building image if available
         if (building.image && building.image.complete) {
             // For isometric view, we need to adjust the image position
+            console.log(`Rendering building image: ${building.buildingType} at (${screenPos.x}, ${screenPos.y}), size: ${width}x${height}`);
             this.ctx.drawImage(
                 building.image,
                 screenPos.x - width / 2,
@@ -2373,6 +2713,8 @@ class Renderer {
                 width,
                 height
             );
+        } else {
+            console.log(`Fallback rendering for building: ${building.buildingType} at (${screenPos.x}, ${screenPos.y})`);
         }
         
         // Draw health bar
@@ -2548,30 +2890,46 @@ class Renderer {
         // Clear the minimap
         this.minimapCtx.clearRect(0, 0, this.minimapCanvas.width, this.minimapCanvas.height);
         
-        // Calculate scale factors
-        const scaleX = this.minimapCanvas.width / (this.map.width * this.tileWidth / 2);
-        const scaleY = this.minimapCanvas.height / (this.map.height * this.tileHeight);
+        // Calculate the isometric map dimensions
+        const isoMapWidth = (this.map.width + this.map.height) * (Config.TILE_SIZE / 2);
+        const isoMapHeight = (this.map.width + this.map.height) * (Config.TILE_SIZE / 4);
+        
+        // Calculate scale factors for the minimap
+        const scaleX = this.minimapCanvas.width / isoMapWidth;
+        const scaleY = this.minimapCanvas.height / isoMapHeight;
+        
+        // Use the smaller scale to maintain aspect ratio
+        const scale = Math.min(scaleX, scaleY) * 0.8; // 80% to leave some margin
+        
+        // Calculate offsets to center the map in the minimap
+        const offsetX = this.minimapCanvas.width / 2;
+        const offsetY = this.minimapCanvas.height / 4;
         
         // Draw map tiles on minimap
-        for (let row = 0; row < this.map.height; row++) {
-            for (let col = 0; col < this.map.width; col++) {
-                const tile = this.map.getTile(col, row);
+        // Render in the correct order for isometric view (back to front)
+        for (let sum = 0; sum < this.map.width + this.map.height; sum++) {
+            for (let gridX = 0; gridX < this.map.width; gridX++) {
+                const gridY = sum - gridX;
+                
+                if (gridY < 0 || gridY >= this.map.height) continue;
+                
+                const tile = this.map.getTile(gridX, gridY);
                 if (!tile) continue;
                 
-                // Convert to isometric coordinates for minimap
-                const isoPos = this.map.gridToIso(col, row);
+                // Convert to isometric coordinates
+                const isoPos = this.map.gridToIso(gridX, gridY);
                 
-                // Scale to minimap size
-                const x = isoPos.x * scaleX + this.minimapCanvas.width / 2;
-                const y = isoPos.y * scaleY + this.minimapCanvas.height / 4;
+                // Scale and position for minimap
+                const x = offsetX + isoPos.x * scale;
+                const y = offsetY + isoPos.y * scale;
                 
                 // Draw a small diamond for each tile
                 this.minimapCtx.fillStyle = this.getTileColor(tile.terrainType || tile.type);
                 this.minimapCtx.beginPath();
-                this.minimapCtx.moveTo(x, y - 1); // Top
-                this.minimapCtx.lineTo(x + 1, y); // Right
-                this.minimapCtx.lineTo(x, y + 1); // Bottom
-                this.minimapCtx.lineTo(x - 1, y); // Left
+                this.minimapCtx.moveTo(x, y - 2); // Top
+                this.minimapCtx.lineTo(x + 2, y); // Right
+                this.minimapCtx.lineTo(x, y + 2); // Bottom
+                this.minimapCtx.lineTo(x - 2, y); // Left
                 this.minimapCtx.closePath();
                 this.minimapCtx.fill();
             }
@@ -2586,9 +2944,9 @@ class Renderer {
             // Convert to isometric coordinates
             const isoPos = this.map.gridToIso(gridX, gridY);
             
-            // Scale to minimap size
-            const x = isoPos.x * scaleX + this.minimapCanvas.width / 2;
-            const y = isoPos.y * scaleY + this.minimapCanvas.height / 4;
+            // Scale and position for minimap
+            const x = offsetX + isoPos.x * scale;
+            const y = offsetY + isoPos.y * scale;
             
             // Draw a dot for each entity
             this.minimapCtx.fillStyle = entity.playerColor === 'blue' ? 
@@ -2600,32 +2958,36 @@ class Renderer {
         }
         
         // Draw camera viewport rectangle
-        // This is more complex in isometric view, so we'll approximate
-        const viewportCenter = {
-            x: this.camera.x + (this.camera.width / this.camera.zoom) / 2,
-            y: this.camera.y + (this.camera.height / this.camera.zoom) / 2
-        };
+        // Calculate the four corners of the viewport in world coordinates
+        const viewportCorners = [
+            { x: this.camera.x, y: this.camera.y }, // Top-left
+            { x: this.camera.x + this.camera.width / this.camera.zoom, y: this.camera.y }, // Top-right
+            { x: this.camera.x, y: this.camera.y + this.camera.height / this.camera.zoom }, // Bottom-left
+            { x: this.camera.x + this.camera.width / this.camera.zoom, y: this.camera.y + this.camera.height / this.camera.zoom } // Bottom-right
+        ];
         
-        // Convert to grid coordinates
-        const gridPos = this.map.isoToGrid(viewportCenter.x, viewportCenter.y);
+        // Convert viewport corners to grid coordinates
+        const gridCorners = viewportCorners.map(corner => this.map.isoToGrid(corner.x, corner.y));
         
-        // Convert back to isometric for minimap
-        const isoCenter = this.map.gridToIso(gridPos.x, gridPos.y);
+        // Convert back to isometric for minimap and scale
+        const minimapCorners = gridCorners.map(gridPos => {
+            const isoPos = this.map.gridToIso(gridPos.x, gridPos.y);
+            return {
+                x: offsetX + isoPos.x * scale,
+                y: offsetY + isoPos.y * scale
+            };
+        });
         
-        // Scale to minimap
-        const centerX = isoCenter.x * scaleX + this.minimapCanvas.width / 2;
-        const centerY = isoCenter.y * scaleY + this.minimapCanvas.height / 4;
-        
-        // Draw viewport rectangle
-        const viewportSize = 30; // Approximate size
+        // Draw viewport outline
         this.minimapCtx.strokeStyle = 'white';
-        this.minimapCtx.lineWidth = 1;
-        this.minimapCtx.strokeRect(
-            centerX - viewportSize / 2,
-            centerY - viewportSize / 2,
-            viewportSize,
-            viewportSize
-        );
+        this.minimapCtx.lineWidth = 1.5;
+        this.minimapCtx.beginPath();
+        this.minimapCtx.moveTo(minimapCorners[0].x, minimapCorners[0].y);
+        this.minimapCtx.lineTo(minimapCorners[1].x, minimapCorners[1].y);
+        this.minimapCtx.lineTo(minimapCorners[3].x, minimapCorners[3].y);
+        this.minimapCtx.lineTo(minimapCorners[2].x, minimapCorners[2].y);
+        this.minimapCtx.closePath();
+        this.minimapCtx.stroke();
     }
     
     /**
@@ -2715,6 +3077,61 @@ class Renderer {
     handleResize() {
         this.canvas.width = Config.CANVAS_WIDTH;
         this.canvas.height = Config.CANVAS_HEIGHT;
+    }
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\UnitImageLoader.js 
+======================================== 
+ 
+/**
+ * Handles loading and managing unit images
+ */
+class UnitImageLoader {
+    /**
+     * Initialize the unit image loader
+     */
+    constructor() {
+        // Unit types
+        this.unitTypes = ['SOLDIER', 'ARCHER', 'CAVALRY', 'TANK', 'WORKER'];
+        
+        // Store loaded images
+        this.images = {};
+        
+        // Load all unit images
+        this.loadUnitImages();
+        
+        console.log('UnitImageLoader initialized');
+    }
+    
+    /**
+     * Load all unit images
+     */
+    loadUnitImages() {
+        this.unitTypes.forEach(unitType => {
+            const img = new Image();
+            img.src = `/images/units/${unitType.toLowerCase()}.png`;
+            this.images[unitType] = img;
+            
+            // Log when image loads or fails
+            img.onload = () => console.log(`Loaded unit image: ${unitType}`);
+            img.onerror = () => console.warn(`Failed to load unit image: ${unitType}`);
+        });
+    }
+    
+    /**
+     * Get the image for a specific unit type
+     */
+    getUnitImage(unitType) {
+        return this.images[unitType] || null;
+    }
+    
+    /**
+     * Check if all images are loaded
+     */
+    areAllImagesLoaded() {
+        return Object.values(this.images).every(img => img.complete);
     }
 }  
  
@@ -3019,6 +3436,1252 @@ class Tile {
         this.buildable = this.isBuildable(this.type);
     }
 }  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generateDetailedImages.js 
+======================================== 
+ 
+/**
+ * Script to generate detailed images for units and buildings
+ * This creates visually appealing assets for the game
+ */
+
+// Create a canvas element
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+
+// Set canvas dimensions
+canvas.width = 64;
+canvas.height = 64;
+
+// Unit types to generate
+const unitTypes = ['SOLDIER', 'ARCHER', 'CAVALRY', 'TANK', 'WORKER'];
+
+// Building types to generate
+const buildingTypes = ['BASE', 'BARRACKS', 'TOWER', 'FARM', 'MINE'];
+
+// Player colors
+const playerColors = ['red', 'blue', 'green', 'yellow'];
+
+/**
+ * Generate a detailed unit image
+ */
+function generateUnitImage(unitType) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set dimensions
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Base colors for different unit types
+    let primaryColor, secondaryColor, detailColor;
+    
+    switch(unitType) {
+        case 'SOLDIER':
+            primaryColor = '#3366cc';
+            secondaryColor = '#1a3366';
+            detailColor = '#99ccff';
+            break;
+        case 'ARCHER':
+            primaryColor = '#33cc33';
+            secondaryColor = '#1a661a';
+            detailColor = '#99ff99';
+            break;
+        case 'CAVALRY':
+            primaryColor = '#cc3333';
+            secondaryColor = '#661a1a';
+            detailColor = '#ff9999';
+            break;
+        case 'TANK':
+            primaryColor = '#666666';
+            secondaryColor = '#333333';
+            detailColor = '#cccccc';
+            break;
+        case 'WORKER':
+            primaryColor = '#cc9933';
+            secondaryColor = '#664d1a';
+            detailColor = '#ffcc99';
+            break;
+        default:
+            primaryColor = '#3366cc';
+            secondaryColor = '#1a3366';
+            detailColor = '#99ccff';
+    }
+    
+    // Draw isometric unit base
+    ctx.fillStyle = primaryColor;
+    
+    // Draw a diamond shape for the base
+    ctx.beginPath();
+    ctx.moveTo(width/2, height/4); // Top
+    ctx.lineTo(3*width/4, height/2); // Right
+    ctx.lineTo(width/2, 3*height/4); // Bottom
+    ctx.lineTo(width/4, height/2); // Left
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw unit details based on type
+    switch(unitType) {
+        case 'SOLDIER':
+            // Draw helmet
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw body
+            ctx.fillStyle = primaryColor;
+            ctx.fillRect(width/2 - 5, height/2, 10, 15);
+            
+            // Draw sword
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 8, height/2);
+            ctx.lineTo(width/2 + 15, height/2 - 10);
+            ctx.stroke();
+            break;
+            
+        case 'ARCHER':
+            // Draw hood
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw body
+            ctx.fillStyle = primaryColor;
+            ctx.fillRect(width/2 - 5, height/2, 10, 15);
+            
+            // Draw bow
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(width/2 + 10, height/2, 8, -Math.PI/2, Math.PI/2);
+            ctx.stroke();
+            
+            // Draw arrow
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 5, height/2);
+            ctx.lineTo(width/2 + 15, height/2);
+            ctx.stroke();
+            break;
+            
+        case 'CAVALRY':
+            // Draw horse body
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.ellipse(width/2, height/2 + 5, 15, 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw rider
+            ctx.fillStyle = primaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw lance
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 5, height/2 - 5);
+            ctx.lineTo(width/2 + 20, height/2 - 15);
+            ctx.stroke();
+            break;
+            
+        case 'TANK':
+            // Draw tank body
+            ctx.fillStyle = secondaryColor;
+            ctx.fillRect(width/2 - 15, height/2, 30, 15);
+            
+            // Draw tank turret
+            ctx.fillStyle = primaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw tank cannon
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 - 5);
+            ctx.lineTo(width/2 + 20, height/2 - 5);
+            ctx.stroke();
+            break;
+            
+        case 'WORKER':
+            // Draw hard hat
+            ctx.fillStyle = '#ffcc00';
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw body
+            ctx.fillStyle = primaryColor;
+            ctx.fillRect(width/2 - 5, height/2, 10, 15);
+            
+            // Draw pickaxe
+            ctx.strokeStyle = '#cccccc';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 5, height/2);
+            ctx.lineTo(width/2 + 15, height/2 - 10);
+            ctx.lineTo(width/2 + 20, height/2 - 5);
+            ctx.stroke();
+            break;
+    }
+    
+    // Return the image data URL
+    return canvas.toDataURL('image/png');
+}
+
+/**
+ * Generate a detailed building image
+ */
+function generateBuildingImage(buildingType, playerColor = null) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set dimensions
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Base colors for different building types
+    let baseColor, roofColor, detailColor;
+    
+    switch(buildingType) {
+        case 'BASE':
+            baseColor = '#666699';
+            roofColor = '#333366';
+            detailColor = '#9999cc';
+            break;
+        case 'BARRACKS':
+            baseColor = '#996666';
+            roofColor = '#663333';
+            detailColor = '#cc9999';
+            break;
+        case 'TOWER':
+            baseColor = '#669966';
+            roofColor = '#336633';
+            detailColor = '#99cc99';
+            break;
+        case 'FARM':
+            baseColor = '#999966';
+            roofColor = '#666633';
+            detailColor = '#cccc99';
+            break;
+        case 'MINE':
+            baseColor = '#666666';
+            roofColor = '#333333';
+            detailColor = '#999999';
+            break;
+        default:
+            baseColor = '#666699';
+            roofColor = '#333366';
+            detailColor = '#9999cc';
+    }
+    
+    // Apply player color if provided
+    if (playerColor) {
+        switch(playerColor) {
+            case 'red':
+                baseColor = '#cc3333';
+                roofColor = '#661a1a';
+                detailColor = '#ff9999';
+                break;
+            case 'blue':
+                baseColor = '#3366cc';
+                roofColor = '#1a3366';
+                detailColor = '#99ccff';
+                break;
+            case 'green':
+                baseColor = '#33cc33';
+                roofColor = '#1a661a';
+                detailColor = '#99ff99';
+                break;
+            case 'yellow':
+                baseColor = '#cccc33';
+                roofColor = '#66661a';
+                detailColor = '#ffff99';
+                break;
+        }
+    }
+    
+    // Draw isometric building based on type
+    switch(buildingType) {
+        case 'BASE':
+            // Draw main building (castle-like)
+            drawIsometricBuilding(width/2, height/2, 40, 30, baseColor, roofColor);
+            
+            // Draw towers at corners
+            drawIsometricBuilding(width/2 - 15, height/2 - 10, 10, 20, baseColor, roofColor);
+            drawIsometricBuilding(width/2 + 15, height/2 - 10, 10, 20, baseColor, roofColor);
+            
+            // Draw flag on top
+            ctx.fillStyle = playerColor || detailColor;
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 - 25);
+            ctx.lineTo(width/2 + 10, height/2 - 20);
+            ctx.lineTo(width/2, height/2 - 15);
+            ctx.closePath();
+            ctx.fill();
+            break;
+            
+        case 'BARRACKS':
+            // Draw main building
+            drawIsometricBuilding(width/2, height/2, 40, 20, baseColor, roofColor);
+            
+            // Draw entrance
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 + 5);
+            ctx.lineTo(width/2 + 5, height/2 + 2);
+            ctx.lineTo(width/2 + 5, height/2 + 10);
+            ctx.lineTo(width/2, height/2 + 13);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw crossed swords emblem
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 10, height/2 - 5);
+            ctx.lineTo(width/2 + 10, height/2 + 5);
+            ctx.moveTo(width/2 + 10, height/2 - 5);
+            ctx.lineTo(width/2 - 10, height/2 + 5);
+            ctx.stroke();
+            break;
+            
+        case 'TOWER':
+            // Draw tower base
+            drawIsometricBuilding(width/2, height/2 + 5, 20, 30, baseColor, roofColor);
+            
+            // Draw tower top (pointed roof)
+            ctx.fillStyle = roofColor;
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 - 20);
+            ctx.lineTo(width/2 + 10, height/2 - 5);
+            ctx.lineTo(width/2, height/2 + 5);
+            ctx.lineTo(width/2 - 10, height/2 - 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw windows
+            ctx.fillStyle = detailColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+            
+        case 'FARM':
+            // Draw main building (barn-like)
+            drawIsometricBuilding(width/2, height/2, 35, 20, baseColor, roofColor);
+            
+            // Draw field
+            ctx.fillStyle = '#cccc00';
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 20, height/2 + 10);
+            ctx.lineTo(width/2 - 5, height/2 + 2);
+            ctx.lineTo(width/2 + 10, height/2 + 10);
+            ctx.lineTo(width/2 - 5, height/2 + 18);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw crop rows
+            ctx.strokeStyle = '#666600';
+            ctx.lineWidth = 1;
+            for (let i = -15; i <= 5; i += 5) {
+                ctx.beginPath();
+                ctx.moveTo(width/2 + i, height/2 + 5 + i/2);
+                ctx.lineTo(width/2 + i + 15, height/2 + 5 + i/2 + 7.5);
+                ctx.stroke();
+            }
+            break;
+            
+        case 'MINE':
+            // Draw mine entrance (mountain-like)
+            ctx.fillStyle = '#666666';
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/4);
+            ctx.lineTo(3*width/4, height/2);
+            ctx.lineTo(width/2, 3*height/4);
+            ctx.lineTo(width/4, height/2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw entrance
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 15);
+            ctx.lineTo(width/2 - 10, height/2 + 15);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw support beams
+            ctx.strokeStyle = '#996633';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 10, height/2 + 5);
+            ctx.lineTo(width/2 - 10, height/2 + 15);
+            ctx.moveTo(width/2 + 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 15);
+            ctx.moveTo(width/2 - 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 5);
+            ctx.stroke();
+            break;
+    }
+    
+    // Return the image data URL
+    return canvas.toDataURL('image/png');
+}
+
+/**
+ * Helper function to draw an isometric building
+ */
+function drawIsometricBuilding(x, y, width, height, baseColor, roofColor) {
+    // Calculate dimensions
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    const roofHeight = height / 3;
+    
+    // Draw roof (top face)
+    ctx.fillStyle = roofColor;
+    ctx.beginPath();
+    ctx.moveTo(x, y - halfHeight - roofHeight);
+    ctx.lineTo(x + halfWidth, y - halfHeight);
+    ctx.lineTo(x, y - halfHeight + halfWidth);
+    ctx.lineTo(x - halfWidth, y - halfHeight);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw right face
+    ctx.fillStyle = darkenColor(baseColor, 0.7);
+    ctx.beginPath();
+    ctx.moveTo(x + halfWidth, y - halfHeight);
+    ctx.lineTo(x, y - halfHeight + halfWidth);
+    ctx.lineTo(x, y + halfHeight);
+    ctx.lineTo(x + halfWidth, y);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw left face
+    ctx.fillStyle = darkenColor(baseColor, 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x - halfWidth, y - halfHeight);
+    ctx.lineTo(x, y - halfHeight + halfWidth);
+    ctx.lineTo(x, y + halfHeight);
+    ctx.lineTo(x - halfWidth, y);
+    ctx.closePath();
+    ctx.fill();
+}
+
+/**
+ * Helper function to darken a color
+ */
+function darkenColor(color, factor) {
+    // Convert hex to RGB
+    let r, g, b;
+    if (color.startsWith('#')) {
+        const hex = color.substring(1);
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+    } else {
+        return color; // Can't darken
+    }
+    
+    // Darken
+    r = Math.floor(r * factor);
+    g = Math.floor(g * factor);
+    b = Math.floor(b * factor);
+    
+    // Convert back to hex
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+/**
+ * Function to save an image
+ */
+function saveImage(dataUrl, filename) {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+/**
+ * Generate and save unit images
+ */
+function generateUnitImages() {
+    unitTypes.forEach(unitType => {
+        const imageData = generateUnitImage(unitType);
+        saveImage(imageData, `${unitType.toLowerCase()}.png`);
+        console.log(`Generated unit image: ${unitType.toLowerCase()}.png`);
+    });
+}
+
+/**
+ * Generate and save building images
+ */
+function generateBuildingImages() {
+    buildingTypes.forEach(buildingType => {
+        // Generate default building image
+        const imageData = generateBuildingImage(buildingType);
+        saveImage(imageData, `${buildingType.toLowerCase()}.png`);
+        console.log(`Generated building image: ${buildingType.toLowerCase()}.png`);
+        
+        // Generate player-colored variants
+        playerColors.forEach(color => {
+            const coloredImageData = generateBuildingImage(buildingType, color);
+            saveImage(coloredImageData, `${buildingType.toLowerCase()}_${color}.png`);
+            console.log(`Generated building image: ${buildingType.toLowerCase()}_${color}.png`);
+        });
+    });
+}
+
+// Run the generation functions
+console.log('Generating detailed images...');
+generateUnitImages();
+generateBuildingImages();
+console.log('Image generation complete!');
+
+// Instructions for use
+console.log('\nInstructions:');
+console.log('1. Save these images to your assets folder:');
+console.log('   - Unit images: public/images/units/');
+console.log('   - Building images: public/images/buildings/');
+console.log('2. The game will automatically use these images');  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generateImages.js 
+======================================== 
+ 
+const fs = require('fs');
+const path = require('path');
+const { createCanvas } = require('canvas');
+
+// Create directories if they don't exist
+const unitsDir = path.join(__dirname, '../../public/images/units');
+const buildingsDir = path.join(__dirname, '../../public/images/buildings');
+
+if (!fs.existsSync(unitsDir)) {
+    fs.mkdirSync(unitsDir, { recursive: true });
+}
+
+if (!fs.existsSync(buildingsDir)) {
+    fs.mkdirSync(buildingsDir, { recursive: true });
+}
+
+// Create a canvas
+const canvas = createCanvas(64, 64);
+const ctx = canvas.getContext('2d');
+
+// Unit types to generate
+const unitTypes = ['SOLDIER', 'ARCHER', 'CAVALRY', 'TANK', 'WORKER'];
+
+// Building types to generate
+const buildingTypes = ['BASE', 'BARRACKS', 'TOWER', 'FARM', 'MINE'];
+
+// Player colors
+const playerColors = ['red', 'blue', 'green', 'yellow'];
+
+// Function to generate a unit image
+function generateUnitImage(unitType) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set dimensions
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Base colors for different unit types
+    let primaryColor, secondaryColor, detailColor;
+    
+    switch(unitType) {
+        case 'SOLDIER':
+            primaryColor = '#3366cc';
+            secondaryColor = '#1a3366';
+            detailColor = '#99ccff';
+            break;
+        case 'ARCHER':
+            primaryColor = '#33cc33';
+            secondaryColor = '#1a661a';
+            detailColor = '#99ff99';
+            break;
+        case 'CAVALRY':
+            primaryColor = '#cc3333';
+            secondaryColor = '#661a1a';
+            detailColor = '#ff9999';
+            break;
+        case 'TANK':
+            primaryColor = '#666666';
+            secondaryColor = '#333333';
+            detailColor = '#cccccc';
+            break;
+        case 'WORKER':
+            primaryColor = '#cc9933';
+            secondaryColor = '#664d1a';
+            detailColor = '#ffcc99';
+            break;
+        default:
+            primaryColor = '#3366cc';
+            secondaryColor = '#1a3366';
+            detailColor = '#99ccff';
+    }
+    
+    // Draw isometric unit base
+    ctx.fillStyle = primaryColor;
+    
+    // Draw a diamond shape for the base
+    ctx.beginPath();
+    ctx.moveTo(width/2, height/4); // Top
+    ctx.lineTo(3*width/4, height/2); // Right
+    ctx.lineTo(width/2, 3*height/4); // Bottom
+    ctx.lineTo(width/4, height/2); // Left
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw unit details based on type
+    switch(unitType) {
+        case 'SOLDIER':
+            // Draw helmet
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw body
+            ctx.fillStyle = primaryColor;
+            ctx.fillRect(width/2 - 5, height/2, 10, 15);
+            
+            // Draw sword
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 8, height/2);
+            ctx.lineTo(width/2 + 15, height/2 - 10);
+            ctx.stroke();
+            break;
+            
+        case 'ARCHER':
+            // Draw hood
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw body
+            ctx.fillStyle = primaryColor;
+            ctx.fillRect(width/2 - 5, height/2, 10, 15);
+            
+            // Draw bow
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(width/2 + 10, height/2, 8, -Math.PI/2, Math.PI/2);
+            ctx.stroke();
+            
+            // Draw arrow
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 5, height/2);
+            ctx.lineTo(width/2 + 15, height/2);
+            ctx.stroke();
+            break;
+            
+        case 'CAVALRY':
+            // Draw horse body
+            ctx.fillStyle = secondaryColor;
+            ctx.beginPath();
+            ctx.ellipse(width/2, height/2 + 5, 15, 10, 0, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw rider
+            ctx.fillStyle = primaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw lance
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 5, height/2 - 5);
+            ctx.lineTo(width/2 + 20, height/2 - 15);
+            ctx.stroke();
+            break;
+            
+        case 'TANK':
+            // Draw tank body
+            ctx.fillStyle = secondaryColor;
+            ctx.fillRect(width/2 - 15, height/2, 30, 15);
+            
+            // Draw tank turret
+            ctx.fillStyle = primaryColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 10, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw tank cannon
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 - 5);
+            ctx.lineTo(width/2 + 20, height/2 - 5);
+            ctx.stroke();
+            break;
+            
+        case 'WORKER':
+            // Draw hard hat
+            ctx.fillStyle = '#ffcc00';
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 8, 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Draw body
+            ctx.fillStyle = primaryColor;
+            ctx.fillRect(width/2 - 5, height/2, 10, 15);
+            
+            // Draw pickaxe
+            ctx.strokeStyle = '#cccccc';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 + 5, height/2);
+            ctx.lineTo(width/2 + 15, height/2 - 10);
+            ctx.lineTo(width/2 + 20, height/2 - 5);
+            ctx.stroke();
+            break;
+    }
+    
+    // Return the canvas
+    return canvas;
+}
+
+// Function to generate a building image
+function generateBuildingImage(buildingType, playerColor = null) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set dimensions
+    const width = canvas.width;
+    const height = canvas.height;
+    
+    // Base colors for different building types
+    let baseColor, roofColor, detailColor;
+    
+    switch(buildingType) {
+        case 'BASE':
+            baseColor = '#666699';
+            roofColor = '#333366';
+            detailColor = '#9999cc';
+            break;
+        case 'BARRACKS':
+            baseColor = '#996666';
+            roofColor = '#663333';
+            detailColor = '#cc9999';
+            break;
+        case 'TOWER':
+            baseColor = '#669966';
+            roofColor = '#336633';
+            detailColor = '#99cc99';
+            break;
+        case 'FARM':
+            baseColor = '#999966';
+            roofColor = '#666633';
+            detailColor = '#cccc99';
+            break;
+        case 'MINE':
+            baseColor = '#666666';
+            roofColor = '#333333';
+            detailColor = '#999999';
+            break;
+        default:
+            baseColor = '#666699';
+            roofColor = '#333366';
+            detailColor = '#9999cc';
+    }
+    
+    // Apply player color if provided
+    if (playerColor) {
+        switch(playerColor) {
+            case 'red':
+                baseColor = '#cc3333';
+                roofColor = '#661a1a';
+                detailColor = '#ff9999';
+                break;
+            case 'blue':
+                baseColor = '#3366cc';
+                roofColor = '#1a3366';
+                detailColor = '#99ccff';
+                break;
+            case 'green':
+                baseColor = '#33cc33';
+                roofColor = '#1a661a';
+                detailColor = '#99ff99';
+                break;
+            case 'yellow':
+                baseColor = '#cccc33';
+                roofColor = '#66661a';
+                detailColor = '#ffff99';
+                break;
+        }
+    }
+    
+    // Draw isometric building based on type
+    switch(buildingType) {
+        case 'BASE':
+            // Draw main building (castle-like)
+            drawIsometricBuilding(width/2, height/2, 40, 30, baseColor, roofColor);
+            
+            // Draw towers at corners
+            drawIsometricBuilding(width/2 - 15, height/2 - 10, 10, 20, baseColor, roofColor);
+            drawIsometricBuilding(width/2 + 15, height/2 - 10, 10, 20, baseColor, roofColor);
+            
+            // Draw flag on top
+            ctx.fillStyle = playerColor || detailColor;
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 - 25);
+            ctx.lineTo(width/2 + 10, height/2 - 20);
+            ctx.lineTo(width/2, height/2 - 15);
+            ctx.closePath();
+            ctx.fill();
+            break;
+            
+        case 'BARRACKS':
+            // Draw main building
+            drawIsometricBuilding(width/2, height/2, 40, 20, baseColor, roofColor);
+            
+            // Draw entrance
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 + 5);
+            ctx.lineTo(width/2 + 5, height/2 + 2);
+            ctx.lineTo(width/2 + 5, height/2 + 10);
+            ctx.lineTo(width/2, height/2 + 13);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw crossed swords emblem
+            ctx.strokeStyle = detailColor;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 10, height/2 - 5);
+            ctx.lineTo(width/2 + 10, height/2 + 5);
+            ctx.moveTo(width/2 + 10, height/2 - 5);
+            ctx.lineTo(width/2 - 10, height/2 + 5);
+            ctx.stroke();
+            break;
+            
+        case 'TOWER':
+            // Draw tower base
+            drawIsometricBuilding(width/2, height/2 + 5, 20, 30, baseColor, roofColor);
+            
+            // Draw tower top (pointed roof)
+            ctx.fillStyle = roofColor;
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/2 - 20);
+            ctx.lineTo(width/2 + 10, height/2 - 5);
+            ctx.lineTo(width/2, height/2 + 5);
+            ctx.lineTo(width/2 - 10, height/2 - 5);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw windows
+            ctx.fillStyle = detailColor;
+            ctx.beginPath();
+            ctx.arc(width/2, height/2 - 5, 3, 0, Math.PI * 2);
+            ctx.fill();
+            break;
+            
+        case 'FARM':
+            // Draw main building (barn-like)
+            drawIsometricBuilding(width/2, height/2, 35, 20, baseColor, roofColor);
+            
+            // Draw field
+            ctx.fillStyle = '#cccc00';
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 20, height/2 + 10);
+            ctx.lineTo(width/2 - 5, height/2 + 2);
+            ctx.lineTo(width/2 + 10, height/2 + 10);
+            ctx.lineTo(width/2 - 5, height/2 + 18);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw crop rows
+            ctx.strokeStyle = '#666600';
+            ctx.lineWidth = 1;
+            for (let i = -15; i <= 5; i += 5) {
+                ctx.beginPath();
+                ctx.moveTo(width/2 + i, height/2 + 5 + i/2);
+                ctx.lineTo(width/2 + i + 15, height/2 + 5 + i/2 + 7.5);
+                ctx.stroke();
+            }
+            break;
+            
+        case 'MINE':
+            // Draw mine entrance (mountain-like)
+            ctx.fillStyle = '#666666';
+            ctx.beginPath();
+            ctx.moveTo(width/2, height/4);
+            ctx.lineTo(3*width/4, height/2);
+            ctx.lineTo(width/2, 3*height/4);
+            ctx.lineTo(width/4, height/2);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw entrance
+            ctx.fillStyle = '#000000';
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 15);
+            ctx.lineTo(width/2 - 10, height/2 + 15);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Draw support beams
+            ctx.strokeStyle = '#996633';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(width/2 - 10, height/2 + 5);
+            ctx.lineTo(width/2 - 10, height/2 + 15);
+            ctx.moveTo(width/2 + 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 15);
+            ctx.moveTo(width/2 - 10, height/2 + 5);
+            ctx.lineTo(width/2 + 10, height/2 + 5);
+            ctx.stroke();
+            break;
+    }
+    
+    // Return the canvas
+    return canvas;
+}
+
+// Helper function to draw an isometric building
+function drawIsometricBuilding(x, y, width, height, baseColor, roofColor) {
+    // Calculate dimensions
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    const roofHeight = height / 3;
+    
+    // Draw roof (top face)
+    ctx.fillStyle = roofColor;
+    ctx.beginPath();
+    ctx.moveTo(x, y - halfHeight - roofHeight);
+    ctx.lineTo(x + halfWidth, y - halfHeight);
+    ctx.lineTo(x, y - halfHeight + halfWidth);
+    ctx.lineTo(x - halfWidth, y - halfHeight);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw right face
+    ctx.fillStyle = darkenColor(baseColor, 0.7);
+    ctx.beginPath();
+    ctx.moveTo(x + halfWidth, y - halfHeight);
+    ctx.lineTo(x, y - halfHeight + halfWidth);
+    ctx.lineTo(x, y + halfHeight);
+    ctx.lineTo(x + halfWidth, y);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Draw left face
+    ctx.fillStyle = darkenColor(baseColor, 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x - halfWidth, y - halfHeight);
+    ctx.lineTo(x, y - halfHeight + halfWidth);
+    ctx.lineTo(x, y + halfHeight);
+    ctx.lineTo(x - halfWidth, y);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// Helper function to darken a color
+function darkenColor(color, factor) {
+    // Convert hex to RGB
+    let r, g, b;
+    if (color.startsWith('#')) {
+        const hex = color.substring(1);
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+    } else {
+        return color; // Can't darken
+    }
+    
+    // Darken
+    r = Math.floor(r * factor);
+    g = Math.floor(g * factor);
+    b = Math.floor(b * factor);
+    
+    // Convert back to hex
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Function to save an image
+function saveImage(canvas, filename) {
+    const buffer = canvas.toBuffer('image/png');
+    fs.writeFileSync(filename, buffer);
+    console.log(`Generated: ${filename}`);
+}
+
+// Generate and save unit images
+function generateUnitImages() {
+    console.log('Generating unit images...');
+    
+    unitTypes.forEach(unitType => {
+        const canvas = generateUnitImage(unitType);
+        const filename = path.join(unitsDir, `${unitType.toLowerCase()}.png`);
+        saveImage(canvas, filename);
+    });
+    
+    console.log('Unit image generation complete!');
+}
+
+// Generate and save building images
+function generateBuildingImages() {
+    console.log('Generating building images...');
+    
+    buildingTypes.forEach(buildingType => {
+        // Generate default building image
+        const canvas = generateBuildingImage(buildingType);
+        const filename = path.join(buildingsDir, `${buildingType.toLowerCase()}.png`);
+        saveImage(canvas, filename);
+        
+        // Generate player-colored variants
+        playerColors.forEach(color => {
+            const coloredCanvas = generateBuildingImage(buildingType, color);
+            const coloredFilename = path.join(buildingsDir, `${buildingType.toLowerCase()}_${color}.png`);
+            saveImage(coloredCanvas, coloredFilename);
+        });
+    });
+    
+    console.log('Building image generation complete!');
+}
+
+// Generate all images
+function generateAllImages() {
+    generateUnitImages();
+    generateBuildingImages();
+}
+
+// Run the generator
+generateAllImages();  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generatePlaceholderImages.js 
+======================================== 
+ 
+/**
+ * Script to generate placeholder images for units and buildings
+ * Run this script to create basic placeholder images until proper assets are available
+ */
+
+// Create a canvas element
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+
+// Set canvas dimensions
+canvas.width = 64;
+canvas.height = 64;
+
+// Unit types to generate
+const unitTypes = ['SOLDIER', 'ARCHER', 'CAVALRY', 'TANK', 'WORKER'];
+
+// Building types to generate
+const buildingTypes = ['BASE', 'BARRACKS', 'TOWER', 'FARM', 'MINE'];
+
+// Player colors
+const playerColors = ['red', 'blue', 'green', 'yellow'];
+
+// Function to generate a unit image
+function generateUnitImage(unitType) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set background color based on unit type
+    let color;
+    switch(unitType) {
+        case 'SOLDIER': color = '#3366cc'; break;
+        case 'ARCHER': color = '#33cc33'; break;
+        case 'CAVALRY': color = '#cc3333'; break;
+        case 'TANK': color = '#666666'; break;
+        case 'WORKER': color = '#cc9933'; break;
+        default: color = '#3366cc';
+    }
+    
+    // Draw isometric unit shape
+    ctx.fillStyle = color;
+    
+    // Draw a diamond shape for the base
+    ctx.beginPath();
+    ctx.moveTo(32, 16); // Top
+    ctx.lineTo(48, 32); // Right
+    ctx.lineTo(32, 48); // Bottom
+    ctx.lineTo(16, 32); // Left
+    ctx.closePath();
+    ctx.fill();
+    
+    // Add details based on unit type
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Add unit type initial
+    ctx.fillText(unitType.charAt(0), 32, 32);
+    
+    // Return the image data URL
+    return canvas.toDataURL('image/png');
+}
+
+// Function to generate a building image
+function generateBuildingImage(buildingType, playerColor = null) {
+    // Clear canvas
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Set base color based on building type
+    let baseColor;
+    switch(buildingType) {
+        case 'BASE': baseColor = '#666699'; break;
+        case 'BARRACKS': baseColor = '#996666'; break;
+        case 'TOWER': baseColor = '#669966'; break;
+        case 'FARM': baseColor = '#999966'; break;
+        case 'MINE': baseColor = '#666666'; break;
+        default: baseColor = '#666699';
+    }
+    
+    // Apply player color if provided
+    if (playerColor) {
+        switch(playerColor) {
+            case 'red': baseColor = '#cc3333'; break;
+            case 'blue': baseColor = '#3366cc'; break;
+            case 'green': baseColor = '#33cc33'; break;
+            case 'yellow': baseColor = '#cccc33'; break;
+        }
+    }
+    
+    // Draw isometric building
+    // Base
+    ctx.fillStyle = baseColor;
+    ctx.beginPath();
+    ctx.moveTo(32, 16); // Top
+    ctx.lineTo(48, 32); // Right
+    ctx.lineTo(32, 48); // Bottom
+    ctx.lineTo(16, 32); // Left
+    ctx.closePath();
+    ctx.fill();
+    
+    // Right face (darker)
+    ctx.fillStyle = darkenColor(baseColor, 0.7);
+    ctx.beginPath();
+    ctx.moveTo(32, 48); // Bottom center
+    ctx.lineTo(48, 32); // Right middle
+    ctx.lineTo(48, 40); // Right bottom
+    ctx.lineTo(32, 56); // Bottom
+    ctx.closePath();
+    ctx.fill();
+    
+    // Left face (darkest)
+    ctx.fillStyle = darkenColor(baseColor, 0.5);
+    ctx.beginPath();
+    ctx.moveTo(32, 48); // Bottom center
+    ctx.lineTo(16, 32); // Left middle
+    ctx.lineTo(16, 40); // Left bottom
+    ctx.lineTo(32, 56); // Bottom
+    ctx.closePath();
+    ctx.fill();
+    
+    // Add details based on building type
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '10px Arial';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // Add building type initial
+    ctx.fillText(buildingType.charAt(0), 32, 32);
+    
+    // Return the image data URL
+    return canvas.toDataURL('image/png');
+}
+
+// Helper function to darken a color
+function darkenColor(color, factor) {
+    // Convert hex to RGB
+    let r, g, b;
+    if (color.startsWith('#')) {
+        const hex = color.substring(1);
+        r = parseInt(hex.substring(0, 2), 16);
+        g = parseInt(hex.substring(2, 4), 16);
+        b = parseInt(hex.substring(4, 6), 16);
+    } else {
+        return color; // Can't darken
+    }
+    
+    // Darken
+    r = Math.floor(r * factor);
+    g = Math.floor(g * factor);
+    b = Math.floor(b * factor);
+    
+    // Convert back to hex
+    return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+}
+
+// Function to save an image
+function saveImage(dataUrl, filename) {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+// Generate and save unit images
+function generateUnitImages() {
+    unitTypes.forEach(unitType => {
+        const imageData = generateUnitImage(unitType);
+        saveImage(imageData, `${unitType.toLowerCase()}.png`);
+        console.log(`Generated unit image: ${unitType.toLowerCase()}.png`);
+    });
+}
+
+// Generate and save building images
+function generateBuildingImages() {
+    buildingTypes.forEach(buildingType => {
+        // Generate default building image
+        const imageData = generateBuildingImage(buildingType);
+        saveImage(imageData, `${buildingType.toLowerCase()}.png`);
+        console.log(`Generated building image: ${buildingType.toLowerCase()}.png`);
+        
+        // Generate player-colored variants
+        playerColors.forEach(color => {
+            const coloredImageData = generateBuildingImage(buildingType, color);
+            saveImage(coloredImageData, `${buildingType.toLowerCase()}_${color}.png`);
+            console.log(`Generated building image: ${buildingType.toLowerCase()}_${color}.png`);
+        });
+    });
+}
+
+// Run the generation functions
+console.log('Generating placeholder images...');
+generateUnitImages();
+generateBuildingImages();
+console.log('Image generation complete!');
+
+// Instructions for use
+console.log('\nInstructions:');
+console.log('1. Save these images to your assets folder:');
+console.log('   - Unit images: assets/units/');
+console.log('   - Building images: assets/buildings/');
+console.log('2. Make sure the folder structure exists');
+console.log('3. The game will automatically use these images');  
  
  
 ======================================== 

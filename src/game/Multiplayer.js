@@ -221,40 +221,27 @@ class Multiplayer {
     }
     
     /**
-     * Handle game state updates from server
+     * Handle game update from server
      */
     onGameUpdate(data) {
-        this.lastServerUpdate = Date.now();
-        
-        // Store previous positions before updating
-        this.game.entities.forEach(entity => {
-            if (entity.type === 'unit') {
-                // Store current position as previous position
-                entity.prevX = entity.x;
-                entity.prevY = entity.y;
-                
-                // Initialize interpolation time
-                entity.interpolationStartTime = Date.now();
-            }
-        });
-        
-        // Update entities from server data
-        this.game.processServerEntities(data.entities);
-        
-        // Store server positions for interpolation
-        this.game.entities.forEach(entity => {
-            if (entity.type === 'unit') {
-                // Store server position for interpolation
-                entity.serverX = entity.x;
-                entity.serverY = entity.y;
-                
-                // Restore current position to previous position for smooth interpolation
-                if (entity.prevX !== undefined && entity.prevY !== undefined) {
-                    entity.x = entity.prevX;
-                    entity.y = entity.prevY;
+        const currentTime = Date.now();
+
+        Object.values(data.entities).forEach(serverEntity => {
+            let localEntity = this.game.entities.find(e => e.id === serverEntity.id);
+
+            if (localEntity) {
+                if (localEntity instanceof Unit) {
+                    // Explicitly store previous positions for interpolation
+                    localEntity.prevX = localEntity.x;
+                    localEntity.prevY = localEntity.y;
+                    localEntity.serverX = serverEntity.x;
+                    localEntity.serverY = serverEntity.y;
+                    localEntity.interpolationStartTime = currentTime;
                 }
             }
         });
+        
+        this.game.processServerEntities(data.entities);
     }
     
     /**
@@ -441,45 +428,25 @@ class Multiplayer {
     }
     
     /**
-     * Update method called each frame
+     * Update multiplayer state
      */
     update(deltaTime) {
-        // Interpolate entity positions between server updates
-        if (this.connected) {
-            const currentTime = Date.now();
-            
-            this.game.entities.forEach(entity => {
-                // Only interpolate units, not buildings
-                if (entity.type === 'unit' && entity.serverX !== undefined && entity.serverY !== undefined) {
-                    // Calculate interpolation progress
-                    const interpolationDuration = 100; // ms, adjust based on server update frequency
-                    const timeSinceUpdate = entity.interpolationStartTime ? 
-                        currentTime - entity.interpolationStartTime : 0;
-                    
-                    // Calculate interpolation factor (0 to 1)
-                    let t = Math.min(timeSinceUpdate / interpolationDuration, 1.0);
-                    
-                    // Apply easing function for smoother movement (ease-out)
-                    t = 1 - Math.pow(1 - t, 2);
-                    
-                    // Apply interpolation
-                    if (t < 1.0) {
-                        // Interpolate between current position and server position
-                        entity.x = entity.prevX + (entity.serverX - entity.prevX) * t;
-                        entity.y = entity.prevY + (entity.serverY - entity.prevY) * t;
-                    } else {
-                        // Reached target position
-                        entity.x = entity.serverX;
-                        entity.y = entity.serverY;
-                    }
-                    
-                    // If unit is not moving, ensure it's exactly at the server position
-                    if (!entity.isMoving && t >= 1.0) {
-                        entity.x = entity.serverX;
-                        entity.y = entity.serverY;
-                    }
+        const interpolationDuration = 100; // Time between server updates in ms
+        const currentTime = Date.now();
+
+        this.game.entities.forEach(entity => {
+            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
+                const elapsed = currentTime - entity.interpolationStartTime;
+                const t = Math.min(elapsed / interpolationDuration, 1); // interpolationDuration ~100ms
+
+                entity.x = entity.prevX + (entity.serverX - entity.prevX) * t;
+                entity.y = entity.prevY + (entity.serverY - entity.prevY) * t;
+
+                if (t >= 1) {
+                    entity.prevX = entity.serverX;
+                    entity.prevY = entity.serverY;
                 }
-            });
-        }
+            }
+        });
     }
 } 

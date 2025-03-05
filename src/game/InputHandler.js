@@ -106,6 +106,7 @@ class InputHandler {
             
             // Check if clicked on an entity
             const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+            console.log(`Mouse down at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
             this.game.handleEntitySelection(worldPos.x, worldPos.y);
         }
         // Right mouse button
@@ -131,6 +132,7 @@ class InputHandler {
                 // Finalize selection box
                 const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
                 const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
+                console.log(`Selection box from (${startWorld.x.toFixed(2)}, ${startWorld.y.toFixed(2)}) to (${endWorld.x.toFixed(2)}, ${endWorld.y.toFixed(2)})`);
                 this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
                 this.isSelecting = false;
             }

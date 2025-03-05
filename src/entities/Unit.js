@@ -88,13 +88,14 @@ class Unit extends Entity {
      */
     moveTowardsTarget(deltaTime) {
         // Calculate direction to target
-        const center = this.getCenter();
-        const dx = this.targetX - center.x;
-        const dy = this.targetY - center.y;
+        const dx = this.targetX - this.x;
+        const dy = this.targetY - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
         
         // If we're close enough to the target, stop moving
-        if (distance < 5) {
+        if (distance < 1) {
+            this.x = this.targetX;
+            this.y = this.targetY;
             this.isMoving = false;
             this.targetX = null;
             this.targetY = null;
@@ -102,7 +103,7 @@ class Unit extends Entity {
         }
         
         // Normalize direction and apply speed
-        const moveSpeed = this.speed * (deltaTime / 1000);
+        const moveSpeed = Config.UNIT_SPEED * (deltaTime / 1000);
         const normalizedDx = dx / distance;
         const normalizedDy = dy / distance;
         

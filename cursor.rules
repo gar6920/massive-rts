@@ -1,0 +1,142 @@
+# Cursor Rules for Massive RTS Game Development
+
+- No packages can be installed locally, all dependencies must be set in the code of the game
+
+## 🚩 Project Context and Goals
+- This is a simplified, browser-based RTS game prototype.
+- Short match length (1-hour cycles).
+- Massively multiplayer with drop-in/drop-out capability.
+- Cooperative gameplay: Humans vs. AI-controlled opponents.
+- Adaptive difficulty based on human team performance.
+- AI-generated variation (maps, NPCs, units) via external APIs.
+
+## 🎯 Current Development Phase (Phase 1)
+- Create a basic, Warcraft-like top-down map.
+- Render a procedurally generated terrain on HTML5 Canvas.
+- Implement a single controllable unit with camera panning.
+
+## 🧑‍💻 Coding Style and Standards
+- Use modern JavaScript (ES6+) or TypeScript (preferred).
+- Classes and methods should be modular, small, and clear.
+- Favor readability and clarity over cleverness.
+- Consistently comment on purpose, not obvious implementation details.
+
+## 🗃️ Project File Structure (Follow Closely)
+- Public assets (HTML, CSS, static files): `/public`
+- Source code organized clearly under `/src`
+
+## 📐 Class and Object Design Principles
+- Classes should represent clearly defined responsibilities.
+- Maintain clear separation of concerns:
+- Game logic vs. rendering vs. input handling.
+- No tight coupling; pass dependencies explicitly.
+- Encapsulate logic within relevant classes.
+
+## 🖥️ Rendering and Performance
+- Render only visible portions of the map to ensure performance.
+- Keep rendering logic minimal; separate heavy computation from draw cycles.
+- Optimize redraws by updating only what has changed.
+
+## 🧩 AI Integration Guidelines (Future)
+- Mock AI API calls locally initially (procedural/random generation).
+- Clearly mark future AI integration points (`// AI_TODO:`).
+
+## ✅ Task Completion Criteria
+- Clearly state completion criteria for any provided task.
+- Verify all provided code meets stated project goals before completing a task.
+
+## 🧪 Testing and Validation
+- Include basic test cases when implementing new features.
+- Recommend Jest for JavaScript/TypeScript tests.
+- Clearly suggest manual testing steps when applicable.
+
+## ⚠️ Common Pitfalls to Avoid
+- Avoid premature optimization; focus on functionality first.
+- Avoid complex state management early on—start simply.
+- Avoid unnecessary dependencies; stick to vanilla JS or minimal libraries.
+
+## 📝 Code Comments and Documentation
+- Comment all class methods succinctly (single-line description above method).
+- Document key decision points or complex logic clearly inline.
+- Update README.md whenever major changes or additions occur.
+
+## 🚀 Scalability and Expansion
+- Remind user of scalability concerns (performance bottlenecks, efficient data structures).
+- Clearly mark areas that might require future refactoring for scalability.
+
+## 🔄 Iterative Development Mindset
+- Encourage small, iterative improvements over large, sweeping changes.
+- Clearly communicate next steps upon task completion.
+
+## 🚧 Error Handling and Robustness
+- Always provide basic error handling, especially around user inputs and interactions.
+
+## 🔎 Thought Process Checklist (Before Providing Code)
+1. Does the provided code fulfill the requested functionality clearly and simply?
+2. Is the code structure consistent with the established file and class structure?
+3. Are there clear, actionable next steps provided?
+4. Is the scalability considered?
+5. Are instructions for testing and validation clear?
+
+## 🔗 Reference and Reuse
+- Always reference and reuse existing project code where possible.
+
+## Ignore Patterns
+- **/node_modules/**
+- **/dist/**
+- **/.git/**
+
+DO NOT EVER CREATE ANY NEW FILES UNLESS SPECIFIED BY THE USER.
+
+## PowerShell Best Practices and Common Issues
+
+When working with PowerShell, be aware of these common issues:
+
+1. **Script Execution Path**: Always use `.\scriptname.bat` or `.\scriptname.ps1` in PowerShell to run scripts in the current directory. PowerShell does not include the current directory in its execution path by default (unlike Command Prompt).
+
+2. **Execution Policy**: PowerShell has security restrictions that may prevent script execution. Use `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser` to allow local scripts to run.
+
+3. **Command Aliases**: PowerShell commands often have aliases that differ from traditional command-line tools. For example, `ls` in PowerShell is an alias for `Get-ChildItem`, not the Unix `ls` command.
+
+4. **Output Handling**: PowerShell returns objects, not just text. This affects how output is processed and displayed compared to Command Prompt.
+
+5. **Path Separators**: While PowerShell accepts both forward slashes (/) and backslashes (\) in paths, some PowerShell commands may behave unexpectedly with forward slashes.
+
+6. **Command Precedence**: PowerShell follows a specific precedence order when resolving commands: aliases, functions, cmdlets, and then external commands. This can lead to unexpected behavior when commands have the same name.
+
+7. **Parameter Passing**: PowerShell uses different parameter passing conventions than Command Prompt. Use named parameters (e.g., `-ParameterName Value`) for clarity.
+
+8. **Error Handling**: PowerShell has robust error handling with try/catch blocks and the $ErrorActionPreference variable, which is different from Command Prompt's errorlevel checking.
+
+Always test PowerShell scripts in the target environment, as behavior can vary between PowerShell versions and configurations.
+
+## GitHub and Git Best Practices
+
+When working with Git and GitHub, follow these simplified approaches:
+
+1. **Keep Git Commands Simple**: Use the basic commands directly without trying to pipe or filter output:
+   - `git add <file>` - Stage specific files
+   - `git add .` - Stage all changes
+   - `git commit -m "message"` - Commit with a clear message
+   - `git push` - Push to the remote repository
+
+2. **Avoid Complex Piping in PowerShell**: Commands like `git diff | cat` often cause issues in PowerShell. Instead:
+   - Use `git diff` alone and press 'q' to exit when done viewing
+   - Use `git show` to view specific commits
+   - Use GitHub's web interface for detailed diff views when needed
+
+3. **Repository Setup (One-time Operations)**:
+   - `git clone <url>` - Clone a repository
+   - `git remote add origin <url>` - Add a remote
+   - `git pull origin master` - Pull from a remote branch
+
+4. **Common Workflows**:
+   - New feature: `git add` → `git commit` → `git push`
+   - Get updates: `git pull`
+   - Switch branches: `git checkout <branch>`
+
+5. **Error Recovery**:
+   - If a command fails, try the simplest alternative
+   - When in doubt, use the GitHub Desktop application for visual operations
+
+Remember that Git operations should be straightforward. If you're encountering errors with a complex command, there's usually a simpler way to accomplish the same task. 
