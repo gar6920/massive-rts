@@ -384,12 +384,18 @@ class Game {
 
         console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
         
-        // Correctly convert from isometric world coordinates to grid coordinates
+        // Convert from isometric world coordinates to grid coordinates
         const gridPos = this.map.isoToGrid(worldX, worldY);
         const tileX = Math.floor(gridPos.x);
         const tileY = Math.floor(gridPos.y);
         
         console.log(`Converted to grid coordinates: (${tileX}, ${tileY})`);
+        
+        // Validate grid coordinates are within map bounds
+        if (tileX < 0 || tileX >= Config.MAP_WIDTH || tileY < 0 || tileY >= Config.MAP_HEIGHT) {
+            console.log('Target position is outside map bounds');
+            return;
+        }
         
         // Convert grid coordinates to cartesian coordinates for server
         const cartesianX = tileX * Config.TILE_SIZE;
@@ -401,6 +407,8 @@ class Game {
         const selectedUnitIds = this.selectedEntities
             .filter(entity => entity instanceof Unit)
             .map(entity => entity.id);
+        
+        console.log(`Selected unit IDs for movement: ${selectedUnitIds.join(', ')}`);
         
         if (selectedUnitIds.length > 0) {
             // Send movement command to server with cartesian coordinates

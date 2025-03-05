@@ -600,6 +600,55 @@ io.on('connection', (socket) => {
       checkAndResizeMap();
     }
   });
+
+  // Handle unit movement
+  socket.on('moveUnits', (data) => {
+    console.log(`Received moveUnits command: units ${data.unitIds.join(", ")} to target (${data.targetX}, ${data.targetY})`);
+    
+    // Validate the data
+    if (!data.unitIds || !Array.isArray(data.unitIds) || data.targetX === undefined || data.targetY === undefined) {
+      console.error('Invalid moveUnits data received');
+      return;
+    }
+
+    // Find the player ID associated with this socket
+    const playerId = Object.keys(gameState.players).find(
+      id => gameState.players[id].socketId === socket.id
+    );
+
+    if (!playerId) {
+      console.error('Player not found for socket', socket.id);
+      return;
+    }
+
+    // Validate and update each unit
+    data.unitIds.forEach(unitId => {
+      const unit = gameState.entities[unitId];
+      if (!unit) {
+        console.error(`Unit ${unitId} not found`);
+        return;
+      }
+
+      // Verify the unit belongs to the player
+      if (unit.playerId !== playerId) {
+        console.error(`Unit ${unitId} does not belong to player ${playerId}`);
+        return;
+      }
+
+      // Update unit's target position and movement state
+      unit.targetX = data.targetX;
+      unit.targetY = data.targetY;
+      unit.isMoving = true;
+      console.log(`Updated unit ${unitId} target to (${data.targetX}, ${data.targetY})`);
+    });
+
+    // Broadcast the movement to all clients
+    io.emit('unitsMoved', {
+      unitIds: data.unitIds,
+      targetX: data.targetX,
+      targetY: data.targetY
+    });
+  });
 });
 
 // Game update loop (10 updates per second)

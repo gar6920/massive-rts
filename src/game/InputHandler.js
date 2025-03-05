@@ -198,6 +198,7 @@ class InputHandler {
         // If we have selected entities, issue a command
         if (this.game.selectedEntities.length > 0) {
             const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+            console.log(`Right click at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
             this.game.handleCommand(worldPos.x, worldPos.y);
         }
     }
