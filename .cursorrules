@@ -11,7 +11,7 @@
 - AI-generated variation (maps, NPCs, units) via external APIs.
 
 ## 🎯 Current Development Phase (Phase 1)
-- Create a basic, Warcraft-like top-down map.
+- isometric game map
 - Render a procedurally generated terrain on HTML5 Canvas.
 - Implement a single controllable unit with camera panning.
 
@@ -32,14 +32,6 @@
 - No tight coupling; pass dependencies explicitly.
 - Encapsulate logic within relevant classes.
 
-## 🖥️ Rendering and Performance
-- Render only visible portions of the map to ensure performance.
-- Keep rendering logic minimal; separate heavy computation from draw cycles.
-- Optimize redraws by updating only what has changed.
-
-## 🧩 AI Integration Guidelines (Future)
-- Mock AI API calls locally initially (procedural/random generation).
-- Clearly mark future AI integration points (`// AI_TODO:`).
 
 ## ✅ Task Completion Criteria
 - Clearly state completion criteria for any provided task.
@@ -48,7 +40,7 @@
 ## 🧪 Testing and Validation
 - Include basic test cases when implementing new features.
 - Recommend Jest for JavaScript/TypeScript tests.
-- Clearly suggest manual testing steps when applicable.
+
 
 ## ⚠️ Common Pitfalls to Avoid
 - Avoid premature optimization; focus on functionality first.
@@ -59,10 +51,6 @@
 - Comment all class methods succinctly (single-line description above method).
 - Document key decision points or complex logic clearly inline.
 - Update README.md whenever major changes or additions occur.
-
-## 🚀 Scalability and Expansion
-- Remind user of scalability concerns (performance bottlenecks, efficient data structures).
-- Clearly mark areas that might require future refactoring for scalability.
 
 ## 🔄 Iterative Development Mindset
 - Encourage small, iterative improvements over large, sweeping changes.
@@ -85,6 +73,8 @@
 - **/node_modules/**
 - **/dist/**
 - **/.git/**
+
+use ./start and ./stop to start and stop the program
 
 DO NOT EVER CREATE ANY NEW FILES UNLESS SPECIFIED BY THE USER.
 
@@ -120,10 +110,6 @@ When working with Git and GitHub, follow these simplified approaches:
    - `git commit -m "message"` - Commit with a clear message
    - `git push` - Push to the remote repository
 
-2. **Avoid Complex Piping in PowerShell**: Commands like `git diff | cat` often cause issues in PowerShell. Instead:
-   - Use `git diff` alone and press 'q' to exit when done viewing
-   - Use `git show` to view specific commits
-   - Use GitHub's web interface for detailed diff views when needed
 
 3. **Repository Setup (One-time Operations)**:
    - `git clone <url>` - Clone a repository

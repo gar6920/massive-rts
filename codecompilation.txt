@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Tue 03/04/2025 20:40:27.71 
+Created: Wed 03/05/2025 12:31:13.86 
 ======================================== 
  
  
@@ -386,8 +386,9 @@ class Unit extends Entity {
      * Update unit state
      */
     update(deltaTime, game) {
-        // Handle movement if we have a target
-        if (this.isMoving && this.targetX !== null && this.targetY !== null) {
+        // Only use local movement if we're not receiving server updates
+        // This prevents conflicts with the interpolation in Game.updateEntities
+        if (this.serverX === undefined && this.isMoving && this.targetX !== null && this.targetY !== null) {
             this.moveTowardsTarget(deltaTime);
         }
         
@@ -825,11 +826,19 @@ class Camera {
      * Check if a world position is visible on screen
      */
     isVisible(worldX, worldY, width, height) {
+        // For units, convert Cartesian coordinates to isometric before checking visibility
+        const isoX = (worldX - worldY) / 2;
+        const isoY = (worldX + worldY) / 4;
+        
+        // Use a larger bounding box for visibility check to account for isometric conversion
+        const boundingWidth = Math.max(width, height) * 2;
+        const boundingHeight = Math.max(width, height) * 2;
+        
         return (
-            worldX + width > this.x &&
-            worldX < this.x + (this.width / this.zoom) &&
-            worldY + height > this.y &&
-            worldY < this.y + (this.height / this.zoom)
+            isoX + boundingWidth > this.x &&
+            isoX - boundingWidth < this.x + (this.width / this.zoom) &&
+            isoY + boundingHeight > this.y &&
+            isoY - boundingHeight < this.y + (this.height / this.zoom)
         );
     }
 
@@ -1121,9 +1130,28 @@ class Game {
         // Update multiplayer
         this.multiplayer.update(deltaTime);
         
+        // Update entity positions with interpolation
+        this.updateEntities(deltaTime);
+        
         // Update all entities
         for (const entity of this.entities) {
             entity.update(deltaTime, this);
+        }
+    }
+    
+    /**
+     * Interpolate entity positions smoothly between server updates
+     */
+    updateEntities(deltaTime) {
+        const interpolationFactor = 0.1; // adjust for smoothness
+        
+        for (const entity of this.entities) {
+            // Only apply interpolation to units, not buildings
+            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
+                // Smoothly interpolate between current position and server position
+                entity.x += (entity.serverX - entity.x) * interpolationFactor;
+                entity.y += (entity.serverY - entity.y) * interpolationFactor;
+            }
         }
     }
     
@@ -1160,6 +1188,9 @@ class Game {
                         serverEntity.unitType,
                         serverEntity.playerColor
                     );
+                    // Initialize server position properties for interpolation
+                    entity.serverX = serverEntity.x;
+                    entity.serverY = serverEntity.y;
                 } else if (serverEntity.type === 'building') {
                     console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
                     entity = new Building(
@@ -1187,12 +1218,16 @@ class Game {
             } else {
                 // Update existing entity
                 if (serverEntity.type === 'unit') {
-                    // Only update position for units, not buildings
-                    entity.x = serverEntity.x;
-                    entity.y = serverEntity.y;
+                    // For units, store server position for interpolation instead of direct update
+                    entity.serverX = serverEntity.x;
+                    entity.serverY = serverEntity.y;
                     entity.targetX = serverEntity.targetX;
                     entity.targetY = serverEntity.targetY;
                     entity.isMoving = serverEntity.isMoving;
+                } else {
+                    // For non-moving entities like buildings, update position directly
+                    entity.x = serverEntity.x;
+                    entity.y = serverEntity.y;
                 }
                 
                 // Update health for all entities
@@ -1827,6 +1862,7 @@ class Multiplayer {
         this.serverEntities = {}; // Entities from the server
         this.pendingCommands = []; // Commands waiting to be sent
         this.lastServerUpdate = 0;
+        this.serverStartTime = null; // Store server start time
         
         // Bind methods
         this.onConnect = this.onConnect.bind(this);
@@ -1904,6 +1940,12 @@ class Multiplayer {
         console.log('Received initial game state from server');
         this.playerId = data.playerId;
         this.game.playerId = data.playerId;
+        
+        // Store server start time
+        if (data.gameState && data.gameState.serverStartTime) {
+            console.log('Setting server start time:', new Date(data.gameState.serverStartTime));
+            this.serverStartTime = data.gameState.serverStartTime;
+        }
         
         // Update map dimensions from server data
         if (data.gameState && data.gameState.mapDimensions) {
@@ -2038,6 +2080,11 @@ class Multiplayer {
      */
     onGameUpdate(data) {
         const currentTime = Date.now();
+        
+        // Update server start time if provided
+        if (data.serverStartTime && (!this.serverStartTime || this.serverStartTime !== data.serverStartTime)) {
+            this.serverStartTime = data.serverStartTime;
+        }
 
         Object.values(data.entities).forEach(serverEntity => {
             let localEntity = this.game.entities.find(e => e.id === serverEntity.id);
@@ -2113,7 +2160,10 @@ class Multiplayer {
         unitIds.forEach(unitId => {
             const unit = this.game.entities.find(e => e.id === unitId);
             if (unit) {
-                unit.moveTo(targetX, targetY);
+                // Set the target for the unit to move to
+                unit.targetX = targetX;
+                unit.targetY = targetY;
+                unit.isMoving = true;
             }
         });
     }
@@ -2261,6 +2311,28 @@ class Multiplayer {
                 }
             }
         });
+    }
+    
+    /**
+     * Get the elapsed time since the server started
+     * @returns {string} Formatted elapsed time (HH:MM:SS)
+     */
+    getElapsedTime() {
+        if (!this.serverStartTime) {
+            return "00:00:00";
+        }
+        
+        // Calculate elapsed time in seconds
+        const elapsedMs = Date.now() - this.serverStartTime;
+        const elapsedSeconds = Math.floor(elapsedMs / 1000);
+        
+        // Calculate hours, minutes, and seconds
+        const hours = Math.floor(elapsedSeconds / 3600);
+        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
+        const seconds = elapsedSeconds % 60;
+        
+        // Format as HH:MM:SS
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
     }
 }  
  
@@ -2522,18 +2594,31 @@ class Renderer {
         const sortedEntities = [...this.game.entities].sort((a, b) => a.y - b.y);
         
         for (const entity of sortedEntities) {
-            // Convert entity position to grid coordinates
-            const gridX = Math.floor(entity.x / Config.TILE_SIZE);
-            const gridY = Math.floor(entity.y / Config.TILE_SIZE);
+            if (!this.camera.isVisible(entity.x, entity.y, entity.width, entity.height)) {
+                continue; // Skip this entity and move to the next one
+            }
             
-            // Convert grid coordinates to isometric world coordinates
-            const isoPos = this.map.gridToIso(gridX, gridY);
+            let screenPos;
             
-            // Add debug logging
-            console.log(`Entity: ${entity.constructor.name}, Position: (${entity.x}, ${entity.y}), Grid: (${gridX}, ${gridY}), Iso: (${isoPos.x}, ${isoPos.y})`);
-            
-            // Convert world coordinates to screen coordinates
-            const screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
+            if (entity instanceof Building) {
+                // For buildings, use the grid-based conversion
+                // Convert entity position to grid coordinates
+                const gridX = Math.floor(entity.x / Config.TILE_SIZE);
+                const gridY = Math.floor(entity.y / Config.TILE_SIZE);
+                
+                // Convert grid coordinates to isometric world coordinates
+                const isoPos = this.map.gridToIso(gridX, gridY);
+                
+                // Convert world coordinates to screen coordinates
+                screenPos = this.camera.worldToScreen(isoPos.x, isoPos.y);
+            } else {
+                // For units, use the direct Cartesian-to-isometric conversion
+                const isoX = (entity.x - entity.y) / 2;
+                const isoY = (entity.x + entity.y) / 4;
+                
+                // Convert to screen coordinates
+                screenPos = this.camera.worldToScreen(isoX, isoY);
+            }
             
             // Calculate entity dimensions with zoom
             const entityWidth = entity.width * this.camera.zoom;
@@ -2809,6 +2894,9 @@ class Renderer {
      * Render UI elements
      */
     renderUI() {
+        // Render elapsed time at the top of the screen
+        this.renderElapsedTime();
+        
         // Render selection box if dragging
         const selectionBox = this.game.inputHandler.getSelectionBox();
         if (selectionBox) {
@@ -2836,6 +2924,30 @@ class Renderer {
         
         // Render selected unit info
         this.renderSelectedUnitInfo();
+        
+        // Render debug info if enabled
+        if (Config.DEBUG_MODE) {
+            this.renderDebugInfo();
+        }
+    }
+    
+    /**
+     * Render the elapsed time since the server started
+     */
+    renderElapsedTime() {
+        const elapsedTime = this.game.multiplayer.getElapsedTime();
+        
+        // Set up text style
+        this.ctx.font = '16px Arial';
+        this.ctx.textAlign = 'center';
+        
+        // Draw background
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        this.ctx.fillRect(this.canvas.width / 2 - 80, 10, 160, 30);
+        
+        // Draw text
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillText(`Time Elapsed: ${elapsedTime}`, this.canvas.width / 2, 30);
     }
     
     /**
