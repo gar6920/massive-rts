@@ -323,8 +323,8 @@ class Renderer {
             );
         }
         
-        // Draw selection indicator if unit is selected
-        if (unit.isSelected) {
+        // Draw selection indicator if unit is selected AND belongs to the player
+        if (unit.isSelected && unit.playerId === this.game.playerId) {
             console.log(`Drawing selection indicator for unit ${unit.id} at (${screenPos.x}, ${screenPos.y}) with radius ${(width / 2) + 5 * this.camera.zoom}`);
             
             // Draw a glowing selection circle around the unit
@@ -557,18 +557,19 @@ class Renderer {
         // Render selection box if dragging
         const selectionBox = this.game.inputHandler.getSelectionBox();
         if (selectionBox) {
-            this.ctx.strokeStyle = Config.COLORS.SELECTION;
-            this.ctx.lineWidth = 1;
-            this.ctx.strokeRect(
+            // Semi-transparent fill
+            this.ctx.fillStyle = 'rgba(0, 255, 255, 0.1)';
+            this.ctx.fillRect(
                 selectionBox.x,
                 selectionBox.y,
                 selectionBox.width,
                 selectionBox.height
             );
             
-            // Semi-transparent fill
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            this.ctx.fillRect(
+            // Selection box border
+            this.ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(
                 selectionBox.x,
                 selectionBox.y,
                 selectionBox.width,
