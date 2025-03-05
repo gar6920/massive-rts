@@ -250,10 +250,10 @@ const gameState = {
 // Initialize the map with default dimensions
 gameState.map = generateMap(gameState.mapDimensions.width, gameState.mapDimensions.height);
 
-// Initialize the game with bases
+// Initialize the game with bases and AI unit
 initializeGame();
 
-// Function to initialize the game with bases
+// Function to initialize the game with bases and AI unit
 function initializeGame() {
   console.log('Initializing game with bases');
   
@@ -277,11 +277,11 @@ function initializeGame() {
     type: 'building',
     buildingType: 'BASE',
     playerColor: 'blue',
-    x: humanBaseX * 32, // Convert tile coordinates to pixel coordinates
+    x: humanBaseX * 32,
     y: humanBaseY * 32,
-    width: 5 * 32, // 5x5 tiles
+    width: 5 * 32,
     height: 5 * 32,
-    playerId: 'human-team', // Persistent team identifier
+    playerId: 'human-team',
     isPlayerControlled: true,
     health: 1000,
     maxHealth: 1000
@@ -297,7 +297,7 @@ function initializeGame() {
     y: aiBaseY * 32,
     width: 5 * 32,
     height: 5 * 32,
-    playerId: 'ai-team', // Persistent team identifier
+    playerId: 'ai-team',
     isPlayerControlled: false,
     health: 1000,
     maxHealth: 1000
@@ -310,11 +310,11 @@ function initializeGame() {
     type: 'unit',
     unitType: 'SOLDIER',
     playerColor: 'red',
-    x: aiBaseX * 32 - 64, // Position to the left of the base
-    y: aiBaseY * 32 + 80, // Position near the middle of the base
-    width: 32, // Config.UNIT_SIZE
-    height: 32, // Config.UNIT_SIZE
-    playerId: 'ai',
+    x: aiBaseX * 32 - 64,
+    y: aiBaseY * 32 + 80,
+    width: 32,
+    height: 32,
+    playerId: 'ai-team',
     isPlayerControlled: false,
     health: 100,
     maxHealth: 100,
@@ -330,11 +330,7 @@ function initializeGame() {
     lastUpdateTime: Date.now()
   };
   
-  console.log('Bases created:', {
-    humanBase: { x: humanBaseX, y: humanBaseY },
-    aiBase: { x: aiBaseX, y: aiBaseY }
-  });
-  console.log('AI unit created near AI base');
+  console.log('Game initialized with bases and AI unit');
 }
 
 // Function to make an area walkable (for base placement)
@@ -427,6 +423,56 @@ function checkAndResizeMap() {
 const playerColors = ['red', 'blue', 'green', 'yellow'];
 let nextPlayerColorIndex = 0;
 
+// Function to create a unit for a player
+function createPlayerUnit(playerId) {
+    // Find the player's base
+    const playerBase = Object.values(gameState.entities).find(entity => 
+        entity.type === 'building' && 
+        entity.buildingType === 'BASE' && 
+        entity.playerId === playerId
+    );
+
+    if (!playerBase) {
+        console.error(`Could not find base for player ${playerId}`);
+        return null;
+    }
+
+    // Create unit adjacent to the player's base
+    const offsetX = 64; // 2 tiles to the right
+    const unitX = playerBase.x + playerBase.width + offsetX;
+    const unitY = playerBase.y + (playerBase.height / 2);
+
+    // Create the unit with a unique ID
+    const unitId = uuidv4();
+    const unit = {
+        id: unitId,
+        type: 'unit',
+        unitType: 'SOLDIER',
+        x: unitX,
+        y: unitY,
+        width: 32,
+        height: 32,
+        health: 100,
+        maxHealth: 100,
+        attackDamage: 10,
+        attackRange: 50,
+        attackCooldown: 1000,
+        speed: 2,
+        level: 1,
+        experience: 0,
+        isPlayerControlled: true,
+        playerId: playerId,
+        playerColor: 'blue',
+        targetX: null,
+        targetY: null,
+        isMoving: false,
+        lastUpdateTime: Date.now()
+    };
+
+    console.log(`Created new unit for player ${playerId} at position (${unitX}, ${unitY})`);
+    return unit;
+}
+
 // Handle socket connections
 io.on('connection', (socket) => {
   console.log(`New player connected: ${socket.id}`);
@@ -461,17 +507,25 @@ io.on('connection', (socket) => {
       }
     });
   }
+
+  // Filter entities to only include buildings for initial state
+  const buildingEntities = {};
+  Object.entries(gameState.entities).forEach(([id, entity]) => {
+    if (entity.type === 'building') {
+      buildingEntities[id] = entity;
+    }
+  });
   
-  // Send initial game state to the new player
+  // Send initial game state to the new player (only map and buildings)
   socket.emit('gameState', {
     playerId: playerId,
     gameState: {
       players: gameState.players,
-      entities: gameState.entities,
+      entities: buildingEntities,
       map: gameState.map,
-      mapDimensions: gameState.mapDimensions, // Send map dimensions with zoom factor
+      mapDimensions: gameState.mapDimensions,
       lastUpdateTime: gameState.lastUpdateTime,
-      serverStartTime: gameState.serverStartTime // Include server start time
+      serverStartTime: gameState.serverStartTime
     }
   });
   
@@ -479,205 +533,35 @@ io.on('connection', (socket) => {
   socket.broadcast.emit('playerJoined', {
     player: gameState.players[playerId]
   });
-  
-  // Automatically spawn a starting unit for the player near the human base
-  // First, find the human base location
-  let humanBase = null;
-  Object.values(gameState.entities).forEach(entity => {
-    if (entity.type === 'building' && entity.buildingType === 'BASE' && 
-        (entity.playerId === playerId || entity.playerColor === 'blue')) {
-      humanBase = entity;
-      console.log(`Found human base for unit spawning`);
+
+  // Handle join game request
+  socket.on('joinGame', (data) => {
+    const playerId = data.playerId;
+    console.log(`Player ${playerId} joining game`);
+
+    if (gameState.players[playerId]) {
+      // Create the unit explicitly
+      const newUnit = createPlayerUnit(playerId);
+      if (!newUnit) {
+        socket.emit('joinGameError', { message: "Could not create unit." });
+        return;
+      }
+
+      // IMPORTANT: Add unit to game state explicitly
+      gameState.entities[newUnit.id] = newUnit;
+      console.log(`Added unit ${newUnit.id} to game state for player ${playerId}`);
+
+      // Broadcast to ALL clients (including the one who joined)
+      io.emit('unitCreated', { unit: newUnit });
+      console.log(`Broadcasted unitCreated event for unit ${newUnit.id}`);
+
+      // Confirm join to requesting client explicitly
+      socket.emit('joinGameSuccess', { unit: newUnit });
+      console.log(`Sent joinGameSuccess to player ${playerId}`);
+    } else {
+      console.error(`Player ${playerId} not found in gameState.players`);
+      socket.emit('joinGameError', { message: "Player not found." });
     }
-  });
-  
-  if (humanBase) {
-    // Create a unit ID
-    const unitId = uuidv4();
-    
-    // Calculate position near the human base
-    // Position the unit to the right of the base with some offset
-    const spawnX = humanBase.x + humanBase.width + 64; // 64 pixels to the right of the base
-    const spawnY = humanBase.y + (humanBase.height / 2); // Middle height of the base
-    
-    // Get unit attributes
-    const unitAttributes = {
-      health: 100,
-      attackDamage: 10,
-      attackRange: 50,
-      attackCooldown: 1000,
-      speed: 2
-    };
-    
-    // Create a new unit in the game state
-    const newUnit = {
-      id: unitId,
-      type: 'unit',
-      unitType: 'SOLDIER',
-      playerColor: 'blue',
-      x: spawnX,
-      y: spawnY,
-      width: 32, // Unit size
-      height: 32, // Unit size
-      playerId: playerId,
-      isPlayerControlled: true,
-      health: unitAttributes.health,
-      maxHealth: unitAttributes.health,
-      attackDamage: unitAttributes.attackDamage,
-      attackRange: unitAttributes.attackRange,
-      attackCooldown: unitAttributes.attackCooldown,
-      speed: unitAttributes.speed,
-      level: 1,
-      experience: 0,
-      targetX: null,
-      targetY: null,
-      isMoving: false,
-      lastUpdateTime: Date.now()
-    };
-    
-    // Add the unit to the game state
-    gameState.entities[unitId] = newUnit;
-    
-    // Broadcast the new unit to all players
-    io.emit('unitCreated', {
-      unit: newUnit
-    });
-    
-    console.log(`Automatically spawned starting unit for player ${playerId} near the human base at (${spawnX}, ${spawnY})`);
-  } else {
-    console.error(`Could not find human base for unit spawning`);
-    
-    // Fallback to a fixed position in the bottom-left quadrant if base not found
-    const mapWidth = gameState.mapDimensions.width * 32;
-    const mapHeight = gameState.mapDimensions.height * 32;
-    const spawnX = Math.floor(mapWidth * 0.25);
-    const spawnY = Math.floor(mapHeight * 0.75);
-    
-    // Create a unit ID
-    const unitId = uuidv4();
-    
-    // Get unit attributes
-    const unitAttributes = {
-      health: 100,
-      attackDamage: 10,
-      attackRange: 50,
-      attackCooldown: 1000,
-      speed: 2
-    };
-    
-    // Create a new unit in the game state
-    const newUnit = {
-      id: unitId,
-      type: 'unit',
-      unitType: 'SOLDIER',
-      playerColor: 'blue',
-      x: spawnX,
-      y: spawnY,
-      width: 32, // Unit size
-      height: 32, // Unit size
-      playerId: playerId,
-      isPlayerControlled: true,
-      health: unitAttributes.health,
-      maxHealth: unitAttributes.health,
-      attackDamage: unitAttributes.attackDamage,
-      attackRange: unitAttributes.attackRange,
-      attackCooldown: unitAttributes.attackCooldown,
-      speed: unitAttributes.speed,
-      level: 1,
-      experience: 0,
-      targetX: null,
-      targetY: null,
-      isMoving: false,
-      lastUpdateTime: Date.now()
-    };
-    
-    // Add the unit to the game state
-    gameState.entities[unitId] = newUnit;
-    
-    // Broadcast the new unit to all players
-    io.emit('unitCreated', {
-      unit: newUnit
-    });
-    
-    console.log(`Fallback: Spawned starting unit for player ${playerId} in bottom-left quadrant at (${spawnX}, ${spawnY})`);
-  }
-  
-  // Handle player movement commands
-  socket.on('moveUnits', (data) => {
-    const { unitIds, targetX, targetY } = data;
-    
-    // Update unit targets in the game state
-    unitIds.forEach(unitId => {
-      if (gameState.entities[unitId]) {
-        gameState.entities[unitId].targetX = targetX;
-        gameState.entities[unitId].targetY = targetY;
-        gameState.entities[unitId].isMoving = true;
-        
-        // Broadcast the movement to all players
-        io.emit('unitsMoved', {
-          unitIds: [unitId],
-          targetX: targetX,
-          targetY: targetY
-        });
-      }
-    });
-  });
-  
-  // Handle unit creation
-  socket.on('createUnit', (data) => {
-    const { x, y, isPlayerControlled, unitType = 'SOLDIER' } = data;
-    const unitId = uuidv4();
-    
-    // Get player color
-    const playerColor = gameState.players[playerId].color;
-    
-    // Get unit attributes from config
-    const unitAttributes = {
-      SOLDIER: {
-        health: 100,
-        attackDamage: 10,
-        attackRange: 50,
-        attackCooldown: 1000,
-        speed: 2
-      }
-    }[unitType] || {
-      health: 100,
-      attackDamage: 10,
-      attackRange: 50,
-      attackCooldown: 1000,
-      speed: 2
-    };
-    
-    // Create a new unit in the game state
-    gameState.entities[unitId] = {
-      id: unitId,
-      type: 'unit',
-      unitType: unitType,
-      playerColor: playerColor,
-      x: x,
-      y: y,
-      width: 32, // Config.UNIT_SIZE
-      height: 32, // Config.UNIT_SIZE
-      playerId: playerId,
-      isPlayerControlled: isPlayerControlled,
-      health: unitAttributes.health,
-      maxHealth: unitAttributes.health,
-      attackDamage: unitAttributes.attackDamage,
-      attackRange: unitAttributes.attackRange,
-      attackCooldown: unitAttributes.attackCooldown,
-      speed: unitAttributes.speed,
-      level: 1,
-      experience: 0,
-      targetX: null,
-      targetY: null,
-      isMoving: false,
-      lastUpdateTime: Date.now()
-    };
-    
-    // Broadcast the new unit to all players
-    io.emit('unitCreated', {
-      unit: gameState.entities[unitId]
-    });
   });
   
   // Handle player disconnection

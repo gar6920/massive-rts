@@ -36,13 +36,20 @@ class Game {
      * Start the game
      */
     start() {
-        // Initialize multiplayer
-        this.multiplayer = new Multiplayer(this);
         this.multiplayer.connect();
-        
-        // Start the game loop
-        this.running = true;
-        requestAnimationFrame(this.gameLoop.bind(this));
+
+        const checkResourcesLoaded = () => {
+            if (this.renderer.imagesLoaded && this.map.tiles.length > 0) {
+                console.log("All resources loaded, starting game loop");
+                this.running = true;
+                requestAnimationFrame(this.gameLoop.bind(this));
+            } else {
+                console.log("Waiting for resources...");
+                setTimeout(checkResourcesLoaded, 100);
+            }
+        };
+
+        checkResourcesLoaded();
     }
     
     /**
@@ -134,9 +141,14 @@ class Game {
                         serverEntity.unitType,
                         serverEntity.playerColor
                     );
-                    // Initialize server position properties for interpolation
+                    
+                    // Explicitly initialize interpolation properties
+                    entity.prevX = serverEntity.x;
+                    entity.prevY = serverEntity.y;
                     entity.serverX = serverEntity.x;
                     entity.serverY = serverEntity.y;
+                    entity.interpolationStartTime = Date.now();
+                    
                 } else if (serverEntity.type === 'building') {
                     console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
                     entity = new Building(
@@ -164,9 +176,12 @@ class Game {
             } else {
                 // Update existing entity
                 if (serverEntity.type === 'unit') {
-                    // For units, store server position for interpolation instead of direct update
+                    // For units, store server position for interpolation
+                    entity.prevX = entity.x;
+                    entity.prevY = entity.y;
                     entity.serverX = serverEntity.x;
                     entity.serverY = serverEntity.y;
+                    entity.interpolationStartTime = Date.now();
                     entity.targetX = serverEntity.targetX;
                     entity.targetY = serverEntity.targetY;
                     entity.isMoving = serverEntity.isMoving;

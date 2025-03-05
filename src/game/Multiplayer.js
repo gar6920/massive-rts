@@ -27,6 +27,8 @@ class Multiplayer {
         this.onUnitsMoved = this.onUnitsMoved.bind(this);
         this.onEntityRemoved = this.onEntityRemoved.bind(this);
         this.onMapResized = this.onMapResized.bind(this);
+        this.onJoinGameSuccess = this.onJoinGameSuccess.bind(this);
+        this.onJoinGameError = this.onJoinGameError.bind(this);
     }
     
     /**
@@ -53,6 +55,8 @@ class Multiplayer {
         this.socket.on('unitsMoved', this.onUnitsMoved);
         this.socket.on('entityRemoved', this.onEntityRemoved);
         this.socket.on('mapResized', this.onMapResized);
+        this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
+        this.socket.on('joinGameError', this.onJoinGameError);
     }
     
     /**
@@ -113,15 +117,76 @@ class Multiplayer {
             console.error('No map data received from server');
         }
         
-        // Process entities from server data
+        // Clear existing entities before processing new ones
+        this.game.entities = [];
+        
+        // Process entities from server data (should only be buildings at this point)
         if (data.gameState && data.gameState.entities) {
-            console.log('Processing entities from server data');
+            console.log('Processing initial entities from server data (buildings only)');
             this.game.processServerEntities(data.gameState.entities);
-            
-            // Create initial unit after entities are processed
-            console.log('Creating initial unit for player');
-            this.createInitialUnit();
         }
+
+        // Show the join button
+        this.showJoinButton();
+    }
+    
+    /**
+     * Show the join button in the UI
+     */
+    showJoinButton() {
+        // Create join button container if it doesn't exist
+        let joinContainer = document.getElementById('joinContainer');
+        if (!joinContainer) {
+            joinContainer = document.createElement('div');
+            joinContainer.id = 'joinContainer';
+            joinContainer.style.position = 'absolute';
+            joinContainer.style.top = '50%';
+            joinContainer.style.left = '50%';
+            joinContainer.style.transform = 'translate(-50%, -50%)';
+            joinContainer.style.textAlign = 'center';
+            joinContainer.style.zIndex = '1000';
+            document.body.appendChild(joinContainer);
+        }
+
+        // Create join button if it doesn't exist
+        let joinButton = document.getElementById('joinButton');
+        if (!joinButton) {
+            joinButton = document.createElement('button');
+            joinButton.id = 'joinButton';
+            joinButton.textContent = 'Join Game';
+            joinButton.style.padding = '15px 30px';
+            joinButton.style.fontSize = '18px';
+            joinButton.style.cursor = 'pointer';
+            joinButton.style.backgroundColor = '#4CAF50';
+            joinButton.style.color = 'white';
+            joinButton.style.border = 'none';
+            joinButton.style.borderRadius = '5px';
+            joinButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+            
+            // Add hover effect
+            joinButton.onmouseover = () => {
+                joinButton.style.backgroundColor = '#45a049';
+            };
+            joinButton.onmouseout = () => {
+                joinButton.style.backgroundColor = '#4CAF50';
+            };
+
+            // Add click handler
+            joinButton.onclick = () => {
+                this.requestJoinGame();
+                joinContainer.remove(); // Remove the button after clicking
+            };
+
+            joinContainer.appendChild(joinButton);
+        }
+    }
+    
+    /**
+     * Request to join the game and create initial unit
+     */
+    requestJoinGame() {
+        console.log('Requesting to join game with playerId:', this.playerId);
+        this.socket.emit('joinGame', { playerId: this.playerId });
     }
     
     /**
@@ -167,64 +232,6 @@ class Multiplayer {
         
         // Update camera boundaries
         this.game.camera.updateDimensions();
-    }
-    
-    /**
-     * Create an initial unit for the player near their base
-     */
-    createInitialUnit() {
-        // Find the player's base
-        const playerBase = this.game.entities.find(entity => 
-            entity.buildingType === 'BASE' && 
-            entity.playerId === this.playerId
-        );
-        
-        let unitX, unitY;
-        
-        if (playerBase) {
-            // Create unit directly adjacent to the player's base
-            // Use a fixed offset that ensures the unit is in a valid position
-            const offsetX = 64; // 2 tiles to the right
-            
-            // Calculate spawn position relative to the base
-            unitX = playerBase.x + playerBase.width + offsetX;
-            unitY = playerBase.y + (playerBase.height / 2);
-            
-            console.log(`Creating initial unit adjacent to player base at (${unitX}, ${unitY})`);
-            
-            // Create the unit directly without setTimeout
-            this.createUnit(unitX, unitY, true, 'SOLDIER');
-        } else {
-            console.error('Could not find player base to spawn initial unit');
-            
-            // Fallback to center of map if no base found
-            unitX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
-            unitY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
-            
-            console.log(`No player base found, creating unit at center (${unitX}, ${unitY})`);
-            this.createUnit(unitX, unitY, true, 'SOLDIER');
-        }
-        
-        // Center the camera on the unit's position and zoom in
-        setTimeout(() => {
-            // Convert grid coordinates to isometric coordinates for proper centering
-            const tileSize = Config.TILE_SIZE;
-            const gridX = unitX / tileSize;
-            const gridY = unitY / tileSize;
-            const isoX = (gridX - gridY) * (tileSize / 2);
-            const isoY = (gridX + gridY) * (tileSize / 4);
-            
-            console.log(`Centering camera on player unit at isometric position (${isoX}, ${isoY})`);
-            
-            // Center the camera on the unit
-            this.game.camera.centerOn(isoX, isoY);
-            
-            // Set an appropriate zoom level for the initial view
-            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
-            
-            // Ensure camera stays within boundaries
-            this.game.camera.clampPosition();
-        }, 100); // Short delay to ensure the unit is fully created
     }
     
     /**
@@ -276,31 +283,30 @@ class Multiplayer {
      * Handle new unit creation
      */
     onUnitCreated(data) {
-        console.log('Unit created:', data.unit);
-        
-        // Process the new unit using the same method
-        this.game.processServerEntities({ [data.unit.id]: data.unit });
-        
-        // If this is a player-controlled unit, center the camera on it
-        if (data.unit.playerId === this.playerId) {
-            // Convert grid coordinates to isometric coordinates for proper centering
+        const unit = data.unit;
+        console.log("Received new unit from server:", unit);
+
+        // Explicitly process and add the new unit
+        this.game.processServerEntities({ [unit.id]: unit });
+
+        // If the unit belongs to this player, center camera on it immediately
+        if (unit.playerId === this.playerId) {
             const tileSize = Config.TILE_SIZE;
-            const gridX = data.unit.x / tileSize;
-            const gridY = data.unit.y / tileSize;
+            const gridX = unit.x / tileSize;
+            const gridY = unit.y / tileSize;
             const isoX = (gridX - gridY) * (tileSize / 2);
             const isoY = (gridX + gridY) * (tileSize / 4);
-            
-            console.log(`Centering camera on new player unit at isometric position (${isoX}, ${isoY})`);
-            
-            // Center the camera on the unit
+
+            console.log(`Centering camera on player unit at (${isoX}, ${isoY})`);
+
+            // Explicitly center camera
             this.game.camera.centerOn(isoX, isoY);
-            
-            // Set an appropriate zoom level
             this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
-            
-            // Ensure camera stays within boundaries
             this.game.camera.clampPosition();
         }
+
+        // Explicitly request rendering to immediately display the unit
+        this.game.renderer.render();
     }
     
     /**
@@ -485,5 +491,31 @@ class Multiplayer {
         
         // Format as HH:MM:SS
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    
+    /**
+     * Handle successful game join
+     */
+    onJoinGameSuccess(data) {
+        console.log('Successfully joined game, received unit:', data.unit);
+        
+        // Note: We don't need to process the unit here as it will come through
+        // the unitCreated event that the server broadcasts to all clients
+        
+        // Remove the join button
+        const joinContainer = document.getElementById('joinContainer');
+        if (joinContainer) {
+            joinContainer.remove();
+        }
+    }
+    
+    /**
+     * Handle game join error
+     */
+    onJoinGameError(data) {
+        console.error('Failed to join game:', data.message);
+        alert(`Failed to join game: ${data.message}`);
+        // Show join button again
+        this.showJoinButton();
     }
 } 

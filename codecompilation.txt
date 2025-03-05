@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Wed 03/05/2025 12:31:13.86 
+Created: Wed 03/05/2025 13:35:43.01 
 ======================================== 
  
  
@@ -1875,6 +1875,8 @@ class Multiplayer {
         this.onUnitsMoved = this.onUnitsMoved.bind(this);
         this.onEntityRemoved = this.onEntityRemoved.bind(this);
         this.onMapResized = this.onMapResized.bind(this);
+        this.onJoinGameSuccess = this.onJoinGameSuccess.bind(this);
+        this.onJoinGameError = this.onJoinGameError.bind(this);
     }
     
     /**
@@ -1901,6 +1903,8 @@ class Multiplayer {
         this.socket.on('unitsMoved', this.onUnitsMoved);
         this.socket.on('entityRemoved', this.onEntityRemoved);
         this.socket.on('mapResized', this.onMapResized);
+        this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
+        this.socket.on('joinGameError', this.onJoinGameError);
     }
     
     /**
@@ -1961,15 +1965,76 @@ class Multiplayer {
             console.error('No map data received from server');
         }
         
-        // Process entities from server data
+        // Clear existing entities before processing new ones
+        this.game.entities = [];
+        
+        // Process entities from server data (should only be buildings at this point)
         if (data.gameState && data.gameState.entities) {
-            console.log('Processing entities from server data');
+            console.log('Processing initial entities from server data (buildings only)');
             this.game.processServerEntities(data.gameState.entities);
-            
-            // Create initial unit after entities are processed
-            console.log('Creating initial unit for player');
-            this.createInitialUnit();
         }
+
+        // Show the join button
+        this.showJoinButton();
+    }
+    
+    /**
+     * Show the join button in the UI
+     */
+    showJoinButton() {
+        // Create join button container if it doesn't exist
+        let joinContainer = document.getElementById('joinContainer');
+        if (!joinContainer) {
+            joinContainer = document.createElement('div');
+            joinContainer.id = 'joinContainer';
+            joinContainer.style.position = 'absolute';
+            joinContainer.style.top = '50%';
+            joinContainer.style.left = '50%';
+            joinContainer.style.transform = 'translate(-50%, -50%)';
+            joinContainer.style.textAlign = 'center';
+            joinContainer.style.zIndex = '1000';
+            document.body.appendChild(joinContainer);
+        }
+
+        // Create join button if it doesn't exist
+        let joinButton = document.getElementById('joinButton');
+        if (!joinButton) {
+            joinButton = document.createElement('button');
+            joinButton.id = 'joinButton';
+            joinButton.textContent = 'Join Game';
+            joinButton.style.padding = '15px 30px';
+            joinButton.style.fontSize = '18px';
+            joinButton.style.cursor = 'pointer';
+            joinButton.style.backgroundColor = '#4CAF50';
+            joinButton.style.color = 'white';
+            joinButton.style.border = 'none';
+            joinButton.style.borderRadius = '5px';
+            joinButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
+            
+            // Add hover effect
+            joinButton.onmouseover = () => {
+                joinButton.style.backgroundColor = '#45a049';
+            };
+            joinButton.onmouseout = () => {
+                joinButton.style.backgroundColor = '#4CAF50';
+            };
+
+            // Add click handler
+            joinButton.onclick = () => {
+                this.requestJoinGame();
+                joinContainer.remove(); // Remove the button after clicking
+            };
+
+            joinContainer.appendChild(joinButton);
+        }
+    }
+    
+    /**
+     * Request to join the game and create initial unit
+     */
+    requestJoinGame() {
+        console.log('Requesting to join game with playerId:', this.playerId);
+        this.socket.emit('joinGame', { playerId: this.playerId });
     }
     
     /**
@@ -2015,64 +2080,6 @@ class Multiplayer {
         
         // Update camera boundaries
         this.game.camera.updateDimensions();
-    }
-    
-    /**
-     * Create an initial unit for the player near their base
-     */
-    createInitialUnit() {
-        // Find the player's base
-        const playerBase = this.game.entities.find(entity => 
-            entity.buildingType === 'BASE' && 
-            entity.playerId === this.playerId
-        );
-        
-        let unitX, unitY;
-        
-        if (playerBase) {
-            // Create unit directly adjacent to the player's base
-            // Use a fixed offset that ensures the unit is in a valid position
-            const offsetX = 64; // 2 tiles to the right
-            
-            // Calculate spawn position relative to the base
-            unitX = playerBase.x + playerBase.width + offsetX;
-            unitY = playerBase.y + (playerBase.height / 2);
-            
-            console.log(`Creating initial unit adjacent to player base at (${unitX}, ${unitY})`);
-            
-            // Create the unit directly without setTimeout
-            this.createUnit(unitX, unitY, true, 'SOLDIER');
-        } else {
-            console.error('Could not find player base to spawn initial unit');
-            
-            // Fallback to center of map if no base found
-            unitX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
-            unitY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
-            
-            console.log(`No player base found, creating unit at center (${unitX}, ${unitY})`);
-            this.createUnit(unitX, unitY, true, 'SOLDIER');
-        }
-        
-        // Center the camera on the unit's position and zoom in
-        setTimeout(() => {
-            // Convert grid coordinates to isometric coordinates for proper centering
-            const tileSize = Config.TILE_SIZE;
-            const gridX = unitX / tileSize;
-            const gridY = unitY / tileSize;
-            const isoX = (gridX - gridY) * (tileSize / 2);
-            const isoY = (gridX + gridY) * (tileSize / 4);
-            
-            console.log(`Centering camera on player unit at isometric position (${isoX}, ${isoY})`);
-            
-            // Center the camera on the unit
-            this.game.camera.centerOn(isoX, isoY);
-            
-            // Set an appropriate zoom level for the initial view
-            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
-            
-            // Ensure camera stays within boundaries
-            this.game.camera.clampPosition();
-        }, 100); // Short delay to ensure the unit is fully created
     }
     
     /**
@@ -2124,31 +2131,30 @@ class Multiplayer {
      * Handle new unit creation
      */
     onUnitCreated(data) {
-        console.log('Unit created:', data.unit);
-        
-        // Process the new unit using the same method
-        this.game.processServerEntities({ [data.unit.id]: data.unit });
-        
-        // If this is a player-controlled unit, center the camera on it
-        if (data.unit.playerId === this.playerId) {
-            // Convert grid coordinates to isometric coordinates for proper centering
+        const unit = data.unit;
+        console.log("Received new unit from server:", unit);
+
+        // Explicitly process and add the new unit
+        this.game.processServerEntities({ [unit.id]: unit });
+
+        // If the unit belongs to this player, center camera on it immediately
+        if (unit.playerId === this.playerId) {
             const tileSize = Config.TILE_SIZE;
-            const gridX = data.unit.x / tileSize;
-            const gridY = data.unit.y / tileSize;
+            const gridX = unit.x / tileSize;
+            const gridY = unit.y / tileSize;
             const isoX = (gridX - gridY) * (tileSize / 2);
             const isoY = (gridX + gridY) * (tileSize / 4);
-            
-            console.log(`Centering camera on new player unit at isometric position (${isoX}, ${isoY})`);
-            
-            // Center the camera on the unit
+
+            console.log(`Centering camera on player unit at (${isoX}, ${isoY})`);
+
+            // Explicitly center camera
             this.game.camera.centerOn(isoX, isoY);
-            
-            // Set an appropriate zoom level
             this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
-            
-            // Ensure camera stays within boundaries
             this.game.camera.clampPosition();
         }
+
+        // Explicitly request rendering to immediately display the unit
+        this.game.renderer.render();
     }
     
     /**
@@ -2333,6 +2339,32 @@ class Multiplayer {
         
         // Format as HH:MM:SS
         return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }
+    
+    /**
+     * Handle successful game join
+     */
+    onJoinGameSuccess(data) {
+        console.log('Successfully joined game, received unit:', data.unit);
+        
+        // Note: We don't need to process the unit here as it will come through
+        // the unitCreated event that the server broadcasts to all clients
+        
+        // Remove the join button
+        const joinContainer = document.getElementById('joinContainer');
+        if (joinContainer) {
+            joinContainer.remove();
+        }
+    }
+    
+    /**
+     * Handle game join error
+     */
+    onJoinGameError(data) {
+        console.error('Failed to join game:', data.message);
+        alert(`Failed to join game: ${data.message}`);
+        // Show join button again
+        this.showJoinButton();
     }
 }  
  
@@ -4909,6 +4941,677 @@ function manhattanDistance(x1, y1, x2, y2) {
  
  
 ======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\index.js 
+======================================== 
+ 
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
+
+// Create Express app and HTTP server
+const app = express();
+const server = http.createServer(app);
+
+// Create Socket.IO server with CORS enabled
+const io = new Server(server, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  }
+});
+
+// Serve static files from the public directory
+app.use(express.static(path.join(__dirname, '../public')));
+app.use('/src', express.static(path.join(__dirname, '../src')));
+
+// Serve the main HTML file
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/index.html'));
+});
+
+// Redirect from /public to root for backward compatibility
+app.get('/public', (req, res) => {
+  res.redirect('/');
+});
+
+app.get('/public/index.html', (req, res) => {
+  res.redirect('/');
+});
+
+// Function to determine map size based on player count
+function getMapDimensions(playerCount) {
+  if (playerCount <= 5) {
+    return { 
+      width: 40, 
+      height: 40,
+      zoomFactor: 1.5 // Higher zoom factor for smaller maps
+    };
+  } else if (playerCount <= 15) {
+    return { 
+      width: 60, 
+      height: 60,
+      zoomFactor: 1.0 // Medium zoom factor
+    };
+  } else {
+    return { 
+      width: 80, 
+      height: 80,
+      zoomFactor: 0.75 // Lower zoom factor for larger maps
+    };
+  }
+}
+
+// Generate a random map
+function generateMap(width, height) {
+  console.log(`Generating map with dimensions ${width}x${height}`);
+  
+  const tiles = [];
+  const terrainTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
+  const terrainWeights = [0.65, 0.15, 0.1, 0.08, 0.02]; // Adjusted probabilities for each terrain type
+  
+  // Generate a seed for consistent random generation
+  let seed = Math.floor(Math.random() * 1000000);
+  
+  // Simple random number generator with seed
+  const seededRandom = () => {
+    seed = (seed * 9301 + 49297) % 233280;
+    return seed / 233280;
+  };
+  
+  // Create noise functions for terrain generation
+  const createNoiseGenerator = (scale, amplitude, octaves) => {
+    const offsets = Array(octaves).fill().map(() => ({
+      x: seededRandom() * 1000,
+      y: seededRandom() * 1000
+    }));
+    
+    return (x, y) => {
+      let value = 0;
+      let totalAmplitude = 0;
+      
+      for (let i = 0; i < octaves; i++) {
+        const currentScale = scale * Math.pow(2, i);
+        const currentAmplitude = amplitude * Math.pow(0.5, i);
+        
+        const nx = (x / currentScale) + offsets[i].x;
+        const ny = (y / currentScale) + offsets[i].y;
+        
+        // Simple value noise
+        const sampleX = Math.floor(nx);
+        const sampleY = Math.floor(ny);
+        const fracX = nx - sampleX;
+        const fracY = ny - sampleY;
+        
+        // Generate 4 corner values
+        const hash1 = (sampleX * 12345 + sampleY * 54321) % 123456;
+        const hash2 = ((sampleX + 1) * 12345 + sampleY * 54321) % 123456;
+        const hash3 = (sampleX * 12345 + (sampleY + 1) * 54321) % 123456;
+        const hash4 = ((sampleX + 1) * 12345 + (sampleY + 1) * 54321) % 123456;
+        
+        const val1 = (hash1 / 123456) * 2 - 1;
+        const val2 = (hash2 / 123456) * 2 - 1;
+        const val3 = (hash3 / 123456) * 2 - 1;
+        const val4 = (hash4 / 123456) * 2 - 1;
+        
+        // Bilinear interpolation
+        const v1 = val1 + fracX * (val2 - val1);
+        const v2 = val3 + fracX * (val4 - val3);
+        const noise = v1 + fracY * (v2 - v1);
+        
+        value += noise * currentAmplitude;
+        totalAmplitude += currentAmplitude;
+      }
+      
+      // Normalize to [0, 1]
+      return (value / totalAmplitude + 1) / 2;
+    };
+  };
+  
+  const elevationNoise = createNoiseGenerator(10, 1.0, 3);
+  const moistureNoise = createNoiseGenerator(15, 1.0, 2);
+  const resourceNoise = createNoiseGenerator(8, 1.0, 2);
+  
+  // Generate initial random tiles in an isometric layout
+  for (let y = 0; y < height; y++) {
+    const row = [];
+    for (let x = 0; x < width; x++) {
+      // Calculate isometric coordinates
+      // In an isometric layout, the diamond shape comes from how we interpret the coordinates
+      // The actual data structure remains a 2D grid
+      
+      // Get noise values for this position
+      const elevation = Math.floor(elevationNoise(x, y) * 4); // 0-3 elevation
+      const moisture = moistureNoise(x, y);
+      const resourceValue = resourceNoise(x, y);
+      
+      // Determine terrain type based on elevation and moisture
+      let terrainType;
+      let passable = true;
+      
+      if (elevation === 0 && moisture > 0.7) {
+        // Low elevation with high moisture = water
+        terrainType = 'water';
+        passable = false;
+      } else if (elevation === 3 && moisture < 0.4) {
+        // High elevation with low moisture = mountain
+        terrainType = 'mountain';
+        passable = false;
+      } else if (elevation === 2 && moisture > 0.6) {
+        // Medium-high elevation with high moisture = forest
+        terrainType = 'forest';
+        passable = true;
+      } else if (elevation === 1 && moisture < 0.3) {
+        // Low-medium elevation with low moisture = sand
+        terrainType = 'sand';
+        passable = true;
+      } else {
+        // Default is grass
+        terrainType = 'grass';
+        passable = true;
+      }
+      
+      // Create the tile with the new data structure
+      row.push({
+        x: x,
+        y: y,
+        terrainType: terrainType,
+        passable: passable,
+        elevation: elevation,
+        // Keep the old properties for backward compatibility
+        type: terrainType,
+        walkable: passable
+      });
+    }
+    tiles.push(row);
+  }
+  
+  // Apply some smoothing to make the map more natural
+  const smoothedTiles = JSON.parse(JSON.stringify(tiles)); // Deep copy
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      // Count neighboring terrain types
+      const neighbors = {};
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          
+          const nx = x + dx;
+          const ny = y + dy;
+          
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            const neighborType = tiles[ny][nx].terrainType;
+            neighbors[neighborType] = (neighbors[neighborType] || 0) + 1;
+          }
+        }
+      }
+      
+      // Find most common neighbor type
+      let mostCommonType = tiles[y][x].terrainType;
+      let maxCount = 0;
+      
+      for (const type in neighbors) {
+        if (neighbors[type] > maxCount) {
+          maxCount = neighbors[type];
+          mostCommonType = type;
+        }
+      }
+      
+      // 50% chance to change to most common neighbor type
+      if (maxCount > 4 && seededRandom() < 0.5) {
+        smoothedTiles[y][x].terrainType = mostCommonType;
+        smoothedTiles[y][x].type = mostCommonType; // For backward compatibility
+        
+        // Update passable status based on terrain type
+        smoothedTiles[y][x].passable = mostCommonType !== 'water' && mostCommonType !== 'mountain';
+        smoothedTiles[y][x].walkable = smoothedTiles[y][x].passable; // For backward compatibility
+        
+        // Adjust elevation based on new terrain type
+        if (mostCommonType === 'mountain') {
+          smoothedTiles[y][x].elevation = 3;
+        } else if (mostCommonType === 'forest') {
+          smoothedTiles[y][x].elevation = 2;
+        } else if (mostCommonType === 'water') {
+          smoothedTiles[y][x].elevation = 0;
+        }
+      }
+    }
+  }
+  
+  console.log('Map generation complete');
+  return smoothedTiles;
+}
+
+// Game state
+const gameState = {
+  players: {},
+  entities: {},
+  map: null, // Will be initialized based on player count
+  mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 }, // Default starting dimensions with zoom
+  lastUpdateTime: Date.now(),
+  serverStartTime: Date.now() // Add server start time
+};
+
+// Initialize the map with default dimensions
+gameState.map = generateMap(gameState.mapDimensions.width, gameState.mapDimensions.height);
+
+// Initialize the game with bases and AI unit
+initializeGame();
+
+// Function to initialize the game with bases and AI unit
+function initializeGame() {
+  console.log('Initializing game with bases');
+  
+  // Create human base in the bottom-left quadrant
+  const humanBaseId = uuidv4();
+  const humanBaseX = Math.floor(gameState.mapDimensions.width * 0.25);
+  const humanBaseY = Math.floor(gameState.mapDimensions.height * 0.75);
+  
+  // Create AI base in the top-right quadrant
+  const aiBaseId = uuidv4();
+  const aiBaseX = Math.floor(gameState.mapDimensions.width * 0.75);
+  const aiBaseY = Math.floor(gameState.mapDimensions.height * 0.25);
+  
+  // Make sure the base locations are walkable
+  makeAreaWalkable(humanBaseX, humanBaseY, 5, 5);
+  makeAreaWalkable(aiBaseX, aiBaseY, 5, 5);
+  
+  // Add human base to entities with persistent team identifier
+  gameState.entities[humanBaseId] = {
+    id: humanBaseId,
+    type: 'building',
+    buildingType: 'BASE',
+    playerColor: 'blue',
+    x: humanBaseX * 32,
+    y: humanBaseY * 32,
+    width: 5 * 32,
+    height: 5 * 32,
+    playerId: 'human-team',
+    isPlayerControlled: true,
+    health: 1000,
+    maxHealth: 1000
+  };
+  
+  // Add AI base to entities
+  gameState.entities[aiBaseId] = {
+    id: aiBaseId,
+    type: 'building',
+    buildingType: 'BASE',
+    playerColor: 'red',
+    x: aiBaseX * 32,
+    y: aiBaseY * 32,
+    width: 5 * 32,
+    height: 5 * 32,
+    playerId: 'ai-team',
+    isPlayerControlled: false,
+    health: 1000,
+    maxHealth: 1000
+  };
+  
+  // Create an AI unit near the AI base
+  const aiUnitId = uuidv4();
+  gameState.entities[aiUnitId] = {
+    id: aiUnitId,
+    type: 'unit',
+    unitType: 'SOLDIER',
+    playerColor: 'red',
+    x: aiBaseX * 32 - 64,
+    y: aiBaseY * 32 + 80,
+    width: 32,
+    height: 32,
+    playerId: 'ai-team',
+    isPlayerControlled: false,
+    health: 100,
+    maxHealth: 100,
+    attackDamage: 10,
+    attackRange: 50,
+    attackCooldown: 1000,
+    speed: 2,
+    level: 1,
+    experience: 0,
+    targetX: null,
+    targetY: null,
+    isMoving: false,
+    lastUpdateTime: Date.now()
+  };
+  
+  console.log('Game initialized with bases and AI unit');
+}
+
+// Function to make an area walkable (for base placement)
+function makeAreaWalkable(centerX, centerY, width, height) {
+  const halfWidth = Math.floor(width / 2);
+  const halfHeight = Math.floor(height / 2);
+  
+  for (let y = centerY - halfHeight; y <= centerY + halfHeight; y++) {
+    for (let x = centerX - halfWidth; x <= centerX + halfWidth; x++) {
+      if (y >= 0 && y < gameState.map.length && x >= 0 && x < gameState.map[0].length) {
+        gameState.map[y][x].terrainType = 'grass';
+        gameState.map[y][x].type = 'grass'; // For backward compatibility
+        gameState.map[y][x].passable = true;
+        gameState.map[y][x].walkable = true; // For backward compatibility
+        gameState.map[y][x].elevation = 1;
+      }
+    }
+  }
+}
+
+// Function to check if map needs to be resized based on player count
+function checkAndResizeMap() {
+  const playerCount = Object.values(gameState.players).filter(player => player.connected).length;
+  const newDimensions = getMapDimensions(playerCount);
+  
+  // Check if dimensions have changed
+  if (newDimensions.width !== gameState.mapDimensions.width || 
+      newDimensions.height !== gameState.mapDimensions.height) {
+    
+    console.log(`Resizing map from ${gameState.mapDimensions.width}x${gameState.mapDimensions.height} (zoom: ${gameState.mapDimensions.zoomFactor}) to ${newDimensions.width}x${newDimensions.height} (zoom: ${newDimensions.zoomFactor}) based on ${playerCount} players`);
+    
+    // Save old entities
+    const oldEntities = { ...gameState.entities };
+    
+    // Update map dimensions
+    gameState.mapDimensions = newDimensions;
+    
+    // Generate new map
+    gameState.map = generateMap(newDimensions.width, newDimensions.height);
+    
+    // Clear entities
+    gameState.entities = {};
+    
+    // Re-initialize game with bases
+    initializeGame();
+    
+    // Restore player units with adjusted positions
+    Object.values(oldEntities).forEach(entity => {
+      if (entity.type === 'unit' && entity.playerId !== 'ai') {
+        // Calculate relative position in the old map
+        const oldMapWidth = gameState.map[0].length * 32;
+        const oldMapHeight = gameState.map.length * 32;
+        const relativeX = entity.x / oldMapWidth;
+        const relativeY = entity.y / oldMapHeight;
+        
+        // Calculate new position in the new map
+        const newMapWidth = newDimensions.width * 32;
+        const newMapHeight = newDimensions.height * 32;
+        const newX = Math.floor(relativeX * newMapWidth);
+        const newY = Math.floor(relativeY * newMapHeight);
+        
+        // Create a new entity with adjusted position
+        const newEntityId = uuidv4();
+        gameState.entities[newEntityId] = {
+          ...entity,
+          id: newEntityId,
+          x: newX,
+          y: newY,
+          targetX: null,
+          targetY: null,
+          isMoving: false
+        };
+      }
+    });
+    
+    // Broadcast the new map and entities to all players
+    io.emit('mapResized', {
+      mapDimensions: gameState.mapDimensions,
+      map: gameState.map,
+      entities: gameState.entities
+    });
+    
+    return true;
+  }
+  
+  return false;
+}
+
+// Player colors for assignment
+const playerColors = ['red', 'blue', 'green', 'yellow'];
+let nextPlayerColorIndex = 0;
+
+// Function to create a unit for a player
+function createPlayerUnit(playerId) {
+    // Find the player's base
+    const playerBase = Object.values(gameState.entities).find(entity => 
+        entity.type === 'building' && 
+        entity.buildingType === 'BASE' && 
+        entity.playerId === playerId
+    );
+
+    if (!playerBase) {
+        console.error(`Could not find base for player ${playerId}`);
+        return null;
+    }
+
+    // Create unit adjacent to the player's base
+    const offsetX = 64; // 2 tiles to the right
+    const unitX = playerBase.x + playerBase.width + offsetX;
+    const unitY = playerBase.y + (playerBase.height / 2);
+
+    // Create the unit with a unique ID
+    const unitId = uuidv4();
+    const unit = {
+        id: unitId,
+        type: 'unit',
+        unitType: 'SOLDIER',
+        x: unitX,
+        y: unitY,
+        width: 32,
+        height: 32,
+        health: 100,
+        maxHealth: 100,
+        attackDamage: 10,
+        attackRange: 50,
+        attackCooldown: 1000,
+        speed: 2,
+        level: 1,
+        experience: 0,
+        isPlayerControlled: true,
+        playerId: playerId,
+        playerColor: 'blue',
+        targetX: null,
+        targetY: null,
+        isMoving: false,
+        lastUpdateTime: Date.now()
+    };
+
+    console.log(`Created new unit for player ${playerId} at position (${unitX}, ${unitY})`);
+    return unit;
+}
+
+// Handle socket connections
+io.on('connection', (socket) => {
+  console.log(`New player connected: ${socket.id}`);
+  
+  // Generate a unique player ID
+  const playerId = uuidv4();
+  
+  // Add player to game state
+  gameState.players[playerId] = {
+    id: playerId,
+    socketId: socket.id,
+    name: `Player ${Object.keys(gameState.players).length + 1}`,
+    color: 'blue', // Always blue for human player
+    connected: true,
+    lastActivity: Date.now()
+  };
+  
+  // Check if map needs to be resized based on new player count
+  const mapResized = checkAndResizeMap();
+  
+  // If map wasn't resized, we need to find the human base
+  if (!mapResized) {
+    // Find the human base by its persistent team identifier
+    let humanBase = null;
+    Object.values(gameState.entities).forEach(entity => {
+      if (entity.type === 'building' && entity.buildingType === 'BASE' && 
+          (entity.playerId === 'human-team' || entity.playerColor === 'blue')) {
+        // Assign this player to the base
+        entity.playerId = playerId;
+        humanBase = entity;
+        console.log(`Assigned human base to player ${playerId}`);
+      }
+    });
+  }
+
+  // Filter entities to only include buildings for initial state
+  const buildingEntities = {};
+  Object.entries(gameState.entities).forEach(([id, entity]) => {
+    if (entity.type === 'building') {
+      buildingEntities[id] = entity;
+    }
+  });
+  
+  // Send initial game state to the new player (only map and buildings)
+  socket.emit('gameState', {
+    playerId: playerId,
+    gameState: {
+      players: gameState.players,
+      entities: buildingEntities,
+      map: gameState.map,
+      mapDimensions: gameState.mapDimensions,
+      lastUpdateTime: gameState.lastUpdateTime,
+      serverStartTime: gameState.serverStartTime
+    }
+  });
+  
+  // Broadcast new player to all other players
+  socket.broadcast.emit('playerJoined', {
+    player: gameState.players[playerId]
+  });
+
+  // Handle join game request
+  socket.on('joinGame', (data) => {
+    const playerId = data.playerId;
+    console.log(`Player ${playerId} joining game`);
+
+    if (gameState.players[playerId]) {
+      // Create the unit explicitly
+      const newUnit = createPlayerUnit(playerId);
+      if (!newUnit) {
+        socket.emit('joinGameError', { message: "Could not create unit." });
+        return;
+      }
+
+      // IMPORTANT: Add unit to game state explicitly
+      gameState.entities[newUnit.id] = newUnit;
+      console.log(`Added unit ${newUnit.id} to game state for player ${playerId}`);
+
+      // Broadcast to ALL clients (including the one who joined)
+      io.emit('unitCreated', { unit: newUnit });
+      console.log(`Broadcasted unitCreated event for unit ${newUnit.id}`);
+
+      // Confirm join to requesting client explicitly
+      socket.emit('joinGameSuccess', { unit: newUnit });
+      console.log(`Sent joinGameSuccess to player ${playerId}`);
+    } else {
+      console.error(`Player ${playerId} not found in gameState.players`);
+      socket.emit('joinGameError', { message: "Player not found." });
+    }
+  });
+  
+  // Handle player disconnection
+  socket.on('disconnect', () => {
+    console.log(`Player disconnected: ${socket.id}`);
+    
+    // Find the player by socket ID
+    const playerId = Object.keys(gameState.players).find(
+      id => gameState.players[id].socketId === socket.id
+    );
+    
+    if (playerId) {
+      // Mark player as disconnected
+      gameState.players[playerId].connected = false;
+      gameState.players[playerId].lastActivity = Date.now();
+      
+      // Broadcast player disconnection to all other players
+      socket.broadcast.emit('playerLeft', {
+        playerId: playerId
+      });
+      
+      // Remove player units, but NOT their base
+      Object.keys(gameState.entities).forEach(entityId => {
+        const entity = gameState.entities[entityId];
+        if (entity.playerId === playerId && entity.buildingType !== 'BASE') {
+          delete gameState.entities[entityId];
+          
+          // Broadcast entity removal
+          io.emit('entityRemoved', {
+            entityId: entityId
+          });
+        }
+      });
+      
+      // Check if map needs to be resized after player disconnection
+      checkAndResizeMap();
+    }
+  });
+});
+
+// Game update loop (10 updates per second)
+const UPDATE_INTERVAL = 100; // ms
+
+setInterval(() => {
+  const currentTime = Date.now();
+  const deltaTime = currentTime - gameState.lastUpdateTime;
+  gameState.lastUpdateTime = currentTime;
+  
+  // Update all moving entities
+  Object.keys(gameState.entities).forEach(entityId => {
+    const entity = gameState.entities[entityId];
+    
+    if (entity.isMoving && entity.targetX !== null && entity.targetY !== null) {
+      // Calculate direction to target
+      const centerX = entity.x + entity.width / 2;
+      const centerY = entity.y + entity.height / 2;
+      const dx = entity.targetX - centerX;
+      const dy = entity.targetY - centerY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // If we're close enough to the target, stop moving
+      if (distance < 5) {
+        entity.isMoving = false;
+        entity.targetX = null;
+        entity.targetY = null;
+        return;
+      }
+      
+      // Normalize direction and apply speed
+      const moveSpeed = entity.speed * (deltaTime / 1000);
+      const normalizedDx = dx / distance;
+      const normalizedDy = dy / distance;
+      
+      // Update position with boundary checking
+      const newX = entity.x + normalizedDx * moveSpeed;
+      const newY = entity.y + normalizedDy * moveSpeed;
+      
+      // Ensure the entity stays within map boundaries
+      const mapWidth = gameState.mapDimensions.width * 32; // Map width in pixels
+      const mapHeight = gameState.mapDimensions.height * 32; // Map height in pixels
+      
+      entity.x = Math.max(0, Math.min(newX, mapWidth - entity.width));
+      entity.y = Math.max(0, Math.min(newY, mapHeight - entity.height));
+    }
+  });
+  
+  // Broadcast updated game state to all players
+  io.emit('gameUpdate', {
+    entities: gameState.entities,
+    timestamp: currentTime,
+    serverStartTime: gameState.serverStartTime // Include server start time
+  });
+}, UPDATE_INTERVAL);
+
+// Start the server
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Game client available at http://localhost:${PORT}`);
+  console.log(`Initial map size: ${gameState.mapDimensions.width}x${gameState.mapDimensions.height} (zoom: ${gameState.mapDimensions.zoomFactor})`);
+});  
+ 
+ 
+======================================== 
 FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html 
 ======================================== 
  
@@ -5092,4 +5795,417 @@ FILE: package.json
   }
 }
  
+ 
+ 
+======================================== 
+FILE: generate_terrain_tiles.js 
+======================================== 
+ 
+/**
+ * Isometric Terrain Tile Generator
+ * 
+ * This script generates basic isometric terrain tiles (grass, mountain, water)
+ * as PNG files for use in an isometric game.
+ * 
+ * Dependencies:
+ * - Node.js
+ * - canvas npm package (install with: npm install canvas)
+ * 
+ * Usage:
+ * 1. Install dependencies: npm install canvas
+ * 2. Run script: node generate_terrain_tiles.js
+ * 3. Check current directory for generated PNG files
+ */
+
+const fs = require('fs');
+const { createCanvas } = require('canvas');
+
+// Configuration
+const TILE_WIDTH = 128;
+const TILE_HEIGHT = 64;
+const OUTPUT_DIR = './';
+
+// Define terrain types with their properties
+const terrainTypes = [
+    {
+        name: 'grass',
+        baseColor: '#7CBA3D',
+        patternColor: '#8BC34A',
+        patternType: 'noise'
+    },
+    {
+        name: 'mountain',
+        baseColor: '#8D6E63',
+        patternColor: '#6D4C41',
+        patternType: 'rocky'
+    },
+    {
+        name: 'water',
+        baseColor: '#4B93D1',
+        patternColor: '#64B5F6',
+        patternType: 'waves'
+    },
+    {
+        name: 'forest',
+        baseColor: '#2E7D32',
+        patternColor: '#1B5E20',
+        patternType: 'trees'
+    },
+    {
+        name: 'sand',
+        baseColor: '#FDD835',
+        patternColor: '#F9A825',
+        patternType: 'noise'
+    }
+];
+
+/**
+ * Main function to generate all terrain tiles
+ */
+function generateTerrainTiles() {
+    console.log('Generating isometric terrain tiles...');
+    
+    // Create output directory if it doesn't exist
+    if (!fs.existsSync(OUTPUT_DIR)) {
+        fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    }
+    
+    // Generate each terrain type
+    terrainTypes.forEach(terrain => {
+        generateTile(terrain);
+    });
+    
+    console.log('Tile generation complete! Files saved to:', OUTPUT_DIR);
+}
+
+/**
+ * Generate a single terrain tile
+ * @param {Object} terrain - Terrain configuration object
+ */
+function generateTile(terrain) {
+    console.log(`Generating ${terrain.name} tile...`);
+    
+    // Create canvas with specified dimensions
+    const canvas = createCanvas(TILE_WIDTH, TILE_HEIGHT);
+    const ctx = canvas.getContext('2d');
+    
+    // Clear canvas with transparency
+    ctx.clearRect(0, 0, TILE_WIDTH, TILE_HEIGHT);
+    
+    // Draw the isometric diamond shape
+    drawIsometricTile(ctx, terrain);
+    
+    // Save the canvas as a PNG file
+    const buffer = canvas.toBuffer('image/png');
+    fs.writeFileSync(`${OUTPUT_DIR}${terrain.name}.png`, buffer);
+    
+    console.log(`✓ ${terrain.name}.png created`);
+}
+
+/**
+ * Draw an isometric tile with the specified terrain properties
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Object} terrain - Terrain configuration object
+ */
+function drawIsometricTile(ctx, terrain) {
+    // Draw the diamond shape
+    ctx.beginPath();
+    ctx.moveTo(TILE_WIDTH / 2, 0);              // Top point
+    ctx.lineTo(TILE_WIDTH, TILE_HEIGHT / 2);    // Right point
+    ctx.lineTo(TILE_WIDTH / 2, TILE_HEIGHT);    // Bottom point
+    ctx.lineTo(0, TILE_HEIGHT / 2);             // Left point
+    ctx.closePath();
+    
+    // Fill with base color
+    ctx.fillStyle = terrain.baseColor;
+    ctx.fill();
+    
+    // Add pattern based on terrain type
+    switch (terrain.patternType) {
+        case 'noise':
+            drawNoisePattern(ctx, terrain);
+            break;
+        case 'rocky':
+            drawRockyPattern(ctx, terrain);
+            break;
+        case 'waves':
+            drawWavePattern(ctx, terrain);
+            break;
+        case 'trees':
+            drawTreePattern(ctx, terrain);
+            break;
+    }
+    
+    // Add shading for 3D effect
+    addShading(ctx);
+    
+    // Add border
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+}
+
+/**
+ * Draw a noise pattern (for grass and sand)
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Object} terrain - Terrain configuration object
+ */
+function drawNoisePattern(ctx, terrain) {
+    ctx.save();
+    
+    // Clip to the diamond shape
+    clipToDiamond(ctx);
+    
+    ctx.fillStyle = terrain.patternColor;
+    
+    // Create a noise pattern with small dots
+    for (let i = 0; i < 500; i++) {
+        const x = Math.random() * TILE_WIDTH;
+        const y = Math.random() * TILE_HEIGHT;
+        const size = Math.random() * 1.5 + 0.5;
+        
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    ctx.restore();
+}
+
+/**
+ * Draw a rocky pattern (for mountains)
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Object} terrain - Terrain configuration object
+ */
+function drawRockyPattern(ctx, terrain) {
+    ctx.save();
+    
+    // Clip to the diamond shape
+    clipToDiamond(ctx);
+    
+    // Draw mountain peak
+    const gradient = ctx.createLinearGradient(
+        TILE_WIDTH / 2, 0,
+        TILE_WIDTH / 2, TILE_HEIGHT
+    );
+    gradient.addColorStop(0, terrain.patternColor);
+    gradient.addColorStop(1, terrain.baseColor);
+    
+    ctx.fillStyle = gradient;
+    
+    // Draw a triangular mountain shape
+    ctx.beginPath();
+    ctx.moveTo(TILE_WIDTH / 2, TILE_HEIGHT / 4);
+    ctx.lineTo(TILE_WIDTH * 0.7, TILE_HEIGHT * 0.7);
+    ctx.lineTo(TILE_WIDTH * 0.3, TILE_HEIGHT * 0.7);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Add some rocky details
+    ctx.fillStyle = terrain.patternColor;
+    for (let i = 0; i < 15; i++) {
+        const x = TILE_WIDTH * 0.3 + Math.random() * (TILE_WIDTH * 0.4);
+        const y = TILE_HEIGHT * 0.4 + Math.random() * (TILE_HEIGHT * 0.3);
+        const size = 2 + Math.random() * 5;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + size, y - size / 2);
+        ctx.lineTo(x + size * 1.5, y);
+        ctx.lineTo(x + size, y + size / 2);
+        ctx.closePath();
+        ctx.fill();
+    }
+    
+    // Add snow cap
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.moveTo(TILE_WIDTH / 2, TILE_HEIGHT / 4);
+    ctx.lineTo(TILE_WIDTH / 2 + 10, TILE_HEIGHT / 4 + 10);
+    ctx.lineTo(TILE_WIDTH / 2 - 10, TILE_HEIGHT / 4 + 10);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+/**
+ * Draw a wave pattern (for water)
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Object} terrain - Terrain configuration object
+ */
+function drawWavePattern(ctx, terrain) {
+    ctx.save();
+    
+    // Clip to the diamond shape
+    clipToDiamond(ctx);
+    
+    // Create a gradient for water depth
+    const gradient = ctx.createLinearGradient(
+        0, TILE_HEIGHT / 2,
+        TILE_WIDTH, TILE_HEIGHT / 2
+    );
+    gradient.addColorStop(0, terrain.baseColor);
+    gradient.addColorStop(0.5, terrain.patternColor);
+    gradient.addColorStop(1, terrain.baseColor);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, TILE_WIDTH, TILE_HEIGHT);
+    
+    // Draw wave lines
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.lineWidth = 1;
+    
+    for (let i = 0; i < 8; i++) {
+        const yPos = TILE_HEIGHT * 0.3 + i * (TILE_HEIGHT * 0.5 / 8);
+        
+        ctx.beginPath();
+        ctx.moveTo(TILE_WIDTH * 0.3, yPos);
+        
+        // Create a wavy line
+        for (let x = 0; x < TILE_WIDTH * 0.4; x += 5) {
+            ctx.lineTo(
+                TILE_WIDTH * 0.3 + x,
+                yPos + Math.sin(x * 0.1) * 2
+            );
+        }
+        
+        ctx.stroke();
+    }
+    
+    ctx.restore();
+}
+
+/**
+ * Draw a tree pattern (for forests)
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ * @param {Object} terrain - Terrain configuration object
+ */
+function drawTreePattern(ctx, terrain) {
+    ctx.save();
+    
+    // Clip to the diamond shape
+    clipToDiamond(ctx);
+    
+    // Draw base gradient
+    const gradient = ctx.createLinearGradient(
+        0, 0,
+        TILE_WIDTH, TILE_HEIGHT
+    );
+    gradient.addColorStop(0, terrain.baseColor);
+    gradient.addColorStop(1, terrain.patternColor);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, TILE_WIDTH, TILE_HEIGHT);
+    
+    // Draw tree trunks
+    ctx.fillStyle = '#795548';
+    
+    for (let i = 0; i < 10; i++) {
+        const x = 15 + Math.random() * (TILE_WIDTH - 30);
+        const y = 10 + Math.random() * (TILE_HEIGHT - 20);
+        
+        ctx.fillRect(x, y, 3, 6);
+    }
+    
+    // Draw tree tops
+    ctx.fillStyle = terrain.patternColor;
+    
+    for (let i = 0; i < 10; i++) {
+        const x = 15 + Math.random() * (TILE_WIDTH - 30);
+        const y = 8 + Math.random() * (TILE_HEIGHT - 20);
+        
+        ctx.beginPath();
+        ctx.arc(x + 1, y, 6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    ctx.restore();
+}
+
+/**
+ * Add shading to create a 3D effect
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ */
+function addShading(ctx) {
+    ctx.save();
+    
+    // Clip to the diamond shape
+    clipToDiamond(ctx);
+    
+    // Add highlight on top-left edge
+    const highlightGradient = ctx.createLinearGradient(
+        0, TILE_HEIGHT / 2,
+        TILE_WIDTH / 2, 0
+    );
+    highlightGradient.addColorStop(0, 'rgba(255, 255, 255, 0.3)');
+    highlightGradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+    
+    ctx.fillStyle = highlightGradient;
+    ctx.beginPath();
+    ctx.moveTo(0, TILE_HEIGHT / 2);
+    ctx.lineTo(TILE_WIDTH / 2, 0);
+    ctx.lineTo(TILE_WIDTH / 2, TILE_HEIGHT / 2);
+    ctx.closePath();
+    ctx.fill();
+    
+    // Add shadow on bottom-right edge
+    const shadowGradient = ctx.createLinearGradient(
+        TILE_WIDTH / 2, TILE_HEIGHT / 2,
+        TILE_WIDTH, TILE_HEIGHT / 2
+    );
+    shadowGradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+    
+    ctx.fillStyle = shadowGradient;
+    ctx.beginPath();
+    ctx.moveTo(TILE_WIDTH / 2, TILE_HEIGHT / 2);
+    ctx.lineTo(TILE_WIDTH, TILE_HEIGHT / 2);
+    ctx.lineTo(TILE_WIDTH / 2, TILE_HEIGHT);
+    ctx.closePath();
+    ctx.fill();
+    
+    ctx.restore();
+}
+
+/**
+ * Helper function to clip the canvas to the diamond shape
+ * @param {CanvasRenderingContext2D} ctx - Canvas context
+ */
+function clipToDiamond(ctx) {
+    ctx.beginPath();
+    ctx.moveTo(TILE_WIDTH / 2, 0);              // Top point
+    ctx.lineTo(TILE_WIDTH, TILE_HEIGHT / 2);    // Right point
+    ctx.lineTo(TILE_WIDTH / 2, TILE_HEIGHT);    // Bottom point
+    ctx.lineTo(0, TILE_HEIGHT / 2);             // Left point
+    ctx.closePath();
+    ctx.clip();
+}
+
+// Run the generator
+generateTerrainTiles();  
+ 
+ 
+======================================== 
+FILE: Renderer.js 
+======================================== 
+ 
+renderEntities() {
+    this.game.entities.forEach(entity => {
+        if (!this.camera.isVisible(entity.x, entity.y, entity.width, entity.height)) {
+            return;
+        }
+        const isoX = (entity.x - entity.y) / 2;
+        const isoY = (entity.x + entity.y) / 4;
+        const screenPos = this.camera.worldToScreen(isoX, isoY);
+        // Proceed with existing rendering logic using screenPos.x, screenPos.y
+        if (entity.image) {
+            this.ctx.drawImage(entity.image, screenPos.x, screenPos.y);
+        } else {
+            this.ctx.fillStyle = entity.isPlayerControlled ? Config.COLORS.PLAYER_UNIT : Config.COLORS.ENEMY_UNIT;
+            this.ctx.fillRect(screenPos.x, screenPos.y, entity.width * this.camera.zoom, entity.height * this.camera.zoom);
+        }
+        // Add any additional rendering (e.g., selection highlights, health bars)
+    });
+}  
  
