@@ -11,8 +11,21 @@ echo ======================================== >> codecompilation.txt
 echo. >> codecompilation.txt
 
 :: Process all JavaScript files in src directory and subdirectories
-echo Adding JavaScript files... 
+echo Adding JavaScript files from src... 
 for /r src %%f in (*.js) do (
+    echo. >> codecompilation.txt
+    echo ======================================== >> codecompilation.txt
+    echo FILE: %%f >> codecompilation.txt
+    echo ======================================== >> codecompilation.txt
+    echo. >> codecompilation.txt
+    type "%%f" >> codecompilation.txt
+    echo. >> codecompilation.txt
+    echo. >> codecompilation.txt
+)
+
+:: Process all JavaScript files in server directory and subdirectories
+echo Adding JavaScript files from server... 
+for /r server %%f in (*.js) do (
     echo. >> codecompilation.txt
     echo ======================================== >> codecompilation.txt
     echo FILE: %%f >> codecompilation.txt
@@ -59,6 +72,19 @@ echo. >> codecompilation.txt
 type "package.json" >> codecompilation.txt
 echo. >> codecompilation.txt
 echo. >> codecompilation.txt
+
+:: Add any JavaScript files in the root directory
+echo Adding JavaScript files from root...
+for %%f in (*.js) do (
+    echo. >> codecompilation.txt
+    echo ======================================== >> codecompilation.txt
+    echo FILE: %%f >> codecompilation.txt
+    echo ======================================== >> codecompilation.txt
+    echo. >> codecompilation.txt
+    type "%%f" >> codecompilation.txt
+    echo. >> codecompilation.txt
+    echo. >> codecompilation.txt
+)
 
 echo Code compilation complete! All code has been saved to codecompilation.txt
 echo. 
