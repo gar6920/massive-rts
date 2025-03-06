@@ -80,24 +80,24 @@ class Unit extends Entity {
      * Update unit state
      */
     update(deltaTime, game) {
-        // Only use local movement if we're not receiving server updates
-        // This prevents conflicts with the interpolation in Game.updateEntities
+        if (this.isDestroyed) {
+            // Ensure no further interpolation or position updates
+            this.isMoving = false;
+            this.targetX = null;
+            this.targetY = null;
+            return; 
+        }
+
         if (this.serverX === undefined && this.isMoving && this.targetX !== null && this.targetY !== null) {
             this.moveTowardsTarget(deltaTime);
         }
-        
-        // Handle combat if we have a target entity
+
         if (this.targetEntity) {
             this.updateCombat(deltaTime, game);
         }
-        
-        // Update any active animations
+
         if (this.isAttacking && this.attackAnimationTime) {
             this.updateAttackAnimation(deltaTime);
-        }
-        
-        if (this.isDestroyed && this.deathAnimationTime) {
-            this.updateDeathAnimation(deltaTime);
         }
     }
     
@@ -150,16 +150,14 @@ class Unit extends Entity {
      * Update combat state
      */
     updateCombat(deltaTime, game) {
-        // Check if target is still valid - only clear if the target is completely removed
-        // or if isDestroyed is true (animation completed)
-        if (!this.targetEntity || this.targetEntity.isDestroyed === true) {
+        if (!this.targetEntity || this.targetEntity.isDestroyed) {
             this.targetEntity = null;
             this.isAttacking = false;
+            this.isMoving = false;  // Immediately stop moving towards a dead target
+            this.targetX = null;
+            this.targetY = null;
             return;
         }
-        
-        // Keep attacking even if health is 0 or below, until the server removes the entity
-        // or until the death animation is complete
         
         // Calculate distance to target
         const center = this.getCenter();
@@ -198,14 +196,13 @@ class Unit extends Entity {
      * Take damage from an attacker
      */
     takeDamage(amount, attacker) {
+        if (this.isDestroyed) return; // Prevent further damage after death
+
         this.health -= amount;
-        console.log(`Unit took ${amount} damage, health: ${this.health}`);
-        
-        // If health drops to 0 or below, die
         if (this.health <= 0) {
+            this.health = 0; // Never negative
             this.die();
-            
-            // Give experience to the attacker if it's a unit
+
             if (attacker instanceof Unit) {
                 attacker.gainExperience(this.level * 10);
             }
@@ -245,8 +242,15 @@ class Unit extends Entity {
      * Handle unit death
      */
     die() {
-        console.log('Unit died');
-        this.playDeathAnimation();
+        if (this.isDestroyed) return;
+        this.isDestroyed = true;
+        this.health = 0;                  // Health immediately zero, no negatives
+        this.isMoving = false;            // Immediately stop movement
+        this.targetEntity = null;         // Clear combat target
+        this.targetX = null;              // Clear positional target
+        this.targetY = null;
+        this.isSelectable = false;        // Disable selection
+        this.deathAnimationTime = Date.now(); // Start death timestamp
     }
     
     /**
@@ -299,66 +303,30 @@ class Unit extends Entity {
     }
     
     /**
-     * Play death animation
-     */
-    playDeathAnimation() {
-        this.isDestroyed = true;
-        this.deathAnimationTime = Date.now();
-        this.deathAnimationDuration = 1000; // Animation lasts 1 second
-        
-        // Keep the entity in place but mark it as destroyed
-        // The actual removal will happen after the animation completes
-        // This allows other units to see that it's destroyed but still animate correctly
-    }
-    
-    /**
-     * Update death animation
-     */
-    updateDeathAnimation(deltaTime) {
-        const now = Date.now();
-        const elapsed = now - this.deathAnimationTime;
-        
-        if (elapsed >= this.deathAnimationDuration) {
-            // Animation complete, unit should be removed
-            this.deathAnimationTime = null;
-        }
-    }
-    
-    /**
      * Render the unit
      */
     render(ctx, camera) {
-        // If unit is destroyed and playing death animation, modify rendering
-        if (this.isDestroyed) {
-            // Skip rendering if death animation is complete
-            if (!this.deathAnimationTime) return;
-            
-            // Apply death animation effects
-            const elapsed = Date.now() - this.deathAnimationTime;
-            const progress = Math.min(1, elapsed / this.deathAnimationDuration);
-            
-            // Fade out as animation progresses
-            ctx.globalAlpha = 1 - progress;
-        }
-        
-        // Get screen position
-        const screenPos = camera.worldToScreen(this.x, this.y);
-        
+        // Convert unit's cartesian position to isometric
+        const isoX = (this.x - this.y) / 2;
+        const isoY = (this.x + this.y) / 4;
+
+        const screenPos = camera.worldToScreen(isoX, isoY);
+
         // Draw selection indicator if selected
         if (this.isSelected) {
             ctx.beginPath();
             ctx.strokeStyle = 'yellow';
             ctx.lineWidth = 2;
             ctx.arc(
-                screenPos.x + this.width / 2,
-                screenPos.y + this.height / 2,
+                screenPos.x,
+                screenPos.y,
                 this.width / 1.5,
                 0,
                 Math.PI * 2
             );
             ctx.stroke();
         }
-        
+
         // Draw attack indicator if attacking
         if (this.isAttacking && this.attackAnimationTime) {
             const elapsed = Date.now() - this.attackAnimationTime;
@@ -368,41 +336,48 @@ class Unit extends Entity {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2 * (1 - progress);
             ctx.arc(
-                screenPos.x + this.width / 2,
-                screenPos.y + this.height / 2,
+                screenPos.x,
+                screenPos.y,
                 this.width / 1.2 * (1 + progress * 0.5),
                 0,
                 Math.PI * 2
             );
             ctx.stroke();
         }
-        
-        // Draw the unit image
+
+        // Draw the unit normally
         if (this.image && this.image.complete) {
             ctx.drawImage(
                 this.image,
-                screenPos.x,
-                screenPos.y,
+                screenPos.x - this.width / 2,
+                screenPos.y - this.height / 2,
                 this.width,
                 this.height
             );
         } else {
-            // Fallback if image is not loaded
             ctx.fillStyle = this.playerColor || 'blue';
-            ctx.fillRect(
-                screenPos.x,
-                screenPos.y,
-                this.width,
-                this.height
-            );
+            ctx.fillRect(screenPos.x - this.width / 2, screenPos.y - this.height / 2, this.width, this.height);
         }
-        
-        // Draw health bar
-        this.renderHealthBar(ctx, screenPos);
-        
-        // Reset alpha if modified
+
+        // Health bar only when alive
+        if (this.health > 0) {
+            this.renderHealthBar(ctx, screenPos);
+        }
+
+        // Red "X" when destroyed, properly isometric
         if (this.isDestroyed) {
-            ctx.globalAlpha = 1;
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x - this.width / 2, screenPos.y - this.height / 2);
+            ctx.lineTo(screenPos.x + this.width / 2, screenPos.y + this.height / 2);
+            ctx.moveTo(screenPos.x + this.width / 2, screenPos.y - this.height / 2);
+            ctx.lineTo(screenPos.x - this.width / 2, screenPos.y + this.height / 2);
+            ctx.stroke();
+
+            if (Date.now() - this.deathAnimationTime >= 3000) {
+                this.markForRemoval = true;
+            }
         }
     }
 } 

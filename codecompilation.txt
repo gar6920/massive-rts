@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Wed 03/05/2025 19:26:48.16 
+Created: Thu 03/06/2025 18:33:11.22 
 ======================================== 
  
  
@@ -356,6 +356,14 @@ class Unit extends Entity {
         this.maxHealth = attributes.health || 100;
         this.level = 1;
         this.experience = 0;
+        
+        // Animation properties
+        this.isAttacking = false;
+        this.attackAnimationTime = null;
+        this.attackAnimationDuration = 500; // Animation lasts 500ms
+        this.isDestroyed = false;
+        this.deathAnimationTime = null;
+        this.deathAnimationDuration = 1000; // Animation lasts 1 second
     }
     
     /**
@@ -386,15 +394,24 @@ class Unit extends Entity {
      * Update unit state
      */
     update(deltaTime, game) {
-        // Only use local movement if we're not receiving server updates
-        // This prevents conflicts with the interpolation in Game.updateEntities
+        if (this.isDestroyed) {
+            // Ensure no further interpolation or position updates
+            this.isMoving = false;
+            this.targetX = null;
+            this.targetY = null;
+            return; 
+        }
+
         if (this.serverX === undefined && this.isMoving && this.targetX !== null && this.targetY !== null) {
             this.moveTowardsTarget(deltaTime);
         }
-        
-        // Handle combat if we have a target entity
+
         if (this.targetEntity) {
             this.updateCombat(deltaTime, game);
+        }
+
+        if (this.isAttacking && this.attackAnimationTime) {
+            this.updateAttackAnimation(deltaTime);
         }
     }
     
@@ -447,11 +464,16 @@ class Unit extends Entity {
      * Update combat state
      */
     updateCombat(deltaTime, game) {
-        // Check if target is still valid
-        if (!this.targetEntity || this.targetEntity.health <= 0) {
+        // Check if target is still valid - only clear if the target is completely removed
+        // or if isDestroyed is true (animation completed)
+        if (!this.targetEntity || this.targetEntity.isDestroyed === true) {
             this.targetEntity = null;
+            this.isAttacking = false;
             return;
         }
+        
+        // Keep attacking even if health is 0 or below, until the server removes the entity
+        // or until the death animation is complete
         
         // Calculate distance to target
         const center = this.getCenter();
@@ -462,7 +484,10 @@ class Unit extends Entity {
         
         // If target is out of range, move towards it
         if (distance > this.attackRange) {
+            // Update the target position to follow the moving target
             this.setTarget(targetCenter.x, targetCenter.y);
+            // Maintain the attacking state even when moving toward the target
+            this.isAttacking = true;
             return;
         }
         
@@ -480,20 +505,20 @@ class Unit extends Entity {
     attack(target) {
         console.log(`Unit attacking target for ${this.attackDamage} damage`);
         target.takeDamage(this.attackDamage, this);
+        this.performAttackAnimation();
     }
     
     /**
      * Take damage from an attacker
      */
     takeDamage(amount, attacker) {
+        if (this.isDestroyed) return; // Prevent further damage after death
+
         this.health -= amount;
-        console.log(`Unit took ${amount} damage, health: ${this.health}`);
-        
-        // If health drops to 0 or below, die
         if (this.health <= 0) {
+            this.health = 0; // Never negative
             this.die();
-            
-            // Give experience to the attacker if it's a unit
+
             if (attacker instanceof Unit) {
                 attacker.gainExperience(this.level * 10);
             }
@@ -533,9 +558,15 @@ class Unit extends Entity {
      * Handle unit death
      */
     die() {
-        console.log('Unit died');
-        // In a real implementation, we would remove the unit from the game
-        // and possibly play a death animation
+        if (this.isDestroyed) return;
+        this.isDestroyed = true;
+        this.health = 0;                  // Health immediately zero, no negatives
+        this.isMoving = false;            // Immediately stop movement
+        this.targetEntity = null;         // Clear combat target
+        this.targetX = null;              // Clear positional target
+        this.targetY = null;
+        this.isSelectable = false;        // Disable selection
+        this.deathAnimationTime = Date.now(); // Start death timestamp
     }
     
     /**
@@ -555,8 +586,106 @@ class Unit extends Entity {
             experience: this.experience,
             targetX: this.targetX,
             targetY: this.targetY,
-            isMoving: this.isMoving
+            isMoving: this.isMoving,
+            isAttacking: this.isAttacking,
+            attackAnimationTime: this.attackAnimationTime,
+            attackAnimationDuration: this.attackAnimationDuration,
+            isDestroyed: this.isDestroyed,
+            deathAnimationTime: this.deathAnimationTime,
+            deathAnimationDuration: this.deathAnimationDuration
         };
+    }
+    
+    /**
+     * Perform attack animation
+     */
+    performAttackAnimation() {
+        this.isAttacking = true;
+        this.attackAnimationTime = Date.now();
+        this.attackAnimationDuration = 500; // Animation lasts 500ms
+    }
+    
+    /**
+     * Update attack animation
+     */
+    updateAttackAnimation(deltaTime) {
+        const now = Date.now();
+        const elapsed = now - this.attackAnimationTime;
+        
+        if (elapsed >= this.attackAnimationDuration) {
+            // Animation complete
+            this.attackAnimationTime = null;
+        }
+    }
+    
+    /**
+     * Render the unit
+     */
+    render(ctx, camera) {
+        const screenPos = camera.worldToScreen(this.x, this.y);
+        
+        // Draw selection indicator if selected
+        if (this.isSelected) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 2;
+            ctx.arc(
+                screenPos.x + this.width / 2,
+                screenPos.y + this.height / 2,
+                this.width / 1.5,
+                0,
+                Math.PI * 2
+            );
+            ctx.stroke();
+        }
+        
+        // Draw attack indicator if attacking
+        if (this.isAttacking && this.attackAnimationTime) {
+            const elapsed = Date.now() - this.attackAnimationTime;
+            const progress = Math.min(1, elapsed / this.attackAnimationDuration);
+            
+            ctx.beginPath();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2 * (1 - progress);
+            ctx.arc(
+                screenPos.x + this.width / 2,
+                screenPos.y + this.height / 2,
+                this.width / 1.2 * (1 + progress * 0.5),
+                0,
+                Math.PI * 2
+            );
+            ctx.stroke();
+        }
+        
+        // Draw unit image normally if not fully dead
+        if (this.image && this.image.complete) {
+            ctx.drawImage(this.image, screenPos.x, screenPos.y, this.width, this.height);
+        } else {
+            ctx.fillStyle = this.playerColor || 'blue';
+            ctx.fillRect(screenPos.x, screenPos.y, this.width, this.height);
+        }
+        
+        // Render health bar only if health > 0
+        if (this.health > 0) {
+            this.renderHealthBar(ctx, screenPos);
+        }
+        
+        // Explicitly draw red "X" when destroyed
+        if (this.isDestroyed) {
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.moveTo(screenPos.x - this.width / 2, screenPos.y - this.height / 2);
+            ctx.lineTo(screenPos.x + this.width / 2, screenPos.y + this.height / 2);
+            ctx.moveTo(screenPos.x + this.width / 2, screenPos.y - this.height / 2);
+            ctx.lineTo(screenPos.x - this.width / 2, screenPos.y + this.height / 2);
+            ctx.stroke();
+
+            // Mark for removal after 3 seconds
+            if (Date.now() - this.deathAnimationTime >= 3000) {
+                this.markForRemoval = true;
+            }
+        }
     }
 }  
  
@@ -1096,6 +1225,8 @@ class Game {
             if (this.renderer.imagesLoaded && this.map.tiles.length > 0) {
                 console.log("All resources loaded, starting game loop");
                 this.running = true;
+                // Center camera on map when game first loads
+                this.camera.centerOnMap();
                 requestAnimationFrame(this.gameLoop.bind(this));
             } else {
                 console.log("Waiting for resources...");
@@ -1131,34 +1262,27 @@ class Game {
      * Update game state
      */
     update(deltaTime) {
-        // Update input handler
         this.inputHandler.update();
-        
-        // Update multiplayer
         this.multiplayer.update(deltaTime);
-        
-        // Update entity positions with interpolation
         this.updateEntities(deltaTime);
-        
-        // Update all entities
-        for (const entity of this.entities) {
-            entity.update(deltaTime, this);
-        }
     }
     
     /**
-     * Interpolate entity positions smoothly between server updates
+     * Update all entities in the game
      */
     updateEntities(deltaTime) {
-        const interpolationFactor = 0.1; // adjust for smoothness
-        
-        for (const entity of this.entities) {
-            // Only apply interpolation to units, not buildings
-            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
-                // Smoothly interpolate between current position and server position
-                entity.x += (entity.serverX - entity.x) * interpolationFactor;
-                entity.y += (entity.serverY - entity.y) * interpolationFactor;
+        // Update each entity
+        for (let i = this.entities.length - 1; i >= 0; i--) {
+            const entity = this.entities[i];
+            
+            // Check if entity should be removed - either if markForRemoval is set or if it's been destroyed for 3+ seconds
+            if (entity.markForRemoval || 
+                (entity.isDestroyed && entity.deathAnimationTime && Date.now() - entity.deathAnimationTime >= 3000)) {
+                this.removeEntity(entity.id);
+                continue;
             }
+            
+            entity.update(deltaTime, this);
         }
     }
     
@@ -1173,11 +1297,13 @@ class Game {
         
         // Process each entity from the server
         Object.values(serverEntities).forEach(serverEntity => {
-            console.log(`Processing entity: ${serverEntity.id}, type: ${serverEntity.type}, position: (${serverEntity.x}, ${serverEntity.y})`);
-            
-            // Check if this entity already exists
             let entity = this.entities.find(e => e.id === serverEntity.id);
-            
+
+            if (entity && entity.isDestroyed) {
+                return;  // STOP UPDATING DEAD UNITS FROM SERVER
+            }
+
+            // Check if this entity already exists
             if (!entity) {
                 // Create a new entity based on its type
                 if (serverEntity.type === 'unit') {
@@ -1270,40 +1396,30 @@ class Game {
     }
     
     /**
-     * Handle entity selection
+     * Handle single-click entity selection at a world coordinate
      */
     handleEntitySelection(worldX, worldY) {
-        const gridX = Math.floor(worldX / 32);
-        const gridY = Math.floor(worldY / 32);
-        let entitySelected = false;
+        // Convert isometric world coordinates to grid coordinates
+        const gridPos = this.map.isoToGrid(worldX, worldY);
+        const gridX = Math.floor(gridPos.x);
+        const gridY = Math.floor(gridPos.y);
 
         // Deselect all entities first
-        for (const entity of this.entities) {
-            entity.isSelected = false;
-        }
-        this.selectedEntities = [];
+        this.deselectAll();
 
+        // Iterate to find the entity at clicked location
         for (const entity of this.entities) {
-            const entityGridX = Math.floor(entity.x / 32);
-            const entityGridY = Math.floor(entity.y / 32);
+            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
 
             if (gridX === entityGridX && gridY === entityGridY) {
-                if (entity.type === 'building' && entity.playerId === 'human-team') {
-                    console.log(`Selecting shared human base`);
-                    entity.isSelected = true;
+                // Allow selecting any entity (for viewing info), but only add player's units to selectedEntities
+                entity.isSelected = true;
+                if (entity instanceof Unit && entity.playerId === this.multiplayer.playerId) {
                     this.selectedEntities.push(entity);
-                    entitySelected = true;
-                } else if (entity.type === 'unit') {
-                    if (entity.playerId === this.multiplayer.playerId) {
-                        console.log(`Selecting my unit ${entity.id}`);
-                        entity.isSelected = true;
-                        this.selectedEntities.push(entity);
-                        entitySelected = true;
-                    } else {
-                        console.log(`Skipping unit ${entity.id} - not mine`);
-                    }
                 }
-                if (entitySelected) break;
+                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}`);
+                break; // Select only the first found entity
             }
         }
     }
@@ -1312,70 +1428,49 @@ class Game {
      * Select entities within a box
      */
     selectEntitiesInBox(startX, startY, endX, endY) {
-        console.log(`Selecting entities in box from world (${startX.toFixed(2)}, ${startY.toFixed(2)}) to (${endX.toFixed(2)}, ${endY.toFixed(2)})`);
-        
         // Convert isometric world coordinates to grid coordinates
         const startGridPos = this.map.isoToGrid(startX, startY);
         const endGridPos = this.map.isoToGrid(endX, endY);
         
-        console.log(`Selection box in grid coordinates: from (${startGridPos.x.toFixed(2)}, ${startGridPos.y.toFixed(2)}) to (${endGridPos.x.toFixed(2)}, ${endGridPos.y.toFixed(2)})`);
-        
-        // Deselect all entities first
-        for (const entity of this.entities) {
-            entity.isSelected = false;
-        }
-        this.selectedEntities = [];
-        
         // Calculate selection rectangle in grid coordinates
         const selectionRect = {
-            x: Math.min(startGridPos.x, endGridPos.x),
-            y: Math.min(startGridPos.y, endGridPos.y),
-            width: Math.abs(endGridPos.x - startGridPos.x),
-            height: Math.abs(endGridPos.y - startGridPos.y)
+            left: Math.min(startGridPos.x, endGridPos.x),
+            right: Math.max(startGridPos.x, endGridPos.x),
+            top: Math.min(startGridPos.y, endGridPos.y),
+            bottom: Math.max(startGridPos.y, endGridPos.y)
         };
-        
-        console.log(`Selection rectangle in grid: (${selectionRect.x.toFixed(2)}, ${selectionRect.y.toFixed(2)}) with size ${selectionRect.width.toFixed(2)}x${selectionRect.height.toFixed(2)}`);
-        
-        // Select entities found within the selection rectangle
-        let entitiesSelected = 0;
-        for (const entity of this.entities) {
-            // Convert entity position to grid coordinates
+
+        // Deselect first
+        this.deselectAll();
+
+        // Find all client-owned units in the selection box
+        const clientUnits = this.entities.filter(entity => {
+            // First check if it's a client-owned unit
+            if (!(entity instanceof Unit) || entity.playerId !== this.multiplayer.playerId) {
+                return false;
+            }
+
+            // Then check if it's in the selection box
             const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
             const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
             
-            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
-            
-            if (
-                entityGridX >= selectionRect.x &&
-                entityGridX <= selectionRect.x + selectionRect.width &&
-                entityGridY >= selectionRect.y &&
-                entityGridY <= selectionRect.y + selectionRect.height
-            ) {
-                // For units, only select those owned by the player
-                if (entity.type === 'unit' && entity.playerId !== this.multiplayer.playerId) {
-                    console.log(`Unit ${entity.id} belongs to player ${entity.playerId}, not selecting`);
-                    continue;
-                }
-                
-                // For buildings, only select the shared base
-                if (entity.type === 'building' && entity.playerId !== 'human-team') {
-                    console.log(`Building ${entity.id} is not the shared base, not selecting`);
-                    continue;
-                }
-                
-                // Select this entity
-                entity.isSelected = true;
-                this.selectedEntities.push(entity);
-                entitiesSelected++;
-                
-                // For debugging
-                console.log(`Selected entity in box: ${entity.constructor.name}, ID: ${entity.id}`);
-            } else {
-                console.log(`Entity ${entity.id} not in selection box`);
-            }
+            return (
+                entityGridX >= selectionRect.left &&
+                entityGridX <= selectionRect.right &&
+                entityGridY >= selectionRect.top &&
+                entityGridY <= selectionRect.bottom
+            );
+        });
+
+        // If we found any client units in the box, select them all
+        if (clientUnits.length > 0) {
+            clientUnits.forEach(unit => {
+                unit.isSelected = true;
+                this.selectedEntities.push(unit);
+            });
         }
-        
-        console.log(`Selected ${entitiesSelected} entities in box selection`);
+
+        console.log(`Selected ${this.selectedEntities.length} client-owned units in box.`);
     }
     
     /**
@@ -1440,7 +1535,36 @@ class Game {
         if (this.selectedEntities.length === 0) return;
 
         console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+        console.log(`My player ID from Game object: ${this.playerId}`);
+        console.log(`My player ID from Multiplayer object: ${this.multiplayer.playerId}`);
         
+        // Get IDs of selected units
+        const selectedUnitIds = this.selectedEntities
+            .filter(entity => entity instanceof Unit)
+            .map(entity => entity.id);
+        
+        if (selectedUnitIds.length === 0) return;
+        
+        // First, check if user clicked on an entity
+        const clickedEntity = this.getEntityAtPosition(worldX, worldY);
+        
+        // If clicked on an enemy entity, issue attack command
+        if (clickedEntity && clickedEntity.playerId !== this.playerId && clickedEntity.id) {
+            console.log(`Attempting to attack entity: ${clickedEntity.id}, type: ${clickedEntity instanceof Unit ? 'Unit' : 'Building'}`);
+            console.log(`Selected units: ${selectedUnitIds.join(', ')}`);
+            console.log(`My player ID: ${this.playerId}, target entity owner: ${clickedEntity.playerId}`);
+            
+            // Issue attack command to server
+            this.multiplayer.attackTarget(selectedUnitIds, clickedEntity.id);
+            
+            // Visual feedback
+            this.renderer.addEffect('attackCommand', worldX, worldY);
+            
+            console.log('Attack command sent to server');
+            return;
+        }
+        
+        // Otherwise, it's a movement command
         // Convert from isometric world coordinates to grid coordinates
         const gridPos = this.map.isoToGrid(worldX, worldY);
         const tileX = Math.floor(gridPos.x);
@@ -1459,18 +1583,46 @@ class Game {
         const cartesianY = tileY * Config.TILE_SIZE;
         
         console.log(`Units moving to cartesian coordinates: (${cartesianX}, ${cartesianY})`);
-
-        // Get IDs of selected units for multiplayer
-        const selectedUnitIds = this.selectedEntities
-            .filter(entity => entity instanceof Unit)
-            .map(entity => entity.id);
         
-        console.log(`Selected unit IDs for movement: ${selectedUnitIds.join(', ')}`);
+        // Send movement command to server with cartesian coordinates
+        this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
         
-        if (selectedUnitIds.length > 0) {
-            // Send movement command to server with cartesian coordinates
-            this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
+        // Visual feedback
+        this.renderer.addEffect('moveCommand', worldX, worldY);
+    }
+    
+    /**
+     * Get entity at a specific position
+     */
+    getEntityAtPosition(x, y) {
+        console.log(`Looking for entity at isometric position: (${x.toFixed(2)}, ${y.toFixed(2)})`);
+        
+        // Check all entities to see if the point is within their bounds
+        for (const entity of this.entities) {
+            // Skip if entity is not rendered or doesn't have position data
+            if (!entity.x || !entity.y || !entity.width || !entity.height) continue;
+            
+            // Need to convert the cartesian entity position to isometric for comparison
+            const entityIsoX = (entity.x - entity.y) / 2;
+            const entityIsoY = (entity.x + entity.y) / 4;
+            
+            // Calculate entity bounds in isometric coordinates
+            // We need to adjust the bounds as the isometric shape is different
+            const margin = 30; // Give some margin for click precision
+            const entityLeft = entityIsoX - margin;
+            const entityRight = entityIsoX + entity.width + margin;
+            const entityTop = entityIsoY - margin;
+            const entityBottom = entityIsoY + entity.height + margin;
+            
+            // Check if the point is within the entity bounds
+            if (x >= entityLeft && x <= entityRight && y >= entityTop && y <= entityBottom) {
+                console.log(`Found entity: ${entity.id}, type: ${entity instanceof Unit ? 'Unit' : 'Building'}, owner: ${entity.playerId}`);
+                return entity;
+            }
         }
+        
+        console.log('No entity found at this position');
+        return null;
     }
     
     /**
@@ -1544,6 +1696,33 @@ class Game {
             this.entities.push(unit);
         }
     }
+
+    /**
+     * Get entity by ID
+     */
+    getEntityById(entityId) {
+        return this.entities.find(entity => entity.id === entityId);
+    }
+
+    /**
+     * Remove entity from game
+     */
+    removeEntity(entityId) {
+        const index = this.entities.findIndex(entity => entity.id === entityId);
+        if (index !== -1) {
+            // Remove from selection if selected
+            const selectedIndex = this.selectedEntities.findIndex(entity => entity.id === entityId);
+            if (selectedIndex !== -1) {
+                this.selectedEntities.splice(selectedIndex, 1);
+            }
+            
+            // Remove from entities array
+            this.entities.splice(index, 1);
+            console.log(`Removed entity ${entityId} from game`);
+            return true;
+        }
+        return false;
+    }
 }  
  
  
@@ -1576,6 +1755,7 @@ class InputHandler {
         this.selectionEndX = 0;
         this.selectionEndY = 0;
         this.isSelecting = false;
+        this.clickStartTime = 0;
         
         // Minimap element
         this.minimapElement = document.getElementById('minimap');
@@ -1655,12 +1835,8 @@ class InputHandler {
             this.selectionStartY = e.clientY;
             this.selectionEndX = e.clientX;
             this.selectionEndY = e.clientY;
-            this.isSelecting = true;
-            
-            // Check if clicked on an entity
-            const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-            console.log(`Mouse down at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
-            this.game.handleEntitySelection(worldPos.x, worldPos.y);
+            this.isSelecting = false; // Start false, will become true if mouse moves
+            this.clickStartTime = Date.now();
         }
         // Right mouse button
         else if (e.button === 2) {
@@ -1677,25 +1853,30 @@ class InputHandler {
      * Handle mouse up events
      */
     handleMouseUp(e) {
-        // Left mouse button
         if (e.button === 0) {
             this.mouseDown = false;
+
+            // Get world coordinates for both start and end points
+            const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
+            const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
             
-            if (this.isSelecting) {
-                // Finalize selection box
-                const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
-                const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
-                console.log(`Selection box from (${startWorld.x.toFixed(2)}, ${startWorld.y.toFixed(2)}) to (${endWorld.x.toFixed(2)}, ${endWorld.y.toFixed(2)})`);
+            // Calculate the size of the selection box in screen pixels
+            const selectionWidth = Math.abs(this.selectionEndX - this.selectionStartX);
+            const selectionHeight = Math.abs(this.selectionEndY - this.selectionStartY);
+            
+            // If the selection box is very small, treat it as a click
+            if (selectionWidth < 5 && selectionHeight < 5) {
+                const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+                this.game.handleEntitySelection(worldPos.x, worldPos.y);
+            } else {
+                // Otherwise use box selection
                 this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
-                this.isSelecting = false;
             }
-        }
-        // Right mouse button
-        else if (e.button === 2) {
+            
+            this.isSelecting = false;
+        } else if (e.button === 2) {
             this.rightMouseDown = false;
-        }
-        // Middle mouse button (rollerball)
-        else if (e.button === 1) {
+        } else if (e.button === 1) {
             this.middleMouseDown = false;
         }
     }
@@ -1706,6 +1887,17 @@ class InputHandler {
     handleMouseMove(e) {
         this.mouseX = e.clientX;
         this.mouseY = e.clientY;
+        
+        // Start selection if mouse has moved enough while button is down
+        if (this.mouseDown && !this.isSelecting) {
+            const mouseMoved = 
+                Math.abs(e.clientX - this.selectionStartX) > 5 || 
+                Math.abs(e.clientY - this.selectionStartY) > 5;
+            
+            if (mouseMoved) {
+                this.isSelecting = true;
+            }
+        }
         
         // Update selection box if selecting
         if (this.isSelecting) {
@@ -1900,10 +2092,14 @@ class Multiplayer {
         this.onPlayerLeft = this.onPlayerLeft.bind(this);
         this.onUnitCreated = this.onUnitCreated.bind(this);
         this.onUnitsMoved = this.onUnitsMoved.bind(this);
+        this.onUpdateUnitPosition = this.onUpdateUnitPosition.bind(this);
         this.onEntityRemoved = this.onEntityRemoved.bind(this);
         this.onMapResized = this.onMapResized.bind(this);
         this.onJoinGameSuccess = this.onJoinGameSuccess.bind(this);
         this.onJoinGameError = this.onJoinGameError.bind(this);
+        this.onUnitsAttacking = this.onUnitsAttacking.bind(this);
+        this.onUnitAttack = this.onUnitAttack.bind(this);
+        this.onEntityDestroyed = this.onEntityDestroyed.bind(this);
     }
     
     /**
@@ -1928,6 +2124,10 @@ class Multiplayer {
         this.socket.on('playerLeft', this.onPlayerLeft);
         this.socket.on('unitCreated', this.onUnitCreated);
         this.socket.on('unitsMoved', this.onUnitsMoved);
+        this.socket.on('updateUnitPosition', this.onUpdateUnitPosition);
+        this.socket.on('unitsAttacking', this.onUnitsAttacking);
+        this.socket.on('unitAttack', this.onUnitAttack);
+        this.socket.on('entityDestroyed', this.onEntityDestroyed);
         this.socket.on('entityRemoved', this.onEntityRemoved);
         this.socket.on('mapResized', this.onMapResized);
         this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
@@ -2171,7 +2371,15 @@ class Multiplayer {
             // If this is our unit, center the camera on it
             if (data.unit.playerId === this.playerId) {
                 console.log('Unit belongs to this player, centering camera');
-                this.game.camera.centerOn(data.unit.x, data.unit.y);
+                // Convert unit position to isometric coordinates for camera centering
+                const isoX = (data.unit.x - data.unit.y) / 2;
+                const isoY = (data.unit.x + data.unit.y) / 4;
+                
+                // Center camera on the player's unit in isometric space
+                this.game.camera.centerOn(isoX, isoY);
+                
+                // Ensure camera position is within bounds
+                this.game.camera.clampPosition();
             }
         } else {
             console.error('Unit created event received but no unit data present');
@@ -2307,6 +2515,21 @@ class Multiplayer {
     }
     
     /**
+     * Attack target and send to server
+     */
+    attackTarget(unitIds, targetEntityId) {
+        if (!this.connected) {
+            this.pendingCommands.push(() => this.attackTarget(unitIds, targetEntityId));
+            return;
+        }
+        
+        this.socket.emit('attackTarget', {
+            unitIds,
+            targetEntityId
+        });
+    }
+    
+    /**
      * Process any pending commands
      */
     processPendingCommands() {
@@ -2326,7 +2549,11 @@ class Multiplayer {
         const currentTime = Date.now();
 
         this.game.entities.forEach(entity => {
-            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
+            if (entity instanceof Unit && 
+                entity.serverX !== undefined && 
+                entity.serverY !== undefined &&
+                !entity.isDestroyed  // Critical Fix: Ignore destroyed units
+            ) {
                 const elapsed = currentTime - entity.interpolationStartTime;
                 const t = Math.min(elapsed / interpolationDuration, 1); // interpolationDuration ~100ms
 
@@ -2375,6 +2602,19 @@ class Multiplayer {
             // Process the new unit
             this.game.processServerEntities({ [data.unit.id]: data.unit });
             console.log('Unit processed and added to game');
+            
+            // Convert unit position to isometric coordinates for camera centering
+            const isoX = (data.unit.x - data.unit.y) / 2;
+            const isoY = (data.unit.x + data.unit.y) / 4;
+            
+            // Center camera on the player's unit in isometric space
+            this.game.camera.centerOn(isoX, isoY);
+            
+            // Set zoom to a much higher level for a closer view of the unit
+            this.game.camera.zoom = Config.ZOOM_DEFAULT * 2.5;
+            
+            // Ensure camera position is within bounds
+            this.game.camera.clampPosition();
         } else {
             console.error('Join game success but no unit data received');
         }
@@ -2396,6 +2636,119 @@ class Multiplayer {
         alert(`Failed to join game: ${data.message}`);
         // Show join button again
         this.showJoinButton();
+    }
+    
+    /**
+     * Handle unit position updates from server
+     */
+    onUpdateUnitPosition(data) {
+        const { unitId, x, y, isMoving } = data;
+        const unit = this.game.entities.find(e => e.id === unitId);
+        
+        if (unit) {
+            // Store previous position for interpolation
+            unit.prevX = unit.x;
+            unit.prevY = unit.y;
+            unit.serverX = x;
+            unit.serverY = y;
+            unit.isMoving = isMoving;
+            unit.interpolationStartTime = Date.now();
+            
+            // If the unit has stopped moving, clear the target
+            if (!isMoving) {
+                unit.targetX = null;
+                unit.targetY = null;
+            }
+        }
+    }
+    
+    /**
+     * Handle units attacking event
+     */
+    onUnitsAttacking(data) {
+        console.log(`Units ${data.unitIds.join(', ')} attacking entity ${data.targetEntityId}`);
+        
+        // Update unit targets in the game
+        const targetEntity = this.game.getEntityById(data.targetEntityId);
+        if (!targetEntity) {
+            console.error(`Target entity ${data.targetEntityId} not found for attack command`);
+            return;
+        }
+        
+        // Update each unit's target
+        data.unitIds.forEach(unitId => {
+            const unit = this.game.getEntityById(unitId);
+            if (unit && unit instanceof Unit) {
+                // Set the target entity to follow and attack
+                unit.targetEntity = targetEntity;
+                
+                // Set visual state for attack
+                unit.isAttacking = true;
+                
+                // Also update movement target to match the target's position
+                // This ensures units will follow moving targets
+                const targetCenter = targetEntity.getCenter();
+                unit.setTarget(targetCenter.x, targetCenter.y);
+                
+                console.log(`Unit ${unitId} set to follow and attack target ${data.targetEntityId} at (${targetCenter.x}, ${targetCenter.y})`);
+            }
+        });
+    }
+    
+    /**
+     * Handle unit attack event
+     */
+    onUnitAttack(data) {
+        console.log(`Unit ${data.attackerId} attacked ${data.targetId} for ${data.damage} damage`);
+        
+        const attacker = this.game.getEntityById(data.attackerId);
+        const target = this.game.getEntityById(data.targetId);
+        
+        if (!attacker || !target) {
+            console.error('Could not find attacker or target for attack event');
+            return;
+        }
+        
+        // Update visual state
+        if (attacker instanceof Unit) {
+            attacker.performAttackAnimation();
+        }
+        
+        // Apply damage visually
+        target.takeDamage(data.damage);
+        
+        // Add visual effects
+        this.game.renderer.addEffect('attack', target.x + target.width/2, target.y + target.height/2);
+    }
+    
+    /**
+     * Handle entity destroyed event
+     */
+    onEntityDestroyed(data) {
+        console.log(`Entity ${data.entityId} was destroyed`);
+        
+        const entity = this.game.getEntityById(data.entityId);
+        if (entity) {
+            // Trigger death animation
+            entity.playDeathAnimation();
+            
+            // Add visual effects
+            this.game.renderer.addEffect('explosion', entity.x + entity.width/2, entity.y + entity.height/2);
+            
+            // Notify any units targeting this entity to stop attacking
+            this.game.entities.forEach(e => {
+                if (e instanceof Unit && e.targetEntity && e.targetEntity.id === data.entityId) {
+                    console.log(`Unit ${e.id} stopping attack on destroyed entity ${data.entityId}`);
+                    // Don't immediately clear the target to let the death animation play
+                    // The unit's updateCombat will check for isDestroyed and stop attacking
+                }
+            });
+            
+            // Wait for death animation to complete before removing
+            setTimeout(() => {
+                this.game.removeEntity(data.entityId);
+            }, 1000); // Match death animation duration
+        }
     }
 }  
  
@@ -2428,6 +2781,8 @@ class Renderer {
         // Track loaded images
         this.imagesLoaded = false;
         this.checkImagesLoaded();
+        
+        this.effects = []; // Array to store visual effects
     }
     
     /**
@@ -2462,7 +2817,7 @@ class Renderer {
     }
     
     /**
-     * Main render function
+     * Main render method - called each frame
      */
     render() {
         this.clear();
@@ -2472,6 +2827,9 @@ class Renderer {
         
         // Render entities
         this.renderEntities();
+        
+        // Render visual effects
+        this.renderEffects(this.ctx);
         
         // Render UI
         this.renderUI();
@@ -3220,6 +3578,199 @@ class Renderer {
     handleResize() {
         this.canvas.width = Config.CANVAS_WIDTH;
         this.canvas.height = Config.CANVAS_HEIGHT;
+    }
+
+    /**
+     * Add a visual effect at a specified position
+     */
+    addEffect(type, x, y) {
+        const effect = {
+            type,
+            x,
+            y,
+            startTime: Date.now(),
+            duration: 1000 // Default duration 1 second
+        };
+        
+        // Customize effect based on type
+        switch (type) {
+            case 'moveCommand':
+                effect.duration = 800;
+                effect.color = 'green';
+                effect.size = 20;
+                break;
+            case 'attackCommand':
+                effect.duration = 1000;
+                effect.color = '#ff3333'; // Bright red
+                effect.size = 25; // Larger size
+                break;
+            case 'attack':
+                effect.duration = 500;
+                effect.color = 'orange';
+                effect.size = 15;
+                break;
+            case 'explosion':
+                effect.duration = 1200;
+                effect.color = 'red';
+                effect.size = 30;
+                break;
+            default:
+                effect.color = 'white';
+                effect.size = 10;
+        }
+        
+        this.effects.push(effect);
+    }
+
+    /**
+     * Update and render visual effects
+     */
+    renderEffects(ctx) {
+        const now = Date.now();
+        const camera = this.game.camera;
+        
+        // Update and render each effect
+        for (let i = this.effects.length - 1; i >= 0; i--) {
+            const effect = this.effects[i];
+            const elapsed = now - effect.startTime;
+            
+            // Remove expired effects
+            if (elapsed > effect.duration) {
+                this.effects.splice(i, 1);
+                continue;
+            }
+            
+            // Calculate progress (0 to 1)
+            const progress = elapsed / effect.duration;
+            
+            // Get screen position
+            const screenPos = camera.worldToScreen(effect.x, effect.y);
+            
+            // Render based on effect type
+            switch (effect.type) {
+                case 'moveCommand':
+                    this.renderMoveCommandEffect(ctx, screenPos, effect, progress);
+                    break;
+                case 'attackCommand':
+                    this.renderAttackCommandEffect(ctx, screenPos, effect, progress);
+                    break;
+                case 'attack':
+                    this.renderAttackEffect(ctx, screenPos, effect, progress);
+                    break;
+                case 'explosion':
+                    this.renderExplosionEffect(ctx, screenPos, effect, progress);
+                    break;
+                default:
+                    this.renderDefaultEffect(ctx, screenPos, effect, progress);
+            }
+        }
+    }
+
+    /**
+     * Render a move command effect
+     */
+    renderMoveCommandEffect(ctx, screenPos, effect, progress) {
+        // Draw a circle that fades out
+        ctx.globalAlpha = 1 - progress;
+        ctx.beginPath();
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 2;
+        
+        // Circle expands outward
+        const size = effect.size * (1 + progress);
+        ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render an attack command effect
+     */
+    renderAttackCommandEffect(ctx, screenPos, effect, progress) {
+        // Draw a red circle that fades out
+        ctx.globalAlpha = 1 - progress;
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 3;
+        
+        // Circle grows slightly
+        const size = effect.size * (1 + progress * 0.5);
+        
+        // Outer circle
+        ctx.beginPath();
+        ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Inner circle (target-like pattern)
+        ctx.beginPath();
+        ctx.arc(screenPos.x, screenPos.y, size * 0.5, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render an attack effect
+     */
+    renderAttackEffect(ctx, screenPos, effect, progress) {
+        // Draw spark/hit effect
+        ctx.globalAlpha = 1 - progress;
+        
+        // Particles radiating outward
+        const particleCount = 8;
+        const size = effect.size * progress;
+        
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (i / particleCount) * Math.PI * 2;
+            const x = screenPos.x + Math.cos(angle) * size;
+            const y = screenPos.y + Math.sin(angle) * size;
+            
+            ctx.beginPath();
+            ctx.fillStyle = effect.color;
+            ctx.arc(x, y, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render an explosion effect
+     */
+    renderExplosionEffect(ctx, screenPos, effect, progress) {
+        // Draw explosion effect
+        ctx.globalAlpha = 1 - progress;
+        
+        // Outer ring
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255, 100, 0, 0.5)';
+        ctx.arc(screenPos.x, screenPos.y, effect.size * progress * 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner ring
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
+        ctx.arc(screenPos.x, screenPos.y, effect.size * progress, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render a default effect
+     */
+    renderDefaultEffect(ctx, screenPos, effect, progress) {
+        // Simple fadeout circle
+        ctx.globalAlpha = 1 - progress;
+        ctx.beginPath();
+        ctx.fillStyle = effect.color;
+        ctx.arc(screenPos.x, screenPos.y, effect.size * (1 - progress), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
     }
 }  
  
@@ -5378,7 +5929,7 @@ function initializeGame() {
         attackDamage: 10,
         attackRange: 50,
         attackCooldown: 1000,
-        speed: 2,
+        speed: 20,
         level: 1,
         experience: 0,
         targetX: null,
@@ -5482,7 +6033,8 @@ let nextPlayerColorIndex = 0;
 
 // Function to create a unit for a player
 function createPlayerUnit(playerId) {
-    console.log(`\n=== Creating Player Unit ===`);
+    console.log(`=== Creating Player Unit ===`);
+    
     // Find the shared human base
     const humanBase = Object.values(gameState.entities).find(entity => 
         entity.type === 'building' && 
@@ -5495,45 +6047,258 @@ function createPlayerUnit(playerId) {
         console.log('Current entities:', Object.keys(gameState.entities));
         return null;
     }
-
+    
     console.log(`Found shared base at position: (${humanBase.x}, ${humanBase.y})`);
-
+    
     // Position the new unit near the base
     const unitX = humanBase.x + humanBase.width + 64;
     const unitY = humanBase.y + (humanBase.height / 2);
-
+    
     console.log(`Positioning new unit at: (${unitX}, ${unitY})`);
-
+    
     // Create the unit with the player's unique ID
     const unitId = uuidv4();
     const unit = {
         id: unitId,
         type: 'unit',
         unitType: 'SOLDIER',
+        playerId: playerId,
+        teamId: 'human-team',
         x: unitX,
         y: unitY,
         width: 32,
         height: 32,
-        health: 100,
-        maxHealth: 100,
-        attackDamage: 10,
-        attackRange: 50,
-        attackCooldown: 1000,
-        speed: 2,
-        level: 1,
-        experience: 0,
-        playerId: playerId,  // Use the individual player's ID
-        playerColor: 'blue',
-        isPlayerControlled: true,
+        speed: 150,
         targetX: null,
         targetY: null,
         isMoving: false,
-        lastUpdateTime: Date.now()
+        health: 100,
+        maxHealth: 100,
+        attackRange: 60,
+        attackDamage: 10,
+        attackCooldown: 1000,
+        lastAttackTime: null,
+        targetEntityId: null,
+        isAttacking: false
     };
-
-    console.log(`Created unit ${unit.id} for player ${playerId}`);
-    console.log(`=== Unit Creation Complete ===\n`);
+    
+    console.log(`Created unit ${unitId} for player ${playerId}`);
     return unit;
+}
+
+// AI Unit Control Functions
+function findClosestEnemyBase(aiUnit, entities) {
+    let closestDistance = Infinity;
+    let closestBase = null;
+
+    for (const entityId in entities) {
+        const entity = entities[entityId];
+        if (entity.type === 'building' && entity.buildingType === 'BASE' && entity.playerId === 'human-team') {
+            const dx = entity.x - aiUnit.x;
+            const dy = entity.y - aiUnit.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestBase = entity;
+            }
+        }
+    }
+    return closestBase;
+}
+
+function updateAIUnits(deltaTime) {
+    for (const entityId in gameState.entities) {
+        const aiUnit = gameState.entities[entityId];
+        
+        // Only process AI units (non-player-controlled units)
+        if (aiUnit.type === 'unit' && aiUnit.playerId === 'ai-team') {
+            // Find target if none exists or current target is destroyed
+            if (!aiUnit.targetEntityId || !gameState.entities[aiUnit.targetEntityId]) {
+                const closestBase = findClosestEnemyBase(aiUnit, gameState.entities);
+                if (closestBase) {
+                    aiUnit.targetEntityId = closestBase.id;
+                    console.log(`AI Unit ${aiUnit.id} targeting base ${closestBase.id}`);
+                }
+            }
+
+            const targetEntity = gameState.entities[aiUnit.targetEntityId];
+            if (targetEntity) {
+                const dx = targetEntity.x - aiUnit.x;
+                const dy = targetEntity.y - aiUnit.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > aiUnit.attackRange) {
+                    // Move towards target
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+                    aiUnit.x += normalizedDx * aiUnit.speed * (deltaTime / 1000);
+                    aiUnit.y += normalizedDy * aiUnit.speed * (deltaTime / 1000);
+                    aiUnit.isMoving = true;
+                    
+                    // Broadcast position update
+                    io.emit('updateUnitPosition', {
+                        unitId: aiUnit.id,
+                        x: aiUnit.x,
+                        y: aiUnit.y,
+                        isMoving: true
+                    });
+                } else {
+                    // Within attack range
+                    aiUnit.isMoving = false;
+                    if (!aiUnit.lastAttackTime || Date.now() - aiUnit.lastAttackTime >= aiUnit.attackCooldown) {
+                        // Attack the target
+                        targetEntity.health -= aiUnit.attackDamage;
+                        aiUnit.lastAttackTime = Date.now();
+                        
+                        // Broadcast attack
+                        io.emit('unitAttack', {
+                            attackerId: aiUnit.id,
+                            targetId: targetEntity.id,
+                            damage: aiUnit.attackDamage,
+                            targetHealth: targetEntity.health
+                        });
+                        
+                        // Check if target is destroyed
+                        if (targetEntity.health <= 0) {
+                            delete gameState.entities[targetEntity.id];
+                            aiUnit.targetEntityId = null;
+                            io.emit('entityDestroyed', { entityId: targetEntity.id });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Game update loop
+let lastUpdateTime = Date.now();
+setInterval(() => {
+    if (gameState.isRunning) {
+        const currentTime = Date.now();
+        const deltaTime = currentTime - lastUpdateTime;
+        lastUpdateTime = currentTime;
+        
+        updateAIUnits(deltaTime);
+        updatePlayerUnits(deltaTime);
+    }
+}, 50); // Update every 50ms (20 times per second)
+
+// Function to update player-controlled units
+function updatePlayerUnits(deltaTime) {
+    for (const entityId in gameState.entities) {
+        const unit = gameState.entities[entityId];
+        
+        // Only process player-controlled units that are moving or attacking
+        if (unit.type === 'unit' && unit.playerId !== 'ai-team') {
+            // Handle attacking logic
+            if (unit.isAttacking && unit.targetEntityId) {
+                const targetEntity = gameState.entities[unit.targetEntityId];
+                
+                // If target no longer exists, clear attack state
+                if (!targetEntity) {
+                    unit.targetEntityId = null;
+                    unit.isAttacking = false;
+                    unit.isMoving = false;
+                    continue;
+                }
+                
+                // Always update target position for attacking units to ensure they follow moving targets
+                unit.targetX = targetEntity.x;
+                unit.targetY = targetEntity.y;
+                
+                // Calculate distance to target
+                const dx = targetEntity.x - unit.x;
+                const dy = targetEntity.y - unit.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Calculate attack range - use default if not set
+                const attackRange = unit.attackRange || 50;
+                
+                // If within attack range, stop and attack
+                if (distance <= attackRange) {
+                    unit.isMoving = false;
+                    
+                    // Process attack
+                    const now = Date.now();
+                    const attackCooldown = unit.attackCooldown || 1000; // Default 1 second cooldown
+                    
+                    if (!unit.lastAttackTime || now - unit.lastAttackTime >= attackCooldown) {
+                        // Apply damage to target
+                        const damage = unit.attackDamage || 10; // Default damage
+                        targetEntity.health -= damage;
+                        unit.lastAttackTime = now;
+                        
+                        // Broadcast attack
+                        io.emit('unitAttack', {
+                            attackerId: unit.id,
+                            targetId: unit.targetEntityId,
+                            damage: damage
+                        });
+                        
+                        // Check if target is destroyed
+                        if (targetEntity.health <= 0) {
+                            // Entity destroyed
+                            io.emit('entityDestroyed', {
+                                entityId: targetEntity.id
+                            });
+                            
+                            // Remove entity from game state
+                            delete gameState.entities[targetEntity.id];
+                            
+                            // Clear attack target
+                            unit.targetEntityId = null;
+                            unit.isAttacking = false;
+                            unit.isMoving = false;
+                        }
+                    }
+                } else {
+                    // If not in range, keep moving toward the target
+                    unit.isMoving = true;
+                }
+            }
+            
+            // Handle movement for units that are moving
+            if (unit.isMoving) {
+                if (unit.targetX !== null && unit.targetY !== null) {
+                    const dx = unit.targetX - unit.x;
+                    const dy = unit.targetY - unit.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    
+                    if (distance > 1) {
+                        // Move towards target
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        unit.x += normalizedDx * unit.speed * (deltaTime / 1000);
+                        unit.y += normalizedDy * unit.speed * (deltaTime / 1000);
+                        
+                        // Broadcast position update
+                        io.emit('updateUnitPosition', {
+                            unitId: unit.id,
+                            x: unit.x,
+                            y: unit.y,
+                            isMoving: true
+                        });
+                    } else if (!unit.isAttacking) {
+                        // Reached target without attacking
+                        unit.x = unit.targetX;
+                        unit.y = unit.targetY;
+                        unit.isMoving = false;
+                        unit.targetX = null;
+                        unit.targetY = null;
+                        
+                        // Broadcast final position
+                        io.emit('updateUnitPosition', {
+                            unitId: unit.id,
+                            x: unit.x,
+                            y: unit.y,
+                            isMoving: false
+                        });
+                    }
+                }
+            }
+        }
+    }
 }
 
 // Handle socket connections
@@ -5702,11 +6467,15 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Verify the unit belongs to the player
-      if (unit.playerId !== playerId) {
-        console.error(`Unit ${unitId} does not belong to player ${playerId}`);
+      // Verify the unit belongs to the player and is not an AI unit
+      if (unit.playerId !== playerId || unit.playerId === 'ai-team') {
+        console.error(`Unit ${unitId} does not belong to player ${playerId} or is an AI unit`);
         return;
       }
+
+      // Clear any previous attack target
+      unit.targetEntityId = null;
+      unit.isAttacking = false;
 
       // Update unit's target position and movement state
       unit.targetX = data.targetX;
@@ -5720,6 +6489,72 @@ io.on('connection', (socket) => {
       unitIds: data.unitIds,
       targetX: data.targetX,
       targetY: data.targetY
+    });
+  });
+  
+  // Handle unit attack commands
+  socket.on('attackTarget', (data) => {
+    // Check if game is running
+    if (!gameState.isRunning) {
+      socket.emit('attackTargetError', { message: 'Game has ended' });
+      return;
+    }
+    
+    console.log(`Received attackTarget command: units ${data.unitIds.join(", ")} attacking entity ${data.targetEntityId}`);
+    
+    // Validate the data
+    if (!data.unitIds || !Array.isArray(data.unitIds) || !data.targetEntityId) {
+      console.error('Invalid attackTarget data received');
+      return;
+    }
+
+    // Find the player ID associated with this socket
+    const playerId = Object.keys(gameState.players).find(
+      id => gameState.players[id].socketId === socket.id
+    );
+
+    if (!playerId) {
+      console.error('Player not found for socket', socket.id);
+      return;
+    }
+    
+    // Check if target entity exists
+    const targetEntity = gameState.entities[data.targetEntityId];
+    if (!targetEntity) {
+      console.error(`Target entity ${data.targetEntityId} not found`);
+      return;
+    }
+    
+    // Validate and update each attacking unit
+    data.unitIds.forEach(unitId => {
+      const unit = gameState.entities[unitId];
+      if (!unit) {
+        console.error(`Unit ${unitId} not found`);
+        return;
+      }
+
+      // Verify the unit belongs to the player and is not an AI unit
+      if (unit.playerId !== playerId || unit.playerId === 'ai-team') {
+        console.error(`Unit ${unitId} does not belong to player ${playerId} or is an AI unit`);
+        return;
+      }
+
+      // Set attack target
+      unit.targetEntityId = data.targetEntityId;
+      unit.isAttacking = true;
+      
+      // Set movement target to target entity's position
+      unit.targetX = targetEntity.x;
+      unit.targetY = targetEntity.y;
+      unit.isMoving = true;
+      
+      console.log(`Unit ${unitId} attacking entity ${data.targetEntityId} at (${targetEntity.x}, ${targetEntity.y})`);
+    });
+
+    // Broadcast the attack command to all clients
+    io.emit('unitsAttacking', {
+      unitIds: data.unitIds,
+      targetEntityId: data.targetEntityId
     });
   });
   
@@ -5760,60 +6595,6 @@ io.on('connection', (socket) => {
     }
   });
 });
-
-// Game update loop (10 updates per second)
-const UPDATE_INTERVAL = 100; // ms
-
-setInterval(() => {
-  const currentTime = Date.now();
-  const deltaTime = currentTime - gameState.lastUpdateTime;
-  gameState.lastUpdateTime = currentTime;
-  
-  // Update all moving entities
-  Object.keys(gameState.entities).forEach(entityId => {
-    const entity = gameState.entities[entityId];
-    
-    if (entity.isMoving && entity.targetX !== null && entity.targetY !== null) {
-      // Calculate direction to target
-      const centerX = entity.x + entity.width / 2;
-      const centerY = entity.y + entity.height / 2;
-      const dx = entity.targetX - centerX;
-      const dy = entity.targetY - centerY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // If we're close enough to the target, stop moving
-      if (distance < 5) {
-        entity.isMoving = false;
-        entity.targetX = null;
-        entity.targetY = null;
-        return;
-      }
-      
-      // Normalize direction and apply speed
-      const moveSpeed = entity.speed * (deltaTime / 1000);
-      const normalizedDx = dx / distance;
-      const normalizedDy = dy / distance;
-      
-      // Update position with boundary checking
-      const newX = entity.x + normalizedDx * moveSpeed;
-      const newY = entity.y + normalizedDy * moveSpeed;
-      
-      // Ensure the entity stays within map boundaries
-      const mapWidth = gameState.mapDimensions.width * 32; // Map width in pixels
-      const mapHeight = gameState.mapDimensions.height * 32; // Map height in pixels
-      
-      entity.x = Math.max(0, Math.min(newX, mapWidth - entity.width));
-      entity.y = Math.max(0, Math.min(newY, mapHeight - entity.height));
-    }
-  });
-  
-  // Broadcast updated game state to all players
-  io.emit('gameUpdate', {
-    entities: gameState.entities,
-    timestamp: currentTime,
-    serverStartTime: gameState.serverStartTime // Include server start time
-  });
-}, UPDATE_INTERVAL);
 
 // Start the server
 const PORT = process.env.PORT || 3000;

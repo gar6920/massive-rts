@@ -82,18 +82,25 @@ class Game {
         this.inputHandler.update();
         this.multiplayer.update(deltaTime);
         this.updateEntities(deltaTime);
-
-        for (const entity of this.entities) {
-            entity.update(deltaTime, this);
-        }
     }
     
     /**
-     * Interpolate entity positions smoothly between server updates
+     * Update all entities in the game
      */
     updateEntities(deltaTime) {
-        // Interpolation is now handled by Multiplayer.update()
-        // This method is kept for compatibility, but doesn't need to do the interpolation
+        // Update each entity
+        for (let i = this.entities.length - 1; i >= 0; i--) {
+            const entity = this.entities[i];
+            
+            // Check if entity should be removed - either if markForRemoval is set or if it's been destroyed for 3+ seconds
+            if (entity.markForRemoval || 
+                (entity.isDestroyed && entity.deathAnimationTime && Date.now() - entity.deathAnimationTime >= 3000)) {
+                this.removeEntity(entity.id);
+                continue;
+            }
+            
+            entity.update(deltaTime, this);
+        }
     }
     
     /**
@@ -107,11 +114,13 @@ class Game {
         
         // Process each entity from the server
         Object.values(serverEntities).forEach(serverEntity => {
-            console.log(`Processing entity: ${serverEntity.id}, type: ${serverEntity.type}, position: (${serverEntity.x}, ${serverEntity.y})`);
-            
-            // Check if this entity already exists
             let entity = this.entities.find(e => e.id === serverEntity.id);
-            
+
+            if (entity && entity.isDestroyed) {
+                return;  // STOP UPDATING DEAD UNITS FROM SERVER
+            }
+
+            // Check if this entity already exists
             if (!entity) {
                 // Create a new entity based on its type
                 if (serverEntity.type === 'unit') {

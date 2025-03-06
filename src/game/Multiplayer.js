@@ -482,7 +482,11 @@ class Multiplayer {
         const currentTime = Date.now();
 
         this.game.entities.forEach(entity => {
-            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
+            if (entity instanceof Unit && 
+                entity.serverX !== undefined && 
+                entity.serverY !== undefined &&
+                !entity.isDestroyed  // Critical Fix: Ignore destroyed units
+            ) {
                 const elapsed = currentTime - entity.interpolationStartTime;
                 const t = Math.min(elapsed / interpolationDuration, 1); // interpolationDuration ~100ms
 

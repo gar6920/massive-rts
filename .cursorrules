@@ -125,3 +125,9 @@ massive-rts/
 - **/dist/**
 - **/.git/**
 
+## Commit Handling Guidelines
+- Always reference commits by their full commit message in quotes (e.g., "tracks enemy down")
+- When asking to reset to a specific commit, use the exact commit message like: "reset to commit 'tracks enemy down'"
+- When multiple similar commits exist, include the date or an additional identifier
+- Prefer to use git commands with --name-only or --name-status flags to verify changes
+- For critical operations like resets or force pushes, explicitly confirm your intention
