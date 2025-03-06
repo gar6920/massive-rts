@@ -23,6 +23,7 @@ class InputHandler {
         this.selectionEndX = 0;
         this.selectionEndY = 0;
         this.isSelecting = false;
+        this.clickStartTime = 0;
         
         // Minimap element
         this.minimapElement = document.getElementById('minimap');
@@ -102,12 +103,8 @@ class InputHandler {
             this.selectionStartY = e.clientY;
             this.selectionEndX = e.clientX;
             this.selectionEndY = e.clientY;
-            this.isSelecting = true;
-            
-            // Check if clicked on an entity
-            const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-            console.log(`Mouse down at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
-            this.game.handleEntitySelection(worldPos.x, worldPos.y);
+            this.isSelecting = false; // Start false, will become true if mouse moves
+            this.clickStartTime = Date.now();
         }
         // Right mouse button
         else if (e.button === 2) {
@@ -124,25 +121,30 @@ class InputHandler {
      * Handle mouse up events
      */
     handleMouseUp(e) {
-        // Left mouse button
         if (e.button === 0) {
             this.mouseDown = false;
+
+            // Get world coordinates for both start and end points
+            const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
+            const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
             
-            if (this.isSelecting) {
-                // Finalize selection box
-                const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
-                const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
-                console.log(`Selection box from (${startWorld.x.toFixed(2)}, ${startWorld.y.toFixed(2)}) to (${endWorld.x.toFixed(2)}, ${endWorld.y.toFixed(2)})`);
+            // Calculate the size of the selection box in screen pixels
+            const selectionWidth = Math.abs(this.selectionEndX - this.selectionStartX);
+            const selectionHeight = Math.abs(this.selectionEndY - this.selectionStartY);
+            
+            // If the selection box is very small, treat it as a click
+            if (selectionWidth < 5 && selectionHeight < 5) {
+                const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
+                this.game.handleEntitySelection(worldPos.x, worldPos.y);
+            } else {
+                // Otherwise use box selection
                 this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
-                this.isSelecting = false;
             }
-        }
-        // Right mouse button
-        else if (e.button === 2) {
+            
+            this.isSelecting = false;
+        } else if (e.button === 2) {
             this.rightMouseDown = false;
-        }
-        // Middle mouse button (rollerball)
-        else if (e.button === 1) {
+        } else if (e.button === 1) {
             this.middleMouseDown = false;
         }
     }
@@ -153,6 +155,17 @@ class InputHandler {
     handleMouseMove(e) {
         this.mouseX = e.clientX;
         this.mouseY = e.clientY;
+        
+        // Start selection if mouse has moved enough while button is down
+        if (this.mouseDown && !this.isSelecting) {
+            const mouseMoved = 
+                Math.abs(e.clientX - this.selectionStartX) > 5 || 
+                Math.abs(e.clientY - this.selectionStartY) > 5;
+            
+            if (mouseMoved) {
+                this.isSelecting = true;
+            }
+        }
         
         // Update selection box if selecting
         if (this.isSelecting) {

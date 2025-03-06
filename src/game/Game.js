@@ -79,16 +79,10 @@ class Game {
      * Update game state
      */
     update(deltaTime) {
-        // Update input handler
         this.inputHandler.update();
-        
-        // Update multiplayer
         this.multiplayer.update(deltaTime);
-        
-        // Update entity positions with interpolation
         this.updateEntities(deltaTime);
-        
-        // Update all entities
+
         for (const entity of this.entities) {
             entity.update(deltaTime, this);
         }
@@ -218,40 +212,30 @@ class Game {
     }
     
     /**
-     * Handle entity selection
+     * Handle single-click entity selection at a world coordinate
      */
     handleEntitySelection(worldX, worldY) {
-        const gridX = Math.floor(worldX / 32);
-        const gridY = Math.floor(worldY / 32);
-        let entitySelected = false;
+        // Convert isometric world coordinates to grid coordinates
+        const gridPos = this.map.isoToGrid(worldX, worldY);
+        const gridX = Math.floor(gridPos.x);
+        const gridY = Math.floor(gridPos.y);
 
         // Deselect all entities first
-        for (const entity of this.entities) {
-            entity.isSelected = false;
-        }
-        this.selectedEntities = [];
+        this.deselectAll();
 
+        // Iterate to find the entity at clicked location
         for (const entity of this.entities) {
-            const entityGridX = Math.floor(entity.x / 32);
-            const entityGridY = Math.floor(entity.y / 32);
+            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
+            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
 
             if (gridX === entityGridX && gridY === entityGridY) {
-                if (entity.type === 'building' && entity.playerId === 'human-team') {
-                    console.log(`Selecting shared human base`);
-                    entity.isSelected = true;
+                // Allow selecting any entity (for viewing info), but only add player's units to selectedEntities
+                entity.isSelected = true;
+                if (entity instanceof Unit && entity.playerId === this.multiplayer.playerId) {
                     this.selectedEntities.push(entity);
-                    entitySelected = true;
-                } else if (entity.type === 'unit') {
-                    if (entity.playerId === this.multiplayer.playerId) {
-                        console.log(`Selecting my unit ${entity.id}`);
-                        entity.isSelected = true;
-                        this.selectedEntities.push(entity);
-                        entitySelected = true;
-                    } else {
-                        console.log(`Skipping unit ${entity.id} - not mine`);
-                    }
                 }
-                if (entitySelected) break;
+                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}`);
+                break; // Select only the first found entity
             }
         }
     }
@@ -260,70 +244,49 @@ class Game {
      * Select entities within a box
      */
     selectEntitiesInBox(startX, startY, endX, endY) {
-        console.log(`Selecting entities in box from world (${startX.toFixed(2)}, ${startY.toFixed(2)}) to (${endX.toFixed(2)}, ${endY.toFixed(2)})`);
-        
         // Convert isometric world coordinates to grid coordinates
         const startGridPos = this.map.isoToGrid(startX, startY);
         const endGridPos = this.map.isoToGrid(endX, endY);
         
-        console.log(`Selection box in grid coordinates: from (${startGridPos.x.toFixed(2)}, ${startGridPos.y.toFixed(2)}) to (${endGridPos.x.toFixed(2)}, ${endGridPos.y.toFixed(2)})`);
-        
-        // Deselect all entities first
-        for (const entity of this.entities) {
-            entity.isSelected = false;
-        }
-        this.selectedEntities = [];
-        
         // Calculate selection rectangle in grid coordinates
         const selectionRect = {
-            x: Math.min(startGridPos.x, endGridPos.x),
-            y: Math.min(startGridPos.y, endGridPos.y),
-            width: Math.abs(endGridPos.x - startGridPos.x),
-            height: Math.abs(endGridPos.y - startGridPos.y)
+            left: Math.min(startGridPos.x, endGridPos.x),
+            right: Math.max(startGridPos.x, endGridPos.x),
+            top: Math.min(startGridPos.y, endGridPos.y),
+            bottom: Math.max(startGridPos.y, endGridPos.y)
         };
-        
-        console.log(`Selection rectangle in grid: (${selectionRect.x.toFixed(2)}, ${selectionRect.y.toFixed(2)}) with size ${selectionRect.width.toFixed(2)}x${selectionRect.height.toFixed(2)}`);
-        
-        // Select entities found within the selection rectangle
-        let entitiesSelected = 0;
-        for (const entity of this.entities) {
-            // Convert entity position to grid coordinates
+
+        // Deselect first
+        this.deselectAll();
+
+        // Find all client-owned units in the selection box
+        const clientUnits = this.entities.filter(entity => {
+            // First check if it's a client-owned unit
+            if (!(entity instanceof Unit) || entity.playerId !== this.multiplayer.playerId) {
+                return false;
+            }
+
+            // Then check if it's in the selection box
             const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
             const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
             
-            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
-            
-            if (
-                entityGridX >= selectionRect.x &&
-                entityGridX <= selectionRect.x + selectionRect.width &&
-                entityGridY >= selectionRect.y &&
-                entityGridY <= selectionRect.y + selectionRect.height
-            ) {
-                // For units, only select those owned by the player
-                if (entity.type === 'unit' && entity.playerId !== this.multiplayer.playerId) {
-                    console.log(`Unit ${entity.id} belongs to player ${entity.playerId}, not selecting`);
-                    continue;
-                }
-                
-                // For buildings, only select the shared base
-                if (entity.type === 'building' && entity.playerId !== 'human-team') {
-                    console.log(`Building ${entity.id} is not the shared base, not selecting`);
-                    continue;
-                }
-                
-                // Select this entity
-                entity.isSelected = true;
-                this.selectedEntities.push(entity);
-                entitiesSelected++;
-                
-                // For debugging
-                console.log(`Selected entity in box: ${entity.constructor.name}, ID: ${entity.id}`);
-            } else {
-                console.log(`Entity ${entity.id} not in selection box`);
-            }
+            return (
+                entityGridX >= selectionRect.left &&
+                entityGridX <= selectionRect.right &&
+                entityGridY >= selectionRect.top &&
+                entityGridY <= selectionRect.bottom
+            );
+        });
+
+        // If we found any client units in the box, select them all
+        if (clientUnits.length > 0) {
+            clientUnits.forEach(unit => {
+                unit.isSelected = true;
+                this.selectedEntities.push(unit);
+            });
         }
-        
-        console.log(`Selected ${entitiesSelected} entities in box selection`);
+
+        console.log(`Selected ${this.selectedEntities.length} client-owned units in box.`);
     }
     
     /**
