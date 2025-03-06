@@ -608,10 +608,18 @@ class Multiplayer {
         data.unitIds.forEach(unitId => {
             const unit = this.game.getEntityById(unitId);
             if (unit && unit instanceof Unit) {
+                // Set the target entity to follow and attack
                 unit.targetEntity = targetEntity;
                 
                 // Set visual state for attack
                 unit.isAttacking = true;
+                
+                // Also update movement target to match the target's position
+                // This ensures units will follow moving targets
+                const targetCenter = targetEntity.getCenter();
+                unit.setTarget(targetCenter.x, targetCenter.y);
+                
+                console.log(`Unit ${unitId} set to follow and attack target ${data.targetEntityId} at (${targetCenter.x}, ${targetCenter.y})`);
             }
         });
     }

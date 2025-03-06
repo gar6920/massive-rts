@@ -662,69 +662,81 @@ function updatePlayerUnits(deltaTime) {
         
         // Only process player-controlled units that are moving or attacking
         if (unit.type === 'unit' && unit.playerId !== 'ai-team') {
-            // Handle movement
-            if (unit.isMoving) {
-                if (unit.targetX !== null && unit.targetY !== null) {
-                    // If attacking a target and has a targetEntity, update target position
-                    if (unit.targetEntityId && unit.isAttacking) {
-                        const targetEntity = gameState.entities[unit.targetEntityId];
-                        if (targetEntity) {
-                            unit.targetX = targetEntity.x;
-                            unit.targetY = targetEntity.y;
-                        } else {
-                            // Target entity no longer exists, clear attack state
+            // Handle attacking logic
+            if (unit.isAttacking && unit.targetEntityId) {
+                const targetEntity = gameState.entities[unit.targetEntityId];
+                
+                // If target no longer exists, clear attack state
+                if (!targetEntity) {
+                    unit.targetEntityId = null;
+                    unit.isAttacking = false;
+                    unit.isMoving = false;
+                    continue;
+                }
+                
+                // Always update target position for attacking units to ensure they follow moving targets
+                unit.targetX = targetEntity.x;
+                unit.targetY = targetEntity.y;
+                
+                // Calculate distance to target
+                const dx = targetEntity.x - unit.x;
+                const dy = targetEntity.y - unit.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                // Calculate attack range - use default if not set
+                const attackRange = unit.attackRange || 50;
+                
+                // If within attack range, stop and attack
+                if (distance <= attackRange) {
+                    unit.isMoving = false;
+                    
+                    // Process attack
+                    const now = Date.now();
+                    const attackCooldown = unit.attackCooldown || 1000; // Default 1 second cooldown
+                    
+                    if (!unit.lastAttackTime || now - unit.lastAttackTime >= attackCooldown) {
+                        // Apply damage to target
+                        const damage = unit.attackDamage || 10; // Default damage
+                        targetEntity.health -= damage;
+                        unit.lastAttackTime = now;
+                        
+                        // Broadcast attack
+                        io.emit('unitAttack', {
+                            attackerId: unit.id,
+                            targetId: unit.targetEntityId,
+                            damage: damage
+                        });
+                        
+                        // Check if target is destroyed
+                        if (targetEntity.health <= 0) {
+                            // Entity destroyed
+                            io.emit('entityDestroyed', {
+                                entityId: targetEntity.id
+                            });
+                            
+                            // Remove entity from game state
+                            delete gameState.entities[targetEntity.id];
+                            
+                            // Clear attack target
                             unit.targetEntityId = null;
                             unit.isAttacking = false;
+                            unit.isMoving = false;
                         }
                     }
-                    
+                } else {
+                    // If not in range, keep moving toward the target
+                    unit.isMoving = true;
+                }
+            }
+            
+            // Handle movement for units that are moving
+            if (unit.isMoving) {
+                if (unit.targetX !== null && unit.targetY !== null) {
                     const dx = unit.targetX - unit.x;
                     const dy = unit.targetY - unit.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     
-                    // Calculate attack range - use default if not set
-                    const attackRange = unit.attackRange || 50;
-                    
-                    // If attacking and within range, stop and attack
-                    if (unit.isAttacking && unit.targetEntityId && distance <= attackRange) {
-                        unit.isMoving = false;
-                        
-                        // Process attack
-                        const now = Date.now();
-                        const attackCooldown = unit.attackCooldown || 1000; // Default 1 second cooldown
-                        
-                        if (!unit.lastAttackTime || now - unit.lastAttackTime >= attackCooldown) {
-                            const targetEntity = gameState.entities[unit.targetEntityId];
-                            if (targetEntity) {
-                                // Apply damage to target
-                                const damage = unit.attackDamage || 10; // Default damage
-                                targetEntity.health -= damage;
-                                unit.lastAttackTime = now;
-                                
-                                // Broadcast attack
-                                io.emit('unitAttack', {
-                                    attackerId: unit.id,
-                                    targetId: unit.targetEntityId,
-                                    damage: damage
-                                });
-                                
-                                // Check if target is destroyed
-                                if (targetEntity.health <= 0) {
-                                    // Entity destroyed
-                                    io.emit('entityDestroyed', {
-                                        entityId: targetEntity.id
-                                    });
-                                    
-                                    // Remove entity from game state
-                                    delete gameState.entities[targetEntity.id];
-                                    
-                                    // Clear attack target
-                                    unit.targetEntityId = null;
-                                    unit.isAttacking = false;
-                                }
-                            }
-                        }
-                    } else if (distance > 1) {
+                    if (distance > 1) {
                         // Move towards target
                         const normalizedDx = dx / distance;
                         const normalizedDy = dy / distance;

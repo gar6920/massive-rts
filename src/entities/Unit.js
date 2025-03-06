@@ -170,7 +170,10 @@ class Unit extends Entity {
         
         // If target is out of range, move towards it
         if (distance > this.attackRange) {
+            // Update the target position to follow the moving target
             this.setTarget(targetCenter.x, targetCenter.y);
+            // Maintain the attacking state even when moving toward the target
+            this.isAttacking = true;
             return;
         }
         
