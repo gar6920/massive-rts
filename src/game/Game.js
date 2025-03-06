@@ -92,16 +92,8 @@ class Game {
      * Interpolate entity positions smoothly between server updates
      */
     updateEntities(deltaTime) {
-        const interpolationFactor = 0.1; // adjust for smoothness
-        
-        for (const entity of this.entities) {
-            // Only apply interpolation to units, not buildings
-            if (entity instanceof Unit && entity.serverX !== undefined && entity.serverY !== undefined) {
-                // Smoothly interpolate between current position and server position
-                entity.x += (entity.serverX - entity.x) * interpolationFactor;
-                entity.y += (entity.serverY - entity.y) * interpolationFactor;
-            }
-        }
+        // Interpolation is now handled by Multiplayer.update()
+        // This method is kept for compatibility, but doesn't need to do the interpolation
     }
     
     /**

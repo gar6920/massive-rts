@@ -25,6 +25,7 @@ class Multiplayer {
         this.onPlayerLeft = this.onPlayerLeft.bind(this);
         this.onUnitCreated = this.onUnitCreated.bind(this);
         this.onUnitsMoved = this.onUnitsMoved.bind(this);
+        this.onUpdateUnitPosition = this.onUpdateUnitPosition.bind(this);
         this.onEntityRemoved = this.onEntityRemoved.bind(this);
         this.onMapResized = this.onMapResized.bind(this);
         this.onJoinGameSuccess = this.onJoinGameSuccess.bind(this);
@@ -53,6 +54,7 @@ class Multiplayer {
         this.socket.on('playerLeft', this.onPlayerLeft);
         this.socket.on('unitCreated', this.onUnitCreated);
         this.socket.on('unitsMoved', this.onUnitsMoved);
+        this.socket.on('updateUnitPosition', this.onUpdateUnitPosition);
         this.socket.on('entityRemoved', this.onEntityRemoved);
         this.socket.on('mapResized', this.onMapResized);
         this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
@@ -542,5 +544,29 @@ class Multiplayer {
         alert(`Failed to join game: ${data.message}`);
         // Show join button again
         this.showJoinButton();
+    }
+    
+    /**
+     * Handle unit position updates from server
+     */
+    onUpdateUnitPosition(data) {
+        const { unitId, x, y, isMoving } = data;
+        const unit = this.game.entities.find(e => e.id === unitId);
+        
+        if (unit) {
+            // Store previous position for interpolation
+            unit.prevX = unit.x;
+            unit.prevY = unit.y;
+            unit.serverX = x;
+            unit.serverY = y;
+            unit.isMoving = isMoving;
+            unit.interpolationStartTime = Date.now();
+            
+            // If the unit has stopped moving, clear the target
+            if (!isMoving) {
+                unit.targetX = null;
+                unit.targetY = null;
+            }
+        }
     }
 } 
