@@ -400,7 +400,7 @@ function initializeGame() {
         attackDamage: 10,
         attackRange: 50,
         attackCooldown: 1000,
-        speed: 2,
+        speed: 20,
         level: 1,
         experience: 0,
         targetX: null,
@@ -556,6 +556,151 @@ function createPlayerUnit(playerId) {
     console.log(`Created unit ${unit.id} for player ${playerId}`);
     console.log(`=== Unit Creation Complete ===\n`);
     return unit;
+}
+
+// AI Unit Control Functions
+function findClosestEnemyBase(aiUnit, entities) {
+    let closestDistance = Infinity;
+    let closestBase = null;
+
+    for (const entityId in entities) {
+        const entity = entities[entityId];
+        if (entity.type === 'building' && entity.buildingType === 'BASE' && entity.playerId === 'human-team') {
+            const dx = entity.x - aiUnit.x;
+            const dy = entity.y - aiUnit.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestBase = entity;
+            }
+        }
+    }
+    return closestBase;
+}
+
+function updateAIUnits(deltaTime) {
+    for (const entityId in gameState.entities) {
+        const aiUnit = gameState.entities[entityId];
+        
+        // Only process AI units (non-player-controlled units)
+        if (aiUnit.type === 'unit' && aiUnit.playerId === 'ai-team') {
+            // Find target if none exists or current target is destroyed
+            if (!aiUnit.targetEntityId || !gameState.entities[aiUnit.targetEntityId]) {
+                const closestBase = findClosestEnemyBase(aiUnit, gameState.entities);
+                if (closestBase) {
+                    aiUnit.targetEntityId = closestBase.id;
+                    console.log(`AI Unit ${aiUnit.id} targeting base ${closestBase.id}`);
+                }
+            }
+
+            const targetEntity = gameState.entities[aiUnit.targetEntityId];
+            if (targetEntity) {
+                const dx = targetEntity.x - aiUnit.x;
+                const dy = targetEntity.y - aiUnit.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > aiUnit.attackRange) {
+                    // Move towards target
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+                    aiUnit.x += normalizedDx * aiUnit.speed * (deltaTime / 1000);
+                    aiUnit.y += normalizedDy * aiUnit.speed * (deltaTime / 1000);
+                    aiUnit.isMoving = true;
+                    
+                    // Broadcast position update
+                    io.emit('updateUnitPosition', {
+                        unitId: aiUnit.id,
+                        x: aiUnit.x,
+                        y: aiUnit.y,
+                        isMoving: true
+                    });
+                } else {
+                    // Within attack range
+                    aiUnit.isMoving = false;
+                    if (!aiUnit.lastAttackTime || Date.now() - aiUnit.lastAttackTime >= aiUnit.attackCooldown) {
+                        // Attack the target
+                        targetEntity.health -= aiUnit.attackDamage;
+                        aiUnit.lastAttackTime = Date.now();
+                        
+                        // Broadcast attack
+                        io.emit('unitAttack', {
+                            attackerId: aiUnit.id,
+                            targetId: targetEntity.id,
+                            damage: aiUnit.attackDamage,
+                            targetHealth: targetEntity.health
+                        });
+                        
+                        // Check if target is destroyed
+                        if (targetEntity.health <= 0) {
+                            delete gameState.entities[targetEntity.id];
+                            aiUnit.targetEntityId = null;
+                            io.emit('entityDestroyed', { entityId: targetEntity.id });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// Game update loop
+let lastUpdateTime = Date.now();
+setInterval(() => {
+    if (gameState.isRunning) {
+        const currentTime = Date.now();
+        const deltaTime = currentTime - lastUpdateTime;
+        lastUpdateTime = currentTime;
+        
+        updateAIUnits(deltaTime);
+        updatePlayerUnits(deltaTime);
+    }
+}, 50); // Update every 50ms (20 times per second)
+
+// Function to update player-controlled units
+function updatePlayerUnits(deltaTime) {
+    for (const entityId in gameState.entities) {
+        const unit = gameState.entities[entityId];
+        
+        // Only process player-controlled units that are moving
+        if (unit.type === 'unit' && unit.playerId !== 'ai-team' && unit.isMoving) {
+            if (unit.targetX !== null && unit.targetY !== null) {
+                const dx = unit.targetX - unit.x;
+                const dy = unit.targetY - unit.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > 1) {
+                    // Move towards target
+                    const normalizedDx = dx / distance;
+                    const normalizedDy = dy / distance;
+                    unit.x += normalizedDx * unit.speed * (deltaTime / 1000);
+                    unit.y += normalizedDy * unit.speed * (deltaTime / 1000);
+                    
+                    // Broadcast position update
+                    io.emit('updateUnitPosition', {
+                        unitId: unit.id,
+                        x: unit.x,
+                        y: unit.y,
+                        isMoving: true
+                    });
+                } else {
+                    // Reached target
+                    unit.x = unit.targetX;
+                    unit.y = unit.targetY;
+                    unit.isMoving = false;
+                    unit.targetX = null;
+                    unit.targetY = null;
+                    
+                    // Broadcast final position
+                    io.emit('updateUnitPosition', {
+                        unitId: unit.id,
+                        x: unit.x,
+                        y: unit.y,
+                        isMoving: false
+                    });
+                }
+            }
+        }
+    }
 }
 
 // Handle socket connections
@@ -724,9 +869,9 @@ io.on('connection', (socket) => {
         return;
       }
 
-      // Verify the unit belongs to the player
-      if (unit.playerId !== playerId) {
-        console.error(`Unit ${unitId} does not belong to player ${playerId}`);
+      // Verify the unit belongs to the player and is not an AI unit
+      if (unit.playerId !== playerId || unit.playerId === 'ai-team') {
+        console.error(`Unit ${unitId} does not belong to player ${playerId} or is an AI unit`);
         return;
       }
 
@@ -782,60 +927,6 @@ io.on('connection', (socket) => {
     }
   });
 });
-
-// Game update loop (10 updates per second)
-const UPDATE_INTERVAL = 100; // ms
-
-setInterval(() => {
-  const currentTime = Date.now();
-  const deltaTime = currentTime - gameState.lastUpdateTime;
-  gameState.lastUpdateTime = currentTime;
-  
-  // Update all moving entities
-  Object.keys(gameState.entities).forEach(entityId => {
-    const entity = gameState.entities[entityId];
-    
-    if (entity.isMoving && entity.targetX !== null && entity.targetY !== null) {
-      // Calculate direction to target
-      const centerX = entity.x + entity.width / 2;
-      const centerY = entity.y + entity.height / 2;
-      const dx = entity.targetX - centerX;
-      const dy = entity.targetY - centerY;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-      
-      // If we're close enough to the target, stop moving
-      if (distance < 5) {
-        entity.isMoving = false;
-        entity.targetX = null;
-        entity.targetY = null;
-        return;
-      }
-      
-      // Normalize direction and apply speed
-      const moveSpeed = entity.speed * (deltaTime / 1000);
-      const normalizedDx = dx / distance;
-      const normalizedDy = dy / distance;
-      
-      // Update position with boundary checking
-      const newX = entity.x + normalizedDx * moveSpeed;
-      const newY = entity.y + normalizedDy * moveSpeed;
-      
-      // Ensure the entity stays within map boundaries
-      const mapWidth = gameState.mapDimensions.width * 32; // Map width in pixels
-      const mapHeight = gameState.mapDimensions.height * 32; // Map height in pixels
-      
-      entity.x = Math.max(0, Math.min(newX, mapWidth - entity.width));
-      entity.y = Math.max(0, Math.min(newY, mapHeight - entity.height));
-    }
-  });
-  
-  // Broadcast updated game state to all players
-  io.emit('gameUpdate', {
-    entities: gameState.entities,
-    timestamp: currentTime,
-    serverStartTime: gameState.serverStartTime // Include server start time
-  });
-}, UPDATE_INTERVAL);
 
 // Start the server
 const PORT = process.env.PORT || 3000;
