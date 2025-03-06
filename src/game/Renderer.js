@@ -841,9 +841,9 @@ class Renderer {
                 effect.size = 20;
                 break;
             case 'attackCommand':
-                effect.duration = 800;
-                effect.color = 'red';
-                effect.size = 20;
+                effect.duration = 1000;
+                effect.color = '#ff3333'; // Bright red
+                effect.size = 25; // Larger size
                 break;
             case 'attack':
                 effect.duration = 500;
@@ -930,23 +930,22 @@ class Renderer {
      * Render an attack command effect
      */
     renderAttackCommandEffect(ctx, screenPos, effect, progress) {
-        // Draw a "X" that fades out
+        // Draw a red circle that fades out
         ctx.globalAlpha = 1 - progress;
         ctx.strokeStyle = effect.color;
         ctx.lineWidth = 3;
         
-        // X grows slightly
+        // Circle grows slightly
         const size = effect.size * (1 + progress * 0.5);
         
-        // Draw X
+        // Outer circle
         ctx.beginPath();
-        ctx.moveTo(screenPos.x - size, screenPos.y - size);
-        ctx.lineTo(screenPos.x + size, screenPos.y + size);
+        ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
         ctx.stroke();
         
+        // Inner circle (target-like pattern)
         ctx.beginPath();
-        ctx.moveTo(screenPos.x + size, screenPos.y - size);
-        ctx.lineTo(screenPos.x - size, screenPos.y + size);
+        ctx.arc(screenPos.x, screenPos.y, size * 0.5, 0, Math.PI * 2);
         ctx.stroke();
         
         // Reset alpha

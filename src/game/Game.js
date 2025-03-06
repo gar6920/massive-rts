@@ -343,6 +343,8 @@ class Game {
         if (this.selectedEntities.length === 0) return;
 
         console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
+        console.log(`My player ID from Game object: ${this.playerId}`);
+        console.log(`My player ID from Multiplayer object: ${this.multiplayer.playerId}`);
         
         // Get IDs of selected units
         const selectedUnitIds = this.selectedEntities
@@ -356,13 +358,17 @@ class Game {
         
         // If clicked on an enemy entity, issue attack command
         if (clickedEntity && clickedEntity.playerId !== this.playerId && clickedEntity.id) {
-            console.log(`Attacking entity: ${clickedEntity.id}`);
+            console.log(`Attempting to attack entity: ${clickedEntity.id}, type: ${clickedEntity instanceof Unit ? 'Unit' : 'Building'}`);
+            console.log(`Selected units: ${selectedUnitIds.join(', ')}`);
+            console.log(`My player ID: ${this.playerId}, target entity owner: ${clickedEntity.playerId}`);
             
             // Issue attack command to server
             this.multiplayer.attackTarget(selectedUnitIds, clickedEntity.id);
             
             // Visual feedback
             this.renderer.addEffect('attackCommand', worldX, worldY);
+            
+            console.log('Attack command sent to server');
             return;
         }
         
@@ -397,23 +403,33 @@ class Game {
      * Get entity at a specific position
      */
     getEntityAtPosition(x, y) {
+        console.log(`Looking for entity at isometric position: (${x.toFixed(2)}, ${y.toFixed(2)})`);
+        
         // Check all entities to see if the point is within their bounds
         for (const entity of this.entities) {
             // Skip if entity is not rendered or doesn't have position data
             if (!entity.x || !entity.y || !entity.width || !entity.height) continue;
             
-            // Calculate entity bounds
-            const entityLeft = entity.x;
-            const entityRight = entity.x + entity.width;
-            const entityTop = entity.y;
-            const entityBottom = entity.y + entity.height;
+            // Need to convert the cartesian entity position to isometric for comparison
+            const entityIsoX = (entity.x - entity.y) / 2;
+            const entityIsoY = (entity.x + entity.y) / 4;
+            
+            // Calculate entity bounds in isometric coordinates
+            // We need to adjust the bounds as the isometric shape is different
+            const margin = 30; // Give some margin for click precision
+            const entityLeft = entityIsoX - margin;
+            const entityRight = entityIsoX + entity.width + margin;
+            const entityTop = entityIsoY - margin;
+            const entityBottom = entityIsoY + entity.height + margin;
             
             // Check if the point is within the entity bounds
             if (x >= entityLeft && x <= entityRight && y >= entityTop && y <= entityBottom) {
+                console.log(`Found entity: ${entity.id}, type: ${entity instanceof Unit ? 'Unit' : 'Building'}, owner: ${entity.playerId}`);
                 return entity;
             }
         }
         
+        console.log('No entity found at this position');
         return null;
     }
     

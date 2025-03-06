@@ -150,11 +150,16 @@ class Unit extends Entity {
      * Update combat state
      */
     updateCombat(deltaTime, game) {
-        // Check if target is still valid
-        if (!this.targetEntity || this.targetEntity.health <= 0) {
+        // Check if target is still valid - only clear if the target is completely removed
+        // or if isDestroyed is true (animation completed)
+        if (!this.targetEntity || this.targetEntity.isDestroyed === true) {
             this.targetEntity = null;
+            this.isAttacking = false;
             return;
         }
+        
+        // Keep attacking even if health is 0 or below, until the server removes the entity
+        // or until the death animation is complete
         
         // Calculate distance to target
         const center = this.getCenter();
@@ -297,6 +302,10 @@ class Unit extends Entity {
         this.isDestroyed = true;
         this.deathAnimationTime = Date.now();
         this.deathAnimationDuration = 1000; // Animation lasts 1 second
+        
+        // Keep the entity in place but mark it as destroyed
+        // The actual removal will happen after the animation completes
+        // This allows other units to see that it's destroyed but still animate correctly
     }
     
     /**

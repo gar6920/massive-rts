@@ -12,7 +12,17 @@
 - Map loads with human and AI base
 - Units load and can be selected
 - units show movement when right clicked to a destination
-- units will not move and attack a target yet - current step
+- units move and attack a target
+
+## ACTIVE FEATURES WE ARE WORKING ON
+- Units following a moving target and attacking it until it is dead
+
+## Flow of coding in cursor
+- request made in agent text by User
+- agent attempts to code request
+- agent completes request
+- user confirms completion
+- push to github if works, reset to prior commit if it doesn't work
 
 // cursorrules - Client-Server Responsibility Definition
 

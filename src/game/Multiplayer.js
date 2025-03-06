@@ -656,8 +656,19 @@ class Multiplayer {
             // Add visual effects
             this.game.renderer.addEffect('explosion', entity.x + entity.width/2, entity.y + entity.height/2);
             
-            // Remove entity from game
-            this.game.removeEntity(data.entityId);
+            // Notify any units targeting this entity to stop attacking
+            this.game.entities.forEach(e => {
+                if (e instanceof Unit && e.targetEntity && e.targetEntity.id === data.entityId) {
+                    console.log(`Unit ${e.id} stopping attack on destroyed entity ${data.entityId}`);
+                    // Don't immediately clear the target to let the death animation play
+                    // The unit's updateCombat will check for isDestroyed and stop attacking
+                }
+            });
+            
+            // Wait for death animation to complete before removing
+            setTimeout(() => {
+                this.game.removeEntity(data.entityId);
+            }, 1000); // Match death animation duration
         }
     }
 } 
