@@ -344,6 +344,29 @@ class Game {
 
         console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
         
+        // Get IDs of selected units
+        const selectedUnitIds = this.selectedEntities
+            .filter(entity => entity instanceof Unit)
+            .map(entity => entity.id);
+        
+        if (selectedUnitIds.length === 0) return;
+        
+        // First, check if user clicked on an entity
+        const clickedEntity = this.getEntityAtPosition(worldX, worldY);
+        
+        // If clicked on an enemy entity, issue attack command
+        if (clickedEntity && clickedEntity.playerId !== this.playerId && clickedEntity.id) {
+            console.log(`Attacking entity: ${clickedEntity.id}`);
+            
+            // Issue attack command to server
+            this.multiplayer.attackTarget(selectedUnitIds, clickedEntity.id);
+            
+            // Visual feedback
+            this.renderer.addEffect('attackCommand', worldX, worldY);
+            return;
+        }
+        
+        // Otherwise, it's a movement command
         // Convert from isometric world coordinates to grid coordinates
         const gridPos = this.map.isoToGrid(worldX, worldY);
         const tileX = Math.floor(gridPos.x);
@@ -362,18 +385,36 @@ class Game {
         const cartesianY = tileY * Config.TILE_SIZE;
         
         console.log(`Units moving to cartesian coordinates: (${cartesianX}, ${cartesianY})`);
-
-        // Get IDs of selected units for multiplayer
-        const selectedUnitIds = this.selectedEntities
-            .filter(entity => entity instanceof Unit)
-            .map(entity => entity.id);
         
-        console.log(`Selected unit IDs for movement: ${selectedUnitIds.join(', ')}`);
+        // Send movement command to server with cartesian coordinates
+        this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
         
-        if (selectedUnitIds.length > 0) {
-            // Send movement command to server with cartesian coordinates
-            this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
+        // Visual feedback
+        this.renderer.addEffect('moveCommand', worldX, worldY);
+    }
+    
+    /**
+     * Get entity at a specific position
+     */
+    getEntityAtPosition(x, y) {
+        // Check all entities to see if the point is within their bounds
+        for (const entity of this.entities) {
+            // Skip if entity is not rendered or doesn't have position data
+            if (!entity.x || !entity.y || !entity.width || !entity.height) continue;
+            
+            // Calculate entity bounds
+            const entityLeft = entity.x;
+            const entityRight = entity.x + entity.width;
+            const entityTop = entity.y;
+            const entityBottom = entity.y + entity.height;
+            
+            // Check if the point is within the entity bounds
+            if (x >= entityLeft && x <= entityRight && y >= entityTop && y <= entityBottom) {
+                return entity;
+            }
         }
+        
+        return null;
     }
     
     /**
@@ -446,5 +487,32 @@ class Game {
             );
             this.entities.push(unit);
         }
+    }
+
+    /**
+     * Get entity by ID
+     */
+    getEntityById(entityId) {
+        return this.entities.find(entity => entity.id === entityId);
+    }
+
+    /**
+     * Remove entity from game
+     */
+    removeEntity(entityId) {
+        const index = this.entities.findIndex(entity => entity.id === entityId);
+        if (index !== -1) {
+            // Remove from selection if selected
+            const selectedIndex = this.selectedEntities.findIndex(entity => entity.id === entityId);
+            if (selectedIndex !== -1) {
+                this.selectedEntities.splice(selectedIndex, 1);
+            }
+            
+            // Remove from entities array
+            this.entities.splice(index, 1);
+            console.log(`Removed entity ${entityId} from game`);
+            return true;
+        }
+        return false;
     }
 } 

@@ -10,9 +10,9 @@
 
 ## Current State
 - Map loads with human and AI base
-- Inconsistently renders map fully
-- Inconsistently shows a unit of a connected client
-- When a unit does load it is selectable and can be moved correctly
+- Units load and can be selected
+- units show movement when right clicked to a destination
+- units will not move and attack a target yet - current step
 
 // cursorrules - Client-Server Responsibility Definition
 

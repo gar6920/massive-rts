@@ -30,6 +30,9 @@ class Multiplayer {
         this.onMapResized = this.onMapResized.bind(this);
         this.onJoinGameSuccess = this.onJoinGameSuccess.bind(this);
         this.onJoinGameError = this.onJoinGameError.bind(this);
+        this.onUnitsAttacking = this.onUnitsAttacking.bind(this);
+        this.onUnitAttack = this.onUnitAttack.bind(this);
+        this.onEntityDestroyed = this.onEntityDestroyed.bind(this);
     }
     
     /**
@@ -55,6 +58,9 @@ class Multiplayer {
         this.socket.on('unitCreated', this.onUnitCreated);
         this.socket.on('unitsMoved', this.onUnitsMoved);
         this.socket.on('updateUnitPosition', this.onUpdateUnitPosition);
+        this.socket.on('unitsAttacking', this.onUnitsAttacking);
+        this.socket.on('unitAttack', this.onUnitAttack);
+        this.socket.on('entityDestroyed', this.onEntityDestroyed);
         this.socket.on('entityRemoved', this.onEntityRemoved);
         this.socket.on('mapResized', this.onMapResized);
         this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
@@ -442,6 +448,21 @@ class Multiplayer {
     }
     
     /**
+     * Attack target and send to server
+     */
+    attackTarget(unitIds, targetEntityId) {
+        if (!this.connected) {
+            this.pendingCommands.push(() => this.attackTarget(unitIds, targetEntityId));
+            return;
+        }
+        
+        this.socket.emit('attackTarget', {
+            unitIds,
+            targetEntityId
+        });
+    }
+    
+    /**
      * Process any pending commands
      */
     processPendingCommands() {
@@ -567,6 +588,76 @@ class Multiplayer {
                 unit.targetX = null;
                 unit.targetY = null;
             }
+        }
+    }
+    
+    /**
+     * Handle units attacking event
+     */
+    onUnitsAttacking(data) {
+        console.log(`Units ${data.unitIds.join(', ')} attacking entity ${data.targetEntityId}`);
+        
+        // Update unit targets in the game
+        const targetEntity = this.game.getEntityById(data.targetEntityId);
+        if (!targetEntity) {
+            console.error(`Target entity ${data.targetEntityId} not found for attack command`);
+            return;
+        }
+        
+        // Update each unit's target
+        data.unitIds.forEach(unitId => {
+            const unit = this.game.getEntityById(unitId);
+            if (unit && unit instanceof Unit) {
+                unit.targetEntity = targetEntity;
+                
+                // Set visual state for attack
+                unit.isAttacking = true;
+            }
+        });
+    }
+    
+    /**
+     * Handle unit attack event
+     */
+    onUnitAttack(data) {
+        console.log(`Unit ${data.attackerId} attacked ${data.targetId} for ${data.damage} damage`);
+        
+        const attacker = this.game.getEntityById(data.attackerId);
+        const target = this.game.getEntityById(data.targetId);
+        
+        if (!attacker || !target) {
+            console.error('Could not find attacker or target for attack event');
+            return;
+        }
+        
+        // Update visual state
+        if (attacker instanceof Unit) {
+            attacker.performAttackAnimation();
+        }
+        
+        // Apply damage visually
+        target.takeDamage(data.damage);
+        
+        // Add visual effects
+        this.game.renderer.addEffect('attack', target.x + target.width/2, target.y + target.height/2);
+    }
+    
+    /**
+     * Handle entity destroyed event
+     */
+    onEntityDestroyed(data) {
+        console.log(`Entity ${data.entityId} was destroyed`);
+        
+        const entity = this.game.getEntityById(data.entityId);
+        if (entity) {
+            // Trigger death animation
+            entity.playDeathAnimation();
+            
+            // Add visual effects
+            this.game.renderer.addEffect('explosion', entity.x + entity.width/2, entity.y + entity.height/2);
+            
+            // Remove entity from game
+            this.game.removeEntity(data.entityId);
         }
     }
 } 

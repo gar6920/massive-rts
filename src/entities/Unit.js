@@ -42,6 +42,14 @@ class Unit extends Entity {
         this.maxHealth = attributes.health || 100;
         this.level = 1;
         this.experience = 0;
+        
+        // Animation properties
+        this.isAttacking = false;
+        this.attackAnimationTime = null;
+        this.attackAnimationDuration = 500; // Animation lasts 500ms
+        this.isDestroyed = false;
+        this.deathAnimationTime = null;
+        this.deathAnimationDuration = 1000; // Animation lasts 1 second
     }
     
     /**
@@ -81,6 +89,15 @@ class Unit extends Entity {
         // Handle combat if we have a target entity
         if (this.targetEntity) {
             this.updateCombat(deltaTime, game);
+        }
+        
+        // Update any active animations
+        if (this.isAttacking && this.attackAnimationTime) {
+            this.updateAttackAnimation(deltaTime);
+        }
+        
+        if (this.isDestroyed && this.deathAnimationTime) {
+            this.updateDeathAnimation(deltaTime);
         }
     }
     
@@ -166,6 +183,7 @@ class Unit extends Entity {
     attack(target) {
         console.log(`Unit attacking target for ${this.attackDamage} damage`);
         target.takeDamage(this.attackDamage, this);
+        this.performAttackAnimation();
     }
     
     /**
@@ -220,8 +238,7 @@ class Unit extends Entity {
      */
     die() {
         console.log('Unit died');
-        // In a real implementation, we would remove the unit from the game
-        // and possibly play a death animation
+        this.playDeathAnimation();
     }
     
     /**
@@ -241,7 +258,139 @@ class Unit extends Entity {
             experience: this.experience,
             targetX: this.targetX,
             targetY: this.targetY,
-            isMoving: this.isMoving
+            isMoving: this.isMoving,
+            isAttacking: this.isAttacking,
+            attackAnimationTime: this.attackAnimationTime,
+            attackAnimationDuration: this.attackAnimationDuration,
+            isDestroyed: this.isDestroyed,
+            deathAnimationTime: this.deathAnimationTime,
+            deathAnimationDuration: this.deathAnimationDuration
         };
+    }
+    
+    /**
+     * Perform attack animation
+     */
+    performAttackAnimation() {
+        this.isAttacking = true;
+        this.attackAnimationTime = Date.now();
+        this.attackAnimationDuration = 500; // Animation lasts 500ms
+    }
+    
+    /**
+     * Update attack animation
+     */
+    updateAttackAnimation(deltaTime) {
+        const now = Date.now();
+        const elapsed = now - this.attackAnimationTime;
+        
+        if (elapsed >= this.attackAnimationDuration) {
+            // Animation complete
+            this.attackAnimationTime = null;
+        }
+    }
+    
+    /**
+     * Play death animation
+     */
+    playDeathAnimation() {
+        this.isDestroyed = true;
+        this.deathAnimationTime = Date.now();
+        this.deathAnimationDuration = 1000; // Animation lasts 1 second
+    }
+    
+    /**
+     * Update death animation
+     */
+    updateDeathAnimation(deltaTime) {
+        const now = Date.now();
+        const elapsed = now - this.deathAnimationTime;
+        
+        if (elapsed >= this.deathAnimationDuration) {
+            // Animation complete, unit should be removed
+            this.deathAnimationTime = null;
+        }
+    }
+    
+    /**
+     * Render the unit
+     */
+    render(ctx, camera) {
+        // If unit is destroyed and playing death animation, modify rendering
+        if (this.isDestroyed) {
+            // Skip rendering if death animation is complete
+            if (!this.deathAnimationTime) return;
+            
+            // Apply death animation effects
+            const elapsed = Date.now() - this.deathAnimationTime;
+            const progress = Math.min(1, elapsed / this.deathAnimationDuration);
+            
+            // Fade out as animation progresses
+            ctx.globalAlpha = 1 - progress;
+        }
+        
+        // Get screen position
+        const screenPos = camera.worldToScreen(this.x, this.y);
+        
+        // Draw selection indicator if selected
+        if (this.isSelected) {
+            ctx.beginPath();
+            ctx.strokeStyle = 'yellow';
+            ctx.lineWidth = 2;
+            ctx.arc(
+                screenPos.x + this.width / 2,
+                screenPos.y + this.height / 2,
+                this.width / 1.5,
+                0,
+                Math.PI * 2
+            );
+            ctx.stroke();
+        }
+        
+        // Draw attack indicator if attacking
+        if (this.isAttacking && this.attackAnimationTime) {
+            const elapsed = Date.now() - this.attackAnimationTime;
+            const progress = Math.min(1, elapsed / this.attackAnimationDuration);
+            
+            ctx.beginPath();
+            ctx.strokeStyle = 'red';
+            ctx.lineWidth = 2 * (1 - progress);
+            ctx.arc(
+                screenPos.x + this.width / 2,
+                screenPos.y + this.height / 2,
+                this.width / 1.2 * (1 + progress * 0.5),
+                0,
+                Math.PI * 2
+            );
+            ctx.stroke();
+        }
+        
+        // Draw the unit image
+        if (this.image && this.image.complete) {
+            ctx.drawImage(
+                this.image,
+                screenPos.x,
+                screenPos.y,
+                this.width,
+                this.height
+            );
+        } else {
+            // Fallback if image is not loaded
+            ctx.fillStyle = this.playerColor || 'blue';
+            ctx.fillRect(
+                screenPos.x,
+                screenPos.y,
+                this.width,
+                this.height
+            );
+        }
+        
+        // Draw health bar
+        this.renderHealthBar(ctx, screenPos);
+        
+        // Reset alpha if modified
+        if (this.isDestroyed) {
+            ctx.globalAlpha = 1;
+        }
     }
 } 

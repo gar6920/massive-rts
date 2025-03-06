@@ -22,6 +22,8 @@ class Renderer {
         // Track loaded images
         this.imagesLoaded = false;
         this.checkImagesLoaded();
+        
+        this.effects = []; // Array to store visual effects
     }
     
     /**
@@ -56,7 +58,7 @@ class Renderer {
     }
     
     /**
-     * Main render function
+     * Main render method - called each frame
      */
     render() {
         this.clear();
@@ -66,6 +68,9 @@ class Renderer {
         
         // Render entities
         this.renderEntities();
+        
+        // Render visual effects
+        this.renderEffects(this.ctx);
         
         // Render UI
         this.renderUI();
@@ -814,5 +819,199 @@ class Renderer {
     handleResize() {
         this.canvas.width = Config.CANVAS_WIDTH;
         this.canvas.height = Config.CANVAS_HEIGHT;
+    }
+
+    /**
+     * Add a visual effect at a specified position
+     */
+    addEffect(type, x, y) {
+        const effect = {
+            type,
+            x,
+            y,
+            startTime: Date.now(),
+            duration: 1000 // Default duration 1 second
+        };
+        
+        // Customize effect based on type
+        switch (type) {
+            case 'moveCommand':
+                effect.duration = 800;
+                effect.color = 'green';
+                effect.size = 20;
+                break;
+            case 'attackCommand':
+                effect.duration = 800;
+                effect.color = 'red';
+                effect.size = 20;
+                break;
+            case 'attack':
+                effect.duration = 500;
+                effect.color = 'orange';
+                effect.size = 15;
+                break;
+            case 'explosion':
+                effect.duration = 1200;
+                effect.color = 'red';
+                effect.size = 30;
+                break;
+            default:
+                effect.color = 'white';
+                effect.size = 10;
+        }
+        
+        this.effects.push(effect);
+    }
+
+    /**
+     * Update and render visual effects
+     */
+    renderEffects(ctx) {
+        const now = Date.now();
+        const camera = this.game.camera;
+        
+        // Update and render each effect
+        for (let i = this.effects.length - 1; i >= 0; i--) {
+            const effect = this.effects[i];
+            const elapsed = now - effect.startTime;
+            
+            // Remove expired effects
+            if (elapsed > effect.duration) {
+                this.effects.splice(i, 1);
+                continue;
+            }
+            
+            // Calculate progress (0 to 1)
+            const progress = elapsed / effect.duration;
+            
+            // Get screen position
+            const screenPos = camera.worldToScreen(effect.x, effect.y);
+            
+            // Render based on effect type
+            switch (effect.type) {
+                case 'moveCommand':
+                    this.renderMoveCommandEffect(ctx, screenPos, effect, progress);
+                    break;
+                case 'attackCommand':
+                    this.renderAttackCommandEffect(ctx, screenPos, effect, progress);
+                    break;
+                case 'attack':
+                    this.renderAttackEffect(ctx, screenPos, effect, progress);
+                    break;
+                case 'explosion':
+                    this.renderExplosionEffect(ctx, screenPos, effect, progress);
+                    break;
+                default:
+                    this.renderDefaultEffect(ctx, screenPos, effect, progress);
+            }
+        }
+    }
+
+    /**
+     * Render a move command effect
+     */
+    renderMoveCommandEffect(ctx, screenPos, effect, progress) {
+        // Draw a circle that fades out
+        ctx.globalAlpha = 1 - progress;
+        ctx.beginPath();
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 2;
+        
+        // Circle expands outward
+        const size = effect.size * (1 + progress);
+        ctx.arc(screenPos.x, screenPos.y, size, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render an attack command effect
+     */
+    renderAttackCommandEffect(ctx, screenPos, effect, progress) {
+        // Draw a "X" that fades out
+        ctx.globalAlpha = 1 - progress;
+        ctx.strokeStyle = effect.color;
+        ctx.lineWidth = 3;
+        
+        // X grows slightly
+        const size = effect.size * (1 + progress * 0.5);
+        
+        // Draw X
+        ctx.beginPath();
+        ctx.moveTo(screenPos.x - size, screenPos.y - size);
+        ctx.lineTo(screenPos.x + size, screenPos.y + size);
+        ctx.stroke();
+        
+        ctx.beginPath();
+        ctx.moveTo(screenPos.x + size, screenPos.y - size);
+        ctx.lineTo(screenPos.x - size, screenPos.y + size);
+        ctx.stroke();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render an attack effect
+     */
+    renderAttackEffect(ctx, screenPos, effect, progress) {
+        // Draw spark/hit effect
+        ctx.globalAlpha = 1 - progress;
+        
+        // Particles radiating outward
+        const particleCount = 8;
+        const size = effect.size * progress;
+        
+        for (let i = 0; i < particleCount; i++) {
+            const angle = (i / particleCount) * Math.PI * 2;
+            const x = screenPos.x + Math.cos(angle) * size;
+            const y = screenPos.y + Math.sin(angle) * size;
+            
+            ctx.beginPath();
+            ctx.fillStyle = effect.color;
+            ctx.arc(x, y, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render an explosion effect
+     */
+    renderExplosionEffect(ctx, screenPos, effect, progress) {
+        // Draw explosion effect
+        ctx.globalAlpha = 1 - progress;
+        
+        // Outer ring
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255, 100, 0, 0.5)';
+        ctx.arc(screenPos.x, screenPos.y, effect.size * progress * 2, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Inner ring
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
+        ctx.arc(screenPos.x, screenPos.y, effect.size * progress, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Reset alpha
+        ctx.globalAlpha = 1;
+    }
+
+    /**
+     * Render a default effect
+     */
+    renderDefaultEffect(ctx, screenPos, effect, progress) {
+        // Simple fadeout circle
+        ctx.globalAlpha = 1 - progress;
+        ctx.beginPath();
+        ctx.fillStyle = effect.color;
+        ctx.arc(screenPos.x, screenPos.y, effect.size * (1 - progress), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
     }
 } 

@@ -504,7 +504,8 @@ let nextPlayerColorIndex = 0;
 
 // Function to create a unit for a player
 function createPlayerUnit(playerId) {
-    console.log(`\n=== Creating Player Unit ===`);
+    console.log(`=== Creating Player Unit ===`);
+    
     // Find the shared human base
     const humanBase = Object.values(gameState.entities).find(entity => 
         entity.type === 'building' && 
@@ -517,44 +518,42 @@ function createPlayerUnit(playerId) {
         console.log('Current entities:', Object.keys(gameState.entities));
         return null;
     }
-
+    
     console.log(`Found shared base at position: (${humanBase.x}, ${humanBase.y})`);
-
+    
     // Position the new unit near the base
     const unitX = humanBase.x + humanBase.width + 64;
     const unitY = humanBase.y + (humanBase.height / 2);
-
+    
     console.log(`Positioning new unit at: (${unitX}, ${unitY})`);
-
+    
     // Create the unit with the player's unique ID
     const unitId = uuidv4();
     const unit = {
         id: unitId,
         type: 'unit',
         unitType: 'SOLDIER',
+        playerId: playerId,
+        teamId: 'human-team',
         x: unitX,
         y: unitY,
         width: 32,
         height: 32,
-        health: 100,
-        maxHealth: 100,
-        attackDamage: 10,
-        attackRange: 50,
-        attackCooldown: 1000,
-        speed: 2,
-        level: 1,
-        experience: 0,
-        playerId: playerId,  // Use the individual player's ID
-        playerColor: 'blue',
-        isPlayerControlled: true,
+        speed: 150,
         targetX: null,
         targetY: null,
         isMoving: false,
-        lastUpdateTime: Date.now()
+        health: 100,
+        maxHealth: 100,
+        attackRange: 60,
+        attackDamage: 10,
+        attackCooldown: 1000,
+        lastAttackTime: null,
+        targetEntityId: null,
+        isAttacking: false
     };
-
-    console.log(`Created unit ${unit.id} for player ${playerId}`);
-    console.log(`=== Unit Creation Complete ===\n`);
+    
+    console.log(`Created unit ${unitId} for player ${playerId}`);
     return unit;
 }
 
@@ -661,42 +660,100 @@ function updatePlayerUnits(deltaTime) {
     for (const entityId in gameState.entities) {
         const unit = gameState.entities[entityId];
         
-        // Only process player-controlled units that are moving
-        if (unit.type === 'unit' && unit.playerId !== 'ai-team' && unit.isMoving) {
-            if (unit.targetX !== null && unit.targetY !== null) {
-                const dx = unit.targetX - unit.x;
-                const dy = unit.targetY - unit.y;
-                const distance = Math.sqrt(dx * dx + dy * dy);
-                
-                if (distance > 1) {
-                    // Move towards target
-                    const normalizedDx = dx / distance;
-                    const normalizedDy = dy / distance;
-                    unit.x += normalizedDx * unit.speed * (deltaTime / 1000);
-                    unit.y += normalizedDy * unit.speed * (deltaTime / 1000);
+        // Only process player-controlled units that are moving or attacking
+        if (unit.type === 'unit' && unit.playerId !== 'ai-team') {
+            // Handle movement
+            if (unit.isMoving) {
+                if (unit.targetX !== null && unit.targetY !== null) {
+                    // If attacking a target and has a targetEntity, update target position
+                    if (unit.targetEntityId && unit.isAttacking) {
+                        const targetEntity = gameState.entities[unit.targetEntityId];
+                        if (targetEntity) {
+                            unit.targetX = targetEntity.x;
+                            unit.targetY = targetEntity.y;
+                        } else {
+                            // Target entity no longer exists, clear attack state
+                            unit.targetEntityId = null;
+                            unit.isAttacking = false;
+                        }
+                    }
                     
-                    // Broadcast position update
-                    io.emit('updateUnitPosition', {
-                        unitId: unit.id,
-                        x: unit.x,
-                        y: unit.y,
-                        isMoving: true
-                    });
-                } else {
-                    // Reached target
-                    unit.x = unit.targetX;
-                    unit.y = unit.targetY;
-                    unit.isMoving = false;
-                    unit.targetX = null;
-                    unit.targetY = null;
+                    const dx = unit.targetX - unit.x;
+                    const dy = unit.targetY - unit.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
                     
-                    // Broadcast final position
-                    io.emit('updateUnitPosition', {
-                        unitId: unit.id,
-                        x: unit.x,
-                        y: unit.y,
-                        isMoving: false
-                    });
+                    // Calculate attack range - use default if not set
+                    const attackRange = unit.attackRange || 50;
+                    
+                    // If attacking and within range, stop and attack
+                    if (unit.isAttacking && unit.targetEntityId && distance <= attackRange) {
+                        unit.isMoving = false;
+                        
+                        // Process attack
+                        const now = Date.now();
+                        const attackCooldown = unit.attackCooldown || 1000; // Default 1 second cooldown
+                        
+                        if (!unit.lastAttackTime || now - unit.lastAttackTime >= attackCooldown) {
+                            const targetEntity = gameState.entities[unit.targetEntityId];
+                            if (targetEntity) {
+                                // Apply damage to target
+                                const damage = unit.attackDamage || 10; // Default damage
+                                targetEntity.health -= damage;
+                                unit.lastAttackTime = now;
+                                
+                                // Broadcast attack
+                                io.emit('unitAttack', {
+                                    attackerId: unit.id,
+                                    targetId: unit.targetEntityId,
+                                    damage: damage
+                                });
+                                
+                                // Check if target is destroyed
+                                if (targetEntity.health <= 0) {
+                                    // Entity destroyed
+                                    io.emit('entityDestroyed', {
+                                        entityId: targetEntity.id
+                                    });
+                                    
+                                    // Remove entity from game state
+                                    delete gameState.entities[targetEntity.id];
+                                    
+                                    // Clear attack target
+                                    unit.targetEntityId = null;
+                                    unit.isAttacking = false;
+                                }
+                            }
+                        }
+                    } else if (distance > 1) {
+                        // Move towards target
+                        const normalizedDx = dx / distance;
+                        const normalizedDy = dy / distance;
+                        unit.x += normalizedDx * unit.speed * (deltaTime / 1000);
+                        unit.y += normalizedDy * unit.speed * (deltaTime / 1000);
+                        
+                        // Broadcast position update
+                        io.emit('updateUnitPosition', {
+                            unitId: unit.id,
+                            x: unit.x,
+                            y: unit.y,
+                            isMoving: true
+                        });
+                    } else if (!unit.isAttacking) {
+                        // Reached target without attacking
+                        unit.x = unit.targetX;
+                        unit.y = unit.targetY;
+                        unit.isMoving = false;
+                        unit.targetX = null;
+                        unit.targetY = null;
+                        
+                        // Broadcast final position
+                        io.emit('updateUnitPosition', {
+                            unitId: unit.id,
+                            x: unit.x,
+                            y: unit.y,
+                            isMoving: false
+                        });
+                    }
                 }
             }
         }
@@ -875,6 +932,10 @@ io.on('connection', (socket) => {
         return;
       }
 
+      // Clear any previous attack target
+      unit.targetEntityId = null;
+      unit.isAttacking = false;
+
       // Update unit's target position and movement state
       unit.targetX = data.targetX;
       unit.targetY = data.targetY;
@@ -887,6 +948,72 @@ io.on('connection', (socket) => {
       unitIds: data.unitIds,
       targetX: data.targetX,
       targetY: data.targetY
+    });
+  });
+  
+  // Handle unit attack commands
+  socket.on('attackTarget', (data) => {
+    // Check if game is running
+    if (!gameState.isRunning) {
+      socket.emit('attackTargetError', { message: 'Game has ended' });
+      return;
+    }
+    
+    console.log(`Received attackTarget command: units ${data.unitIds.join(", ")} attacking entity ${data.targetEntityId}`);
+    
+    // Validate the data
+    if (!data.unitIds || !Array.isArray(data.unitIds) || !data.targetEntityId) {
+      console.error('Invalid attackTarget data received');
+      return;
+    }
+
+    // Find the player ID associated with this socket
+    const playerId = Object.keys(gameState.players).find(
+      id => gameState.players[id].socketId === socket.id
+    );
+
+    if (!playerId) {
+      console.error('Player not found for socket', socket.id);
+      return;
+    }
+    
+    // Check if target entity exists
+    const targetEntity = gameState.entities[data.targetEntityId];
+    if (!targetEntity) {
+      console.error(`Target entity ${data.targetEntityId} not found`);
+      return;
+    }
+    
+    // Validate and update each attacking unit
+    data.unitIds.forEach(unitId => {
+      const unit = gameState.entities[unitId];
+      if (!unit) {
+        console.error(`Unit ${unitId} not found`);
+        return;
+      }
+
+      // Verify the unit belongs to the player and is not an AI unit
+      if (unit.playerId !== playerId || unit.playerId === 'ai-team') {
+        console.error(`Unit ${unitId} does not belong to player ${playerId} or is an AI unit`);
+        return;
+      }
+
+      // Set attack target
+      unit.targetEntityId = data.targetEntityId;
+      unit.isAttacking = true;
+      
+      // Set movement target to target entity's position
+      unit.targetX = targetEntity.x;
+      unit.targetY = targetEntity.y;
+      unit.isMoving = true;
+      
+      console.log(`Unit ${unitId} attacking entity ${data.targetEntityId} at (${targetEntity.x}, ${targetEntity.y})`);
+    });
+
+    // Broadcast the attack command to all clients
+    io.emit('unitsAttacking', {
+      unitIds: data.unitIds,
+      targetEntityId: data.targetEntityId
     });
   });
   
