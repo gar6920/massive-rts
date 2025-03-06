@@ -42,6 +42,8 @@ class Game {
             if (this.renderer.imagesLoaded && this.map.tiles.length > 0) {
                 console.log("All resources loaded, starting game loop");
                 this.running = true;
+                // Center camera on map when game first loads
+                this.camera.centerOnMap();
                 requestAnimationFrame(this.gameLoop.bind(this));
             } else {
                 console.log("Waiting for resources...");

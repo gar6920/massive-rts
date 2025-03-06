@@ -296,7 +296,15 @@ class Multiplayer {
             // If this is our unit, center the camera on it
             if (data.unit.playerId === this.playerId) {
                 console.log('Unit belongs to this player, centering camera');
-                this.game.camera.centerOn(data.unit.x, data.unit.y);
+                // Convert unit position to isometric coordinates for camera centering
+                const isoX = (data.unit.x - data.unit.y) / 2;
+                const isoY = (data.unit.x + data.unit.y) / 4;
+                
+                // Center camera on the player's unit in isometric space
+                this.game.camera.centerOn(isoX, isoY);
+                
+                // Ensure camera position is within bounds
+                this.game.camera.clampPosition();
             }
         } else {
             console.error('Unit created event received but no unit data present');
@@ -500,6 +508,19 @@ class Multiplayer {
             // Process the new unit
             this.game.processServerEntities({ [data.unit.id]: data.unit });
             console.log('Unit processed and added to game');
+            
+            // Convert unit position to isometric coordinates for camera centering
+            const isoX = (data.unit.x - data.unit.y) / 2;
+            const isoY = (data.unit.x + data.unit.y) / 4;
+            
+            // Center camera on the player's unit in isometric space
+            this.game.camera.centerOn(isoX, isoY);
+            
+            // Set zoom to a much higher level for a closer view of the unit
+            this.game.camera.zoom = Config.ZOOM_DEFAULT * 2.5;
+            
+            // Ensure camera position is within bounds
+            this.game.camera.clampPosition();
         } else {
             console.error('Join game success but no unit data received');
         }

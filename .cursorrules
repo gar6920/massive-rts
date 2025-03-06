@@ -3,10 +3,10 @@
 - Isometric geometry with tile based map
 - Human players vs. AI.
 - Short matches no longer than 1 hour.
-- Game map and difficulty changes every game.
+- Game map and difficulty changes every game, if humans win the map and difficulty will increase, if AI wins the map and difficulty will decrease.
 - AI will be involved in creating game (map, other parameters) - later feature.
 - At start of game the number of connected clients determines the map size
-- goal is to be able to have hundreds or possibly thousands of players in a single game
+- Goal is to be able to have hundreds or possibly thousands of players in a single game
 
 ## Current State
 - Map loads with human and AI base

@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Wed 03/05/2025 15:49:05.19 
+Created: Wed 03/05/2025 19:26:48.16 
 ======================================== 
  
  
@@ -1038,7 +1038,7 @@ class Config {
     
     // Debug settings
     static DEBUG_MODE = true; // Enable/disable debug information
-    static SHOW_GRID = true; // Show grid lines
+    static SHOW_GRID = false; // Show grid lines
     
     // Update the canvas dimensions when the window is resized
     static updateDimensions() {
@@ -1171,11 +1171,6 @@ class Game {
         console.log('Processing server entities:', Object.keys(serverEntities).length);
         console.log('Entity types:', Object.values(serverEntities).map(e => e.type).join(', '));
         
-        // Clear existing entities if this is a full update
-        if (this.entities.length === 0) {
-            this.entities = [];
-        }
-        
         // Process each entity from the server
         Object.values(serverEntities).forEach(serverEntity => {
             console.log(`Processing entity: ${serverEntity.id}, type: ${serverEntity.type}, position: (${serverEntity.x}, ${serverEntity.y})`);
@@ -1186,6 +1181,7 @@ class Game {
             if (!entity) {
                 // Create a new entity based on its type
                 if (serverEntity.type === 'unit') {
+                    console.log(`Creating new unit: ${serverEntity.id}, playerId: ${serverEntity.playerId}`);
                     entity = new Unit(
                         serverEntity.x,
                         serverEntity.y,
@@ -1196,12 +1192,31 @@ class Game {
                         serverEntity.playerColor
                     );
                     
-                    // Explicitly initialize interpolation properties
+                    // Set all unit properties from server
+                    entity.id = serverEntity.id;
+                    entity.playerId = serverEntity.playerId;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    entity.attackDamage = serverEntity.attackDamage;
+                    entity.attackRange = serverEntity.attackRange;
+                    entity.attackCooldown = serverEntity.attackCooldown;
+                    entity.speed = serverEntity.speed;
+                    entity.level = serverEntity.level;
+                    entity.experience = serverEntity.experience;
+                    entity.targetX = serverEntity.targetX;
+                    entity.targetY = serverEntity.targetY;
+                    entity.isMoving = serverEntity.isMoving;
+                    
+                    // Initialize interpolation properties
                     entity.prevX = serverEntity.x;
                     entity.prevY = serverEntity.y;
                     entity.serverX = serverEntity.x;
                     entity.serverY = serverEntity.y;
                     entity.interpolationStartTime = Date.now();
+                    
+                    // Add to entities array
+                    this.entities.push(entity);
+                    console.log(`Added new unit to game:`, entity);
                     
                 } else if (serverEntity.type === 'building') {
                     console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
@@ -1214,10 +1229,8 @@ class Game {
                         serverEntity.buildingType,
                         serverEntity.playerColor
                     );
-                }
-                
-                if (entity) {
-                    // Set additional properties
+                    
+                    // Set building properties
                     entity.id = serverEntity.id;
                     entity.playerId = serverEntity.playerId;
                     entity.health = serverEntity.health;
@@ -1225,7 +1238,7 @@ class Game {
                     
                     // Add to entities array
                     this.entities.push(entity);
-                    console.log(`Added new ${serverEntity.type} from server:`, entity);
+                    console.log(`Added new building to game:`, entity);
                 }
             } else {
                 // Update existing entity
@@ -1239,18 +1252,17 @@ class Game {
                     entity.targetX = serverEntity.targetX;
                     entity.targetY = serverEntity.targetY;
                     entity.isMoving = serverEntity.isMoving;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
                 } else {
                     // For non-moving entities like buildings, update position directly
                     entity.x = serverEntity.x;
                     entity.y = serverEntity.y;
+                    entity.health = serverEntity.health;
+                    entity.maxHealth = serverEntity.maxHealth;
+                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
                 }
-                
-                // Update health for all entities
-                entity.health = serverEntity.health;
-                entity.maxHealth = serverEntity.maxHealth;
-                
-                // Make sure isPlayerControlled is set correctly
-                entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
             }
         });
         
@@ -1261,14 +1273,8 @@ class Game {
      * Handle entity selection
      */
     handleEntitySelection(worldX, worldY) {
-        console.log(`Handling selection at world coordinates (${worldX}, ${worldY})`);
-
-        const gridPos = this.map.isoToGrid(worldX, worldY);
-        const gridX = gridPos.x;
-        const gridY = gridPos.y;
-        
-        console.log(`Converted to grid coordinates (${gridX}, ${gridY})`);
-
+        const gridX = Math.floor(worldX / 32);
+        const gridY = Math.floor(worldY / 32);
         let entitySelected = false;
 
         // Deselect all entities first
@@ -1277,40 +1283,28 @@ class Game {
         }
         this.selectedEntities = [];
 
-        // Check if any entity was clicked
         for (const entity of this.entities) {
-            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
-            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
-            
-            console.log(`Checking entity ${entity.id} at grid (${entityGridX}, ${entityGridY}), isPlayerControlled: ${entity.isPlayerControlled}, playerId: ${entity.playerId}`);
+            const entityGridX = Math.floor(entity.x / 32);
+            const entityGridY = Math.floor(entity.y / 32);
 
             if (gridX === entityGridX && gridY === entityGridY) {
-                console.log(`Entity ${entity.id} is at the clicked grid position`);
-                
-                // Allow selection of shared base or player's own units
                 if (entity.type === 'building' && entity.playerId === 'human-team') {
-                    // Allow all players to interact with the shared base
-                    console.log(`Selected shared human base`);
-                } else if (entity.type === 'unit' && entity.playerId !== this.multiplayer.playerId) {
-                    // Only allow selection of units owned by this player
-                    console.log(`Entity ${entity.id} belongs to player ${entity.playerId}, not selecting`);
-                    continue;
+                    console.log(`Selecting shared human base`);
+                    entity.isSelected = true;
+                    this.selectedEntities.push(entity);
+                    entitySelected = true;
+                } else if (entity.type === 'unit') {
+                    if (entity.playerId === this.multiplayer.playerId) {
+                        console.log(`Selecting my unit ${entity.id}`);
+                        entity.isSelected = true;
+                        this.selectedEntities.push(entity);
+                        entitySelected = true;
+                    } else {
+                        console.log(`Skipping unit ${entity.id} - not mine`);
+                    }
                 }
-                
-                // Select this entity
-                entity.isSelected = true;
-                this.selectedEntities.push(entity);
-                entitySelected = true;
-                
-                // Log selection for debugging
-                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}, Player: ${entity.playerId}`);
-                break; // Only select one entity for now
+                if (entitySelected) break;
             }
-        }
-        
-        // If no entity was selected, this might be a map click
-        if (!entitySelected) {
-            console.log(`No entity selected at grid (${gridX}, ${gridY})`);
         }
     }
     
@@ -1977,6 +1971,7 @@ class Multiplayer {
         console.log('Received initial game state from server');
         this.playerId = data.playerId;
         this.game.playerId = data.playerId;
+        console.log(`My playerId is: ${this.playerId}`);
         
         // Store server start time
         if (data.gameState && data.gameState.serverStartTime) {
@@ -2164,30 +2159,24 @@ class Multiplayer {
      * Handle new unit creation
      */
     onUnitCreated(data) {
-        const unit = data.unit;
-        console.log("Received new unit from server:", unit);
-
-        // Explicitly process and add the new unit
-        this.game.processServerEntities({ [unit.id]: unit });
-
-        // If the unit belongs to this player, center camera on it immediately
-        if (unit.playerId === this.playerId) {
-            const tileSize = Config.TILE_SIZE;
-            const gridX = unit.x / tileSize;
-            const gridY = unit.y / tileSize;
-            const isoX = (gridX - gridY) * (tileSize / 2);
-            const isoY = (gridX + gridY) * (tileSize / 4);
-
-            console.log(`Centering camera on player unit at (${isoX}, ${isoY})`);
-
-            // Explicitly center camera
-            this.game.camera.centerOn(isoX, isoY);
-            this.game.camera.zoom = Config.ZOOM_DEFAULT * 1.5;
-            this.game.camera.clampPosition();
+        console.log('\n=== Unit Created Event ===');
+        console.log('Received unit created event:', data);
+        
+        if (data.unit) {
+            console.log(`Processing new unit - ID: ${data.unit.id}, PlayerId: ${data.unit.playerId}`);
+            // Add the new unit to the game
+            this.game.processServerEntities({ [data.unit.id]: data.unit });
+            console.log('Unit added to game entities');
+            
+            // If this is our unit, center the camera on it
+            if (data.unit.playerId === this.playerId) {
+                console.log('Unit belongs to this player, centering camera');
+                this.game.camera.centerOn(data.unit.x, data.unit.y);
+            }
+        } else {
+            console.error('Unit created event received but no unit data present');
         }
-
-        // Explicitly request rendering to immediately display the unit
-        this.game.renderer.render();
+        console.log('=== Unit Created Complete ===\n');
     }
     
     /**
@@ -2378,16 +2367,25 @@ class Multiplayer {
      * Handle successful game join
      */
     onJoinGameSuccess(data) {
-        console.log('Successfully joined game, received unit:', data.unit);
+        console.log('\n=== Join Game Success ===');
+        console.log('Received join game success with unit:', data.unit);
         
-        // Note: We don't need to process the unit here as it will come through
-        // the unitCreated event that the server broadcasts to all clients
-        
-        // Remove the join button
-        const joinContainer = document.getElementById('joinContainer');
-        if (joinContainer) {
-            joinContainer.remove();
+        if (data.unit) {
+            console.log(`Unit details - ID: ${data.unit.id}, PlayerId: ${data.unit.playerId}, Position: (${data.unit.x}, ${data.unit.y})`);
+            // Process the new unit
+            this.game.processServerEntities({ [data.unit.id]: data.unit });
+            console.log('Unit processed and added to game');
+        } else {
+            console.error('Join game success but no unit data received');
         }
+        
+        // Remove join button
+        const joinButton = document.getElementById('joinButton');
+        if (joinButton) {
+            joinButton.remove();
+            console.log('Join button removed');
+        }
+        console.log('=== Join Game Complete ===\n');
     }
     
     /**
@@ -2731,8 +2729,8 @@ class Renderer {
             );
         }
         
-        // Draw selection indicator if unit is selected
-        if (unit.isSelected) {
+        // Draw selection indicator if unit is selected AND belongs to the player
+        if (unit.isSelected && unit.playerId === this.game.playerId) {
             console.log(`Drawing selection indicator for unit ${unit.id} at (${screenPos.x}, ${screenPos.y}) with radius ${(width / 2) + 5 * this.camera.zoom}`);
             
             // Draw a glowing selection circle around the unit
@@ -2965,18 +2963,19 @@ class Renderer {
         // Render selection box if dragging
         const selectionBox = this.game.inputHandler.getSelectionBox();
         if (selectionBox) {
-            this.ctx.strokeStyle = Config.COLORS.SELECTION;
-            this.ctx.lineWidth = 1;
-            this.ctx.strokeRect(
+            // Semi-transparent fill
+            this.ctx.fillStyle = 'rgba(0, 255, 255, 0.1)';
+            this.ctx.fillRect(
                 selectionBox.x,
                 selectionBox.y,
                 selectionBox.width,
                 selectionBox.height
             );
             
-            // Semi-transparent fill
-            this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-            this.ctx.fillRect(
+            // Selection box border
+            this.ctx.strokeStyle = 'rgba(0, 255, 255, 0.8)';
+            this.ctx.lineWidth = 2;
+            this.ctx.strokeRect(
                 selectionBox.x,
                 selectionBox.y,
                 selectionBox.width,
@@ -5483,6 +5482,7 @@ let nextPlayerColorIndex = 0;
 
 // Function to create a unit for a player
 function createPlayerUnit(playerId) {
+    console.log(`\n=== Creating Player Unit ===`);
     // Find the shared human base
     const humanBase = Object.values(gameState.entities).find(entity => 
         entity.type === 'building' && 
@@ -5491,13 +5491,18 @@ function createPlayerUnit(playerId) {
     );
 
     if (!humanBase) {
-        console.error('Shared human base not found!');
+        console.error('Failed to create unit: Shared human base not found!');
+        console.log('Current entities:', Object.keys(gameState.entities));
         return null;
     }
+
+    console.log(`Found shared base at position: (${humanBase.x}, ${humanBase.y})`);
 
     // Position the new unit near the base
     const unitX = humanBase.x + humanBase.width + 64;
     const unitY = humanBase.y + (humanBase.height / 2);
+
+    console.log(`Positioning new unit at: (${unitX}, ${unitY})`);
 
     // Create the unit with the player's unique ID
     const unitId = uuidv4();
@@ -5517,7 +5522,7 @@ function createPlayerUnit(playerId) {
         speed: 2,
         level: 1,
         experience: 0,
-        playerId: playerId,  // Use the individual player's ID, not 'human-team'
+        playerId: playerId,  // Use the individual player's ID
         playerColor: 'blue',
         isPlayerControlled: true,
         targetX: null,
@@ -5526,7 +5531,8 @@ function createPlayerUnit(playerId) {
         lastUpdateTime: Date.now()
     };
 
-    console.log(`Unit created for player ${playerId}`);
+    console.log(`Created unit ${unit.id} for player ${playerId}`);
+    console.log(`=== Unit Creation Complete ===\n`);
     return unit;
 }
 
@@ -5612,36 +5618,54 @@ io.on('connection', (socket) => {
   socket.on('joinGame', (data) => {
     // Check if game is running
     if (!gameState.isRunning) {
+      console.log('Join game rejected: Game not running');
       socket.emit('joinGameError', { message: 'Game has ended' });
       return;
     }
     
     const playerId = data.playerId;
-    console.log(`Player ${playerId} joining game`);
+    console.log(`\n=== Join Game Request ===`);
+    console.log(`Player ${playerId} requesting to join game`);
+    console.log(`Current players:`, Object.keys(gameState.players));
 
-    if (gameState.players[playerId]) {
-      // Create the unit explicitly
-      const newUnit = createPlayerUnit(playerId);
-      if (!newUnit) {
-        socket.emit('joinGameError', { message: "Could not create unit." });
-        return;
-      }
-
-      // Add unit to game state explicitly
-      gameState.entities[newUnit.id] = newUnit;
-      console.log(`Added unit ${newUnit.id} to game state for player ${playerId}`);
-
-      // Broadcast to ALL clients (including the one who joined)
-      io.emit('unitCreated', { unit: newUnit });
-      console.log(`Broadcasted unitCreated event for unit ${newUnit.id}`);
-
-      // Confirm join to requesting client explicitly
-      socket.emit('joinGameSuccess', { unit: newUnit });
-      console.log(`Sent joinGameSuccess to player ${playerId}`);
-    } else {
-      console.error(`Player ${playerId} not found in gameState.players`);
+    if (!gameState.players[playerId]) {
+      console.error(`Join game error: Player ${playerId} not found in gameState.players`);
       socket.emit('joinGameError', { message: "Player not found." });
+      return;
     }
+
+    // Log the state before creating unit
+    console.log(`Creating unit for player ${playerId}`);
+    console.log(`Player team: ${gameState.players[playerId].teamId}`);
+
+    // Create the unit explicitly
+    const newUnit = createPlayerUnit(playerId);
+    if (!newUnit) {
+      console.error(`Failed to create unit for player ${playerId}`);
+      socket.emit('joinGameError', { message: "Could not create unit." });
+      return;
+    }
+
+    // Log the new unit details
+    console.log(`Successfully created unit:`, {
+      unitId: newUnit.id,
+      playerId: newUnit.playerId,
+      position: { x: newUnit.x, y: newUnit.y }
+    });
+
+    // Add unit to game state explicitly
+    gameState.entities[newUnit.id] = newUnit;
+    console.log(`Added unit ${newUnit.id} to game state`);
+    console.log(`Total entities in game:`, Object.keys(gameState.entities).length);
+
+    // Broadcast to ALL clients (including the one who joined)
+    io.emit('unitCreated', { unit: newUnit });
+    console.log(`Broadcasted unitCreated event for unit ${newUnit.id}`);
+
+    // Confirm join to requesting client explicitly
+    socket.emit('joinGameSuccess', { unit: newUnit });
+    console.log(`Sent joinGameSuccess to player ${playerId}`);
+    console.log(`=== Join Game Complete ===\n`);
   });
   
   // Handle unit movement
