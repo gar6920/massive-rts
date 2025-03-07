@@ -844,10 +844,16 @@ class Multiplayer {
         
         // Update game state from server
         if (data.gameState) {
+            // Fully clear entities before rebuilding
+            this.game.entities = [];
+            
+            // Process entities from server data
             this.game.processServerEntities(data.gameState.entities);
             
             // Store server start time
             this.serverStartTime = data.gameState.serverStartTime;
+            
+            console.log(`Entities after server start: ${this.game.entities.length}`);
         }
     }
 } 

@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Fri 03/07/2025  7:26:32.49 
+Created: Fri 03/07/2025  9:16:15.13 
 ======================================== 
  
  
@@ -1837,6 +1837,7 @@ class InputHandler {
         this.selectionEndY = 0;
         this.isSelecting = false;
         this.clickStartTime = 0;
+        this.inputEnabled = true; // Flag to control input
         
         // Minimap element
         this.minimapElement = document.getElementById('minimap');
@@ -1875,6 +1876,9 @@ class InputHandler {
      * Handle key down events
      */
     handleKeyDown(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         this.keys[e.key] = true;
         
         // Handle specific key presses
@@ -1904,6 +1908,9 @@ class InputHandler {
      * Handle mouse down events
      */
     handleMouseDown(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         this.mouseX = e.clientX;
         this.mouseY = e.clientY;
         this.lastMouseX = e.clientX;
@@ -1934,6 +1941,14 @@ class InputHandler {
      * Handle mouse up events
      */
     handleMouseUp(e) {
+        // Only update mouse state if input is disabled
+        if (!this.inputEnabled) {
+            if (e.button === 0) this.mouseDown = false;
+            else if (e.button === 2) this.rightMouseDown = false;
+            else if (e.button === 1) this.middleMouseDown = false;
+            return;
+        }
+        
         if (e.button === 0) {
             this.mouseDown = false;
 
@@ -1968,6 +1983,13 @@ class InputHandler {
     handleMouseMove(e) {
         this.mouseX = e.clientX;
         this.mouseY = e.clientY;
+        
+        // Skip selection and panning if input is disabled
+        if (!this.inputEnabled) {
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+            return;
+        }
         
         // Start selection if mouse has moved enough while button is down
         if (this.mouseDown && !this.isSelecting) {
@@ -2006,6 +2028,9 @@ class InputHandler {
      * Handle mouse wheel events for zooming
      */
     handleMouseWheel(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         e.preventDefault();
         
         // Determine zoom direction
@@ -2020,6 +2045,9 @@ class InputHandler {
      */
     handleRightClick(e) {
         e.preventDefault(); // Prevent context menu
+        
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
         
         // If we have selected entities, issue a command
         if (this.game.selectedEntities.length > 0) {
@@ -2078,8 +2106,11 @@ class InputHandler {
      * Update method called each frame
      */
     update() {
-        this.updateCameraFromKeys();
-        this.updateCameraFromMouse();
+        // Only update camera from keyboard and mouse if input is enabled
+        if (this.inputEnabled) {
+            this.updateCameraFromKeys();
+            this.updateCameraFromMouse();
+        }
     }
     
     /**
@@ -2100,6 +2131,9 @@ class InputHandler {
      * Handle minimap clicks
      */
     handleMinimapClick(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         e.stopPropagation(); // Prevent event from bubbling to canvas
         
         // Get minimap dimensions
@@ -2139,6 +2173,23 @@ class InputHandler {
             }
         }
     }
+    
+    /**
+     * Disable user input (for game end screen)
+     */
+    disableInput() {
+        console.log('Disabling game input');
+        this.inputEnabled = false;
+        this.game.deselectAll(); // Clear selection when game ends
+    }
+    
+    /**
+     * Enable user input (when a new game starts)
+     */
+    enableInput() {
+        console.log('Enabling game input');
+        this.inputEnabled = true;
+    }
 }  
  
  
@@ -2161,10 +2212,10 @@ class Multiplayer {
         this.connected = false;
         this.serverEntities = {}; // Entities from the server
         this.pendingCommands = []; // Commands waiting to be sent
-        this.lastServerUpdate = 0;
+        this.lastServerUpdate = Date.now();
         this.serverStartTime = null; // Store server start time
         
-        // Bind methods
+        // Bind methods to this instance
         this.onConnect = this.onConnect.bind(this);
         this.onDisconnect = this.onDisconnect.bind(this);
         this.onGameState = this.onGameState.bind(this);
@@ -2181,6 +2232,13 @@ class Multiplayer {
         this.onUnitsAttacking = this.onUnitsAttacking.bind(this);
         this.onUnitAttack = this.onUnitAttack.bind(this);
         this.onEntityDestroyed = this.onEntityDestroyed.bind(this);
+        this.onGameEnded = this.onGameEnded.bind(this);
+        this.onCountdownUpdate = this.onCountdownUpdate.bind(this);
+        this.onPrepareNextGame = this.onPrepareNextGame.bind(this);
+        this.onServerStarted = this.onServerStarted.bind(this);
+        
+        // Connect to the server
+        this.connect();
     }
     
     /**
@@ -2213,6 +2271,10 @@ class Multiplayer {
         this.socket.on('mapResized', this.onMapResized);
         this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
         this.socket.on('joinGameError', this.onJoinGameError);
+        this.socket.on('gameEnded', this.onGameEnded);
+        this.socket.on('countdownUpdate', this.onCountdownUpdate);
+        this.socket.on('prepareNextGame', this.onPrepareNextGame);
+        this.socket.on('serverStarted', this.onServerStarted.bind(this));
     }
     
     /**
@@ -2795,8 +2857,13 @@ class Multiplayer {
             attacker.performAttackAnimation();
         }
         
-        // Apply damage visually
-        target.takeDamage(data.damage);
+        // If the server provided the target's health, use that value directly
+        if (data.targetHealth !== undefined) {
+            target.health = data.targetHealth;
+        } else {
+            // Otherwise, apply damage locally
+            target.takeDamage(data.damage);
+        }
         
         // Add visual effects
         this.game.renderer.addEffect('attack', target.x + target.width/2, target.y + target.height/2);
@@ -2829,6 +2896,157 @@ class Multiplayer {
             setTimeout(() => {
                 this.game.removeEntity(data.entityId);
             }, 1000); // Match death animation duration
+        }
+    }
+    
+    /**
+     * Handle game ended event
+     */
+    onGameEnded(data) {
+        console.log(`Game ended. Winner: ${data.winner}`);
+        
+        // Check if the player's team won
+        const playerWon = data.winner === 'human-team';
+        
+        // Create game end overlay
+        this.createGameEndOverlay(playerWon, data.message, data.countdown);
+        
+        // Disable input during end game
+        this.game.inputHandler.disableInput();
+    }
+    
+    /**
+     * Handle countdown update
+     */
+    onCountdownUpdate(data) {
+        console.log(`Countdown: ${data.secondsRemaining}`);
+        
+        // Update the countdown display
+        const countdownElement = document.getElementById('game-end-countdown');
+        if (countdownElement) {
+            countdownElement.textContent = `Next game in: ${data.secondsRemaining}s`;
+        }
+    }
+    
+    /**
+     * Handle prepare for next game event
+     */
+    onPrepareNextGame(data) {
+        console.log('Preparing for next game');
+        
+        // Show join next game button
+        const overlay = document.getElementById('game-end-overlay');
+        if (overlay) {
+            // Create join button if it doesn't exist yet
+            if (!document.getElementById('join-next-game-button')) {
+                const joinButton = document.createElement('button');
+                joinButton.id = 'join-next-game-button';
+                joinButton.textContent = 'Join Next Game';
+                joinButton.classList.add('game-button');
+                joinButton.addEventListener('click', () => {
+                    this.joinNextGame();
+                    joinButton.disabled = true;
+                    joinButton.textContent = 'Joined';
+                });
+                
+                overlay.appendChild(joinButton);
+            }
+            
+            // Update countdown text
+            const countdownElement = document.getElementById('game-end-countdown');
+            if (countdownElement) {
+                countdownElement.textContent = 'New game starting soon!';
+            }
+        }
+    }
+    
+    /**
+     * Send join next game request
+     */
+    joinNextGame() {
+        if (this.connected && this.playerId) {
+            console.log('Requesting to join next game');
+            this.socket.emit('joinNextGame', { playerId: this.playerId });
+        }
+    }
+    
+    /**
+     * Create the game end overlay
+     */
+    createGameEndOverlay(victory, message, countdown) {
+        // Remove existing overlay if it exists
+        const existingOverlay = document.getElementById('game-end-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+        
+        // Create overlay container
+        const overlay = document.createElement('div');
+        overlay.id = 'game-end-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.zIndex = '1000';
+        overlay.style.color = 'white';
+        overlay.style.fontFamily = 'Arial, sans-serif';
+        
+        // Create result header
+        const resultHeader = document.createElement('h1');
+        resultHeader.textContent = victory ? 'VICTORY' : 'DEFEAT';
+        resultHeader.style.fontSize = '48px';
+        resultHeader.style.marginBottom = '20px';
+        resultHeader.style.color = victory ? '#4CAF50' : '#F44336';
+        
+        // Create message
+        const messageElement = document.createElement('p');
+        messageElement.textContent = message;
+        messageElement.style.fontSize = '24px';
+        messageElement.style.marginBottom = '30px';
+        
+        // Create countdown
+        const countdownElement = document.createElement('p');
+        countdownElement.id = 'game-end-countdown';
+        countdownElement.textContent = `Next game in: ${countdown}s`;
+        countdownElement.style.fontSize = '20px';
+        countdownElement.style.marginBottom = '30px';
+        
+        // Add elements to overlay
+        overlay.appendChild(resultHeader);
+        overlay.appendChild(messageElement);
+        overlay.appendChild(countdownElement);
+        
+        // Add overlay to the document
+        document.body.appendChild(overlay);
+    }
+    
+    /**
+     * Handle server started event
+     */
+    onServerStarted(data) {
+        console.log('Server started a new game');
+        
+        // Remove game end overlay if it exists
+        const overlay = document.getElementById('game-end-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+        
+        // Re-enable input
+        this.game.inputHandler.enableInput();
+        
+        // Update game state from server
+        if (data.gameState) {
+            this.game.processServerEntities(data.gameState.entities);
+            
+            // Store server start time
+            this.serverStartTime = data.gameState.serverStartTime;
         }
     }
 }  
@@ -5896,7 +6114,11 @@ const gameState = {
   mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 },
   lastUpdateTime: Date.now(),
   serverStartTime: Date.now(),
-  isRunning: false
+  isRunning: false,
+  gameEndTime: null,
+  countdown: null,
+  winner: null,
+  playersForNextGame: []
 };
 
 // Function to start the game
@@ -5910,6 +6132,10 @@ function startGame() {
   gameState.serverStartTime = Date.now();
   gameState.lastUpdateTime = Date.now();
   gameState.mapDimensions = getMapDimensions(0); // Initialize with default dimensions
+  gameState.gameEndTime = null;
+  gameState.countdown = null;
+  gameState.winner = null;
+  gameState.playersForNextGame = [];
   
   // Generate initial map
   console.log('Generating initial map...');
@@ -6491,6 +6717,12 @@ function updateAIUnits(deltaTime) {
                     if (!aiUnit.lastAttackTime || Date.now() - aiUnit.lastAttackTime >= aiUnit.attackCooldown) {
                         // Attack the target
                         targetEntity.health -= aiUnit.attackDamage;
+                        
+                        // Clamp health to zero if negative
+                        if (targetEntity.health < 0) {
+                            targetEntity.health = 0;
+                        }
+                        
                         aiUnit.lastAttackTime = Date.now();
                         
                         // Broadcast attack
@@ -6503,9 +6735,37 @@ function updateAIUnits(deltaTime) {
                         
                         // Check if target is destroyed
                         if (targetEntity.health <= 0) {
-                            delete gameState.entities[targetEntity.id];
-                            aiUnit.targetEntityId = null;
-                            io.emit('entityDestroyed', { entityId: targetEntity.id });
+                            // Check if this is a base building
+                            if (targetEntity.type === 'building' && targetEntity.buildingType === 'BASE') {
+                                // Trigger end game logic
+                                if (!gameState.gameEndTime) {
+                                    const winner = targetEntity.playerId === 'human-team' ? 'ai-team' : 'human-team';
+                                    
+                                    console.log(`Base of team ${targetEntity.playerId} has been destroyed. ${winner} wins!`);
+                                    
+                                    // Set the game end state
+                                    gameState.gameEndTime = Date.now();
+                                    gameState.winner = winner;
+                                    
+                                    // Start the countdown (30 seconds)
+                                    gameState.countdown = 30;
+                                    
+                                    // Notify all clients that the game has ended
+                                    io.emit('gameEnded', { 
+                                        winner: winner,
+                                        message: winner === 'human-team' ? 'The enemy base has fallen!' : 'Your base was destroyed!',
+                                        countdown: gameState.countdown
+                                    });
+                                    
+                                    // Start the countdown timer
+                                    startEndGameCountdown();
+                                }
+                            } else {
+                                // For non-base entities, destroy them
+                                delete gameState.entities[targetEntity.id];
+                                aiUnit.targetEntityId = null;
+                                io.emit('entityDestroyed', { entityId: targetEntity.id });
+                            }
                         }
                     }
                 }
@@ -6522,10 +6782,20 @@ setInterval(() => {
         const deltaTime = currentTime - lastUpdateTime;
         lastUpdateTime = currentTime;
         
-        updateAIUnits(deltaTime);
-        updatePlayerUnits(deltaTime);
+        // Check for base destruction if game is still active
+        if (!gameState.gameEndTime) {
+            // Check if any bases have been destroyed
+            checkBaseDestruction();
+            
+            // Only update units if the game hasn't ended
+            updateAIUnits(deltaTime);
+            updatePlayerUnits(deltaTime);
+        } else if (gameState.countdown) {
+            // Handle countdown if game has ended
+            updateEndGameCountdown();
+        }
     }
-}, 50); // Update every 50ms (20 times per second)
+}, 50);
 
 // Function to update player-controlled units
 function updatePlayerUnits(deltaTime) {
@@ -6570,24 +6840,58 @@ function updatePlayerUnits(deltaTime) {
                         // Apply damage to target
                         const damage = unit.attackDamage || 10; // Default damage
                         targetEntity.health -= damage;
+                        
+                        // Clamp health to zero if negative
+                        if (targetEntity.health < 0) {
+                            targetEntity.health = 0;
+                        }
+                        
                         unit.lastAttackTime = now;
                         
                         // Broadcast attack
                         io.emit('unitAttack', {
                             attackerId: unit.id,
                             targetId: unit.targetEntityId,
-                            damage: damage
+                            damage: damage,
+                            targetHealth: targetEntity.health
                         });
                         
                         // Check if target is destroyed
                         if (targetEntity.health <= 0) {
-                            // Entity destroyed
-                            io.emit('entityDestroyed', {
-                                entityId: targetEntity.id
-                            });
-                            
-                            // Remove entity from game state
-                            delete gameState.entities[targetEntity.id];
+                            // Check if this is a base building
+                            if (targetEntity.type === 'building' && targetEntity.buildingType === 'BASE') {
+                                // Trigger end game logic
+                                if (!gameState.gameEndTime) {
+                                    const winner = targetEntity.playerId === 'human-team' ? 'ai-team' : 'human-team';
+                                    
+                                    console.log(`Base of team ${targetEntity.playerId} has been destroyed. ${winner} wins!`);
+                                    
+                                    // Set the game end state
+                                    gameState.gameEndTime = Date.now();
+                                    gameState.winner = winner;
+                                    
+                                    // Start the countdown (30 seconds)
+                                    gameState.countdown = 30;
+                                    
+                                    // Notify all clients that the game has ended
+                                    io.emit('gameEnded', { 
+                                        winner: winner,
+                                        message: winner === 'human-team' ? 'The enemy base has fallen!' : 'Your base was destroyed!',
+                                        countdown: gameState.countdown
+                                    });
+                                    
+                                    // Start the countdown timer
+                                    startEndGameCountdown();
+                                }
+                            } else {
+                                // For non-base entities, destroy them
+                                io.emit('entityDestroyed', {
+                                    entityId: targetEntity.id
+                                });
+                                
+                                // Remove entity from game state
+                                delete gameState.entities[targetEntity.id];
+                            }
                             
                             // Clear attack target
                             unit.targetEntityId = null;
@@ -6642,6 +6946,77 @@ function updatePlayerUnits(deltaTime) {
             }
         }
     }
+}
+
+// Function to check if any bases have been destroyed
+function checkBaseDestruction() {
+    // Find all bases
+    const bases = Object.values(gameState.entities).filter(
+        entity => entity.type === 'building' && entity.buildingType === 'BASE'
+    );
+    
+    // Check each base
+    for (const base of bases) {
+        if (base.health <= 0) {
+            // Determine the winner
+            const winner = base.playerId === 'human-team' ? 'ai-team' : 'human-team';
+            
+            console.log(`Base of team ${base.playerId} has been destroyed. ${winner} wins!`);
+            
+            // Set the game end state
+            gameState.gameEndTime = Date.now();
+            gameState.winner = winner;
+            
+            // Start the countdown (30 seconds)
+            gameState.countdown = 30;
+            
+            // Notify all clients that the game has ended
+            io.emit('gameEnded', { 
+                winner: winner,
+                message: winner === 'human-team' ? 'The enemy base has fallen!' : 'Your base was destroyed!',
+                countdown: gameState.countdown
+            });
+            
+            // Start the countdown timer
+            startEndGameCountdown();
+            
+            // Only need to handle one base destruction
+            break;
+        }
+    }
+}
+
+// Function to start the end game countdown
+function startEndGameCountdown() {
+    // Send countdown updates every second
+    const countdownInterval = setInterval(() => {
+        // Decrement countdown
+        gameState.countdown--;
+        
+        // Send countdown update to all clients
+        io.emit('countdownUpdate', { 
+            secondsRemaining: gameState.countdown 
+        });
+        
+        // When countdown reaches 0, reset and start a new game
+        if (gameState.countdown <= 0) {
+            clearInterval(countdownInterval);
+            
+            // Prompt players to join next game
+            io.emit('prepareNextGame', {});
+            
+            // After 5 more seconds, start the next game
+            setTimeout(() => {
+                startGame();
+            }, 5000);
+        }
+    }, 1000);
+}
+
+// Function to update the end game countdown
+function updateEndGameCountdown() {
+    // This is handled by the startEndGameCountdown interval
+    // Function is kept for clarity in the game update loop
 }
 
 // Handle socket connections
@@ -6935,6 +7310,23 @@ io.on('connection', (socket) => {
       
       // Check if map needs to be resized after player disconnection
       checkAndResizeMap();
+    }
+  });
+
+  // Handle player opting in for the next game
+  socket.on('joinNextGame', (data) => {
+    const playerId = data.playerId;
+    
+    if (playerId && gameState.players[playerId]) {
+      console.log(`Player ${playerId} opts in for the next game`);
+      
+      // Add player to the list for next game if not already there
+      if (!gameState.playersForNextGame.includes(playerId)) {
+        gameState.playersForNextGame.push(playerId);
+      }
+      
+      // Confirm to the player
+      socket.emit('joinNextGameConfirmed', {});
     }
   });
 });
