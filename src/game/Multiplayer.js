@@ -544,7 +544,7 @@ class Multiplayer {
             this.game.camera.centerOn(isoX, isoY);
             
             // Set zoom to a much higher level for a closer view of the unit
-            this.game.camera.zoom = Config.ZOOM_DEFAULT * 2.5;
+            this.game.camera.zoom = 1.8; // More zoomed in for a better initial view
             
             // Ensure camera position is within bounds
             this.game.camera.clampPosition();
