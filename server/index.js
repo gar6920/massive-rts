@@ -35,8 +35,22 @@ const gameState = {
 function startGame() {
   console.log('Starting game...');
   
+  // Save players who opted in for the next game
+  const playersForNextGame = [...gameState.playersForNextGame];
+  
+  // Save connected players before resetting
+  const connectedPlayers = {};
+  Object.entries(gameState.players).forEach(([playerId, player]) => {
+    if (player.connected) {
+      connectedPlayers[playerId] = {
+        ...player,
+        // Reset any game-specific player state here if needed
+        hasJoinedCurrentGame: false // Track if player has joined the current game
+      };
+    }
+  });
+  
   // Reset game state
-  gameState.players = {};
   gameState.entities = {};
   gameState.isRunning = true;
   gameState.serverStartTime = Date.now();
@@ -46,6 +60,9 @@ function startGame() {
   gameState.countdown = null;
   gameState.winner = null;
   gameState.playersForNextGame = [];
+  
+  // Restore connected players
+  gameState.players = connectedPlayers;
   
   // Generate initial map
   console.log('Generating initial map...');
@@ -1029,6 +1046,26 @@ io.on('connection', (socket) => {
       socket.emit('joinGameError', { message: "Player not found." });
       return;
     }
+    
+    // Check if player has already joined this game session
+    // If they have, we'll create a new unit for them anyway to ensure consistent experience
+    if (gameState.players[playerId].hasJoinedCurrentGame) {
+      console.log(`Player ${playerId} has already joined this game, but we'll create a new unit anyway`);
+      
+      // Remove any existing units for this player
+      Object.keys(gameState.entities).forEach(entityId => {
+        const entity = gameState.entities[entityId];
+        if (entity.type === 'unit' && entity.playerId === playerId) {
+          console.log(`Removing existing unit ${entityId} for player ${playerId}`);
+          delete gameState.entities[entityId];
+          
+          // Broadcast entity removal
+          io.emit('entityRemoved', {
+            entityId: entityId
+          });
+        }
+      });
+    }
 
     // Log the state before creating unit
     console.log(`Creating unit for player ${playerId}`);
@@ -1041,6 +1078,9 @@ io.on('connection', (socket) => {
       socket.emit('joinGameError', { message: "Could not create unit." });
       return;
     }
+
+    // Mark player as having joined this game session
+    gameState.players[playerId].hasJoinedCurrentGame = true;
 
     // Log the new unit details
     console.log(`Successfully created unit:`, {
@@ -1302,6 +1342,30 @@ io.on('connection', (socket) => {
       unitType: data.unitType,
       queueLength: building.productionQueue.length
     });
+  });
+
+  // Handle player registration
+  socket.on('registerPlayer', (data) => {
+    console.log(`Registering new player with socket ID: ${socket.id}`);
+    
+    // Generate a new player ID
+    const newPlayerId = uuidv4();
+    
+    // Create a new player entry
+    gameState.players[newPlayerId] = {
+      id: newPlayerId,
+      socketId: socket.id,
+      name: `Player ${Object.keys(gameState.players).length + 1}`,
+      teamId: 'human-team',  // Links player to the shared base
+      color: 'blue',
+      connected: true,
+      lastActivity: Date.now()
+    };
+    
+    console.log(`New player registered with ID: ${newPlayerId}`);
+    
+    // Send the new player ID back to the client
+    socket.emit('playerRegistered', { playerId: newPlayerId });
   });
 });
 

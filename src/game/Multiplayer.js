@@ -98,6 +98,14 @@ class Multiplayer {
         
         // Process any pending commands
         this.processPendingCommands();
+        
+        // Check if player wanted to join the next game
+        const joinNextGame = localStorage.getItem('joinNextGame');
+        if (joinNextGame === 'true' && this.playerId) {
+            console.log('Auto-joining next game based on previous selection');
+            this.joinNextGame();
+            localStorage.removeItem('joinNextGame');
+        }
     }
     
     /**
@@ -206,7 +214,25 @@ class Multiplayer {
      */
     requestJoinGame() {
         console.log('Requesting to join game with playerId:', this.playerId);
-        this.socket.emit('joinGame', { playerId: this.playerId });
+        
+        // If we don't have a player ID yet, request a new one
+        if (!this.playerId) {
+            console.log('No player ID found, requesting new registration');
+            this.socket.emit('registerPlayer', {});
+            
+            // Set up a one-time listener for the registration response
+            this.socket.once('playerRegistered', (data) => {
+                console.log('Received new player ID:', data.playerId);
+                this.playerId = data.playerId;
+                this.game.playerId = data.playerId;
+                
+                // Now that we have a player ID, try joining again
+                this.socket.emit('joinGame', { playerId: this.playerId });
+            });
+        } else {
+            // We have a player ID, try to join directly
+            this.socket.emit('joinGame', { playerId: this.playerId });
+        }
     }
     
     /**
@@ -563,23 +589,61 @@ class Multiplayer {
             console.error('Join game success but no unit data received');
         }
         
-        // Remove join button
+        // Remove join button and container
         const joinButton = document.getElementById('joinButton');
         if (joinButton) {
             joinButton.remove();
             console.log('Join button removed');
         }
+        
+        const joinContainer = document.getElementById('joinContainer');
+        if (joinContainer) {
+            joinContainer.remove();
+            console.log('Join container removed');
+        }
+        
+        // Remove join next game button if it exists
+        const joinNextGameButton = document.getElementById('join-next-game-button');
+        if (joinNextGameButton) {
+            joinNextGameButton.remove();
+            console.log('Join next game button removed');
+        }
+        
+        // Set game state to playing
+        this.game.gameState = 'playing';
+        
         console.log('=== Join Game Complete ===\n');
     }
     
     /**
-     * Handle game join error
+     * Handle join game error
      */
     onJoinGameError(data) {
         console.error('Failed to join game:', data.message);
-        alert(`Failed to join game: ${data.message}`);
-        // Show join button again
-        this.showJoinButton();
+        
+        // If the error is "Player not found", try to re-register
+        if (data.message === "Player not found." || data.message.includes("not found")) {
+            console.log('Player ID not found, attempting to re-register');
+            this.playerId = null;
+            this.game.playerId = null;
+            
+            // Request a new player registration
+            this.socket.emit('registerPlayer', {});
+            
+            // Set up a one-time listener for the registration response
+            this.socket.once('playerRegistered', (regData) => {
+                console.log('Received new player ID:', regData.playerId);
+                this.playerId = regData.playerId;
+                this.game.playerId = regData.playerId;
+                
+                // Now that we have a new player ID, try joining again
+                this.socket.emit('joinGame', { playerId: this.playerId });
+            });
+        } else {
+            // For other errors, show an alert and the join button again
+            alert(`Failed to join game: ${data.message}`);
+            this.showJoinButton();
+        }
     }
     
     /**
@@ -768,6 +832,9 @@ class Multiplayer {
         if (this.connected && this.playerId) {
             console.log('Requesting to join next game');
             this.socket.emit('joinNextGame', { playerId: this.playerId });
+            
+            // Store that this player wants to join the next game
+            localStorage.setItem('joinNextGame', 'true');
         }
     }
     
@@ -831,7 +898,16 @@ class Multiplayer {
      * Handle server started event
      */
     onServerStarted(data) {
-        console.log('Server started a new game');
+        console.log('New game started');
+        
+        // Set game state to playing
+        this.game.gameState = 'playing';
+        
+        // Clear entities explicitly
+        this.game.entities = [];
+        
+        // Clear selections
+        this.game.selectedEntities = [];
         
         // Remove game end overlay if it exists
         const overlay = document.getElementById('game-end-overlay');
@@ -842,10 +918,14 @@ class Multiplayer {
         // Re-enable input
         this.game.inputHandler.enableInput();
         
-        // Update game state from server
+        // Process game state from server
         if (data.gameState) {
-            // Fully clear entities before rebuilding
-            this.game.entities = [];
+            // Check if our player ID is still valid
+            if (this.playerId && !data.gameState.players[this.playerId]) {
+                console.log('Player ID no longer valid, will need to re-register');
+                this.playerId = null;
+                this.game.playerId = null;
+            }
             
             // Process entities from server data
             this.game.processServerEntities(data.gameState.entities);
@@ -853,7 +933,42 @@ class Multiplayer {
             // Store server start time
             this.serverStartTime = data.gameState.serverStartTime;
             
+            // Update map if provided
+            if (data.gameState.map) {
+                this.game.map.setMapFromServer(data.gameState.map);
+            }
+            
+            // Update map dimensions if provided
+            if (data.gameState.mapDimensions) {
+                this.updateMapDimensions(data.gameState.mapDimensions);
+            }
+            
             console.log(`Entities after server start: ${this.game.entities.length}`);
+        }
+        
+        // Remove any existing join buttons or containers
+        const existingJoinButton = document.getElementById('joinButton');
+        if (existingJoinButton) {
+            existingJoinButton.remove();
+        }
+        
+        const existingJoinContainer = document.getElementById('joinContainer');
+        if (existingJoinContainer) {
+            existingJoinContainer.remove();
+        }
+        
+        // Show the join button for the new game
+        this.showJoinButton();
+        
+        // Check if player wanted to auto-join the next game
+        const joinNextGame = localStorage.getItem('joinNextGame');
+        if (joinNextGame === 'true') {
+            console.log('Auto-joining new game based on previous selection');
+            // Wait a short time to ensure everything is initialized
+            setTimeout(() => {
+                this.requestJoinGame();
+            }, 500);
+            localStorage.removeItem('joinNextGame');
         }
     }
 } 
