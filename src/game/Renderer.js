@@ -328,6 +328,18 @@ class Renderer {
             );
         }
         
+        // Draw red "X" over the unit if it's destroyed (dead)
+        if (unit.isDestroyed) {
+            this.ctx.strokeStyle = 'red';
+            this.ctx.lineWidth = 4 * this.camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenPos.x - width / 2, screenPos.y - height / 2);
+            this.ctx.lineTo(screenPos.x + width / 2, screenPos.y + height / 2);
+            this.ctx.moveTo(screenPos.x + width / 2, screenPos.y - height / 2);
+            this.ctx.lineTo(screenPos.x - width / 2, screenPos.y + height / 2);
+            this.ctx.stroke();
+        }
+        
         // Draw selection indicator if unit is selected AND belongs to the player
         if (unit.isSelected && unit.playerId === this.game.playerId) {
             console.log(`Drawing selection indicator for unit ${unit.id} at (${screenPos.x}, ${screenPos.y}) with radius ${(width / 2) + 5 * this.camera.zoom}`);
@@ -362,28 +374,30 @@ class Renderer {
             console.log(`Selection indicator drawn with color ${Config.COLORS.SELECTION}`);
         }
         
-        // Draw health bar
-        const healthBarWidth = width;
-        const healthBarHeight = 4 * this.camera.zoom;
-        const healthPercentage = unit.health / unit.maxHealth;
-        
-        // Health bar background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.fillRect(
-            screenPos.x - width / 2,
-            screenPos.y - height / 2 - healthBarHeight - 2,
-            healthBarWidth,
-            healthBarHeight
-        );
-        
-        // Health bar fill
-        this.ctx.fillStyle = this.getHealthColor(healthPercentage);
-        this.ctx.fillRect(
-            screenPos.x - width / 2,
-            screenPos.y - height / 2 - healthBarHeight - 2,
-            healthBarWidth * healthPercentage,
-            healthBarHeight
-        );
+        // Draw health bar only if the unit is not destroyed
+        if (!unit.isDestroyed) {
+            const healthBarWidth = width;
+            const healthBarHeight = 4 * this.camera.zoom;
+            const healthPercentage = unit.health / unit.maxHealth;
+            
+            // Health bar background
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillRect(
+                screenPos.x - width / 2,
+                screenPos.y - height / 2 - healthBarHeight - 2,
+                healthBarWidth,
+                healthBarHeight
+            );
+            
+            // Health bar fill
+            this.ctx.fillStyle = this.getHealthColor(healthPercentage);
+            this.ctx.fillRect(
+                screenPos.x - width / 2,
+                screenPos.y - height / 2 - healthBarHeight - 2,
+                healthBarWidth * healthPercentage,
+                healthBarHeight
+            );
+        }
         
         // Draw level indicator if level > 1
         if (unit.level > 1) {

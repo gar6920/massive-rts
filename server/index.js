@@ -131,20 +131,20 @@ app.get('/public/index.html', (req, res) => {
 function getMapDimensions(playerCount) {
   if (playerCount <= 5) {
     return { 
-      width: 40, 
-      height: 40,
+      width: 200, 
+      height: 200,
       zoomFactor: 1.5 // Higher zoom factor for smaller maps
     };
   } else if (playerCount <= 15) {
     return { 
-      width: 60, 
-      height: 60,
+      width: 400, 
+      height: 400,
       zoomFactor: 1.0 // Medium zoom factor
     };
   } else {
     return { 
-      width: 80, 
-      height: 80,
+      width: 800, 
+      height: 800,
       zoomFactor: 0.75 // Lower zoom factor for larger maps
     };
   }
