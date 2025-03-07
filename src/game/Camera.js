@@ -318,4 +318,27 @@ class Camera {
         console.log("No player entities found, centering on map instead");
         this.centerOnMap();
     }
+
+    /**
+     * Get the bounding box for the current viewport in world coordinates
+     * Used for quadtree queries
+     * @returns {Object} - {x, y, width, height}
+     */
+    getBoundingBox() {
+        // Get viewport dimensions in world coordinates
+        const viewportWidth = this.width / this.zoom;
+        const viewportHeight = this.height / this.zoom;
+        
+        // Add a buffer around the viewport to ensure we get entities that are partially visible
+        // This is especially important for isometric rendering where entities might be visible
+        // outside the strict viewport boundaries
+        const buffer = Math.max(viewportWidth, viewportHeight) * 0.2;
+        
+        return {
+            x: this.x - buffer,
+            y: this.y - buffer,
+            width: viewportWidth + buffer * 2,
+            height: viewportHeight + buffer * 2
+        };
+    }
 } 

@@ -30,6 +30,34 @@ class Game {
         
         // Multiplayer state
         this.playerId = null;
+
+        // Initialize quadtree for efficient spatial partitioning
+        this.initQuadtree();
+    }
+    
+    /**
+     * Initialize the quadtree for spatial partitioning
+     */
+    initQuadtree() {
+        // Calculate bounds to cover the entire isometric map
+        const mapWidth = Config.MAP_WIDTH * Config.TILE_SIZE;
+        const mapHeight = Config.MAP_HEIGHT * Config.TILE_SIZE;
+        
+        // In isometric projection, the world is effectively rotated 45 degrees
+        // Calculate the isometric map width and height
+        const isoMapWidth = (mapWidth + mapHeight);
+        const isoMapHeight = (mapWidth + mapHeight) / 2;
+        
+        // Create the quadtree with bounds that encompass the entire isometric map
+        // Use a very generous boundary to ensure all entities are covered
+        this.quadtree = new Quadtree({
+            x: -isoMapWidth,  
+            y: -isoMapHeight,
+            width: isoMapWidth * 3,  
+            height: isoMapHeight * 3
+        }, 15, 6);  // Allow more objects per node and deeper subdivision
+        
+        console.log(`Initialized quadtree with bounds: x=${-isoMapWidth}, y=${-isoMapHeight}, width=${isoMapWidth * 3}, height=${isoMapHeight * 3}`);
     }
     
     /**
@@ -88,6 +116,9 @@ class Game {
      * Update all entities in the game
      */
     updateEntities(deltaTime) {
+        // Clear and rebuild the quadtree each frame
+        this.quadtree.clear();
+
         // Update each entity
         for (let i = this.entities.length - 1; i >= 0; i--) {
             const entity = this.entities[i];
@@ -100,6 +131,26 @@ class Game {
             }
             
             entity.update(deltaTime, this);
+
+            // Add to quadtree for spatial partitioning (if not destroyed)
+            if (!entity.isDestroyed) {
+                // Convert entity Cartesian coordinates to isometric coordinates for the quadtree
+                const isoX = (entity.x - entity.y) / 2;
+                const isoY = (entity.x + entity.y) / 4;
+                
+                // Use larger bounds to ensure entities are properly visible
+                const boundingWidth = Math.max(entity.width, entity.height) * 2;
+                const boundingHeight = Math.max(entity.width, entity.height) * 2;
+                
+                // Insert with isometric coordinates but preserve the original entity
+                this.quadtree.insert({
+                    x: isoX - boundingWidth/2,  // Use isometric coordinates for the quadtree
+                    y: isoY - boundingHeight/2,
+                    width: boundingWidth,
+                    height: boundingHeight,
+                    entity: entity  // Store reference to the original entity
+                });
+            }
         }
     }
     

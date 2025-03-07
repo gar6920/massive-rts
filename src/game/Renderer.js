@@ -252,14 +252,43 @@ class Renderer {
      * Render all game entities
      */
     renderEntities() {
-        // Sort entities by their y-coordinate for proper depth ordering in isometric view
-        const sortedEntities = [...this.game.entities].sort((a, b) => a.y - b.y);
+        // Use quadtree to get only entities in the visible area
+        const visibleQuadItems = this.game.quadtree.query(this.camera.getBoundingBox());
         
-        for (const entity of sortedEntities) {
-            if (!this.camera.isVisible(entity.x, entity.y, entity.width, entity.height)) {
-                continue; // Skip this entity and move to the next one
+        // Extract the actual entity objects from the quadtree results
+        const visibleEntities = visibleQuadItems
+            .map(item => item.entity)
+            .filter(entity => entity !== undefined); // Filter out any undefined entities
+        
+        // Check if we got any entities from the quadtree
+        if (visibleEntities.length === 0 && this.game.entities.length > 0) {
+            console.warn('Quadtree returned no entities, falling back to full entity list for rendering');
+            
+            // Fallback to rendering all entities that are visible
+            const allVisibleEntities = this.game.entities.filter(entity => 
+                this.camera.isVisible(entity.x, entity.y, entity.width, entity.height));
+            
+            if (allVisibleEntities.length > 0) {
+                console.log(`Found ${allVisibleEntities.length} visible entities in fallback check`);
             }
             
+            // Sort entities by their y-coordinate for proper depth ordering in isometric view
+            const sortedEntities = [...allVisibleEntities].sort((a, b) => a.y - b.y);
+            this.renderEntityList(sortedEntities);
+            return;
+        }
+        
+        // Sort entities by their y-coordinate for proper depth ordering in isometric view
+        const sortedEntities = [...visibleEntities].sort((a, b) => a.y - b.y);
+        this.renderEntityList(sortedEntities);
+    }
+    
+    /**
+     * Render a list of entities (extracted as a helper method)
+     * @param {Array} entityList - List of entities to render
+     */
+    renderEntityList(entityList) {
+        for (const entity of entityList) {
             let screenPos;
             
             if (entity instanceof Building) {

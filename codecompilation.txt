@@ -1,5 +1,5 @@
 Massive RTS Game - Code Compilation 
-Created: Thu 03/06/2025 18:33:11.22 
+Created: Thu 03/06/2025 20:11:10.36 
 ======================================== 
  
  
@@ -464,16 +464,14 @@ class Unit extends Entity {
      * Update combat state
      */
     updateCombat(deltaTime, game) {
-        // Check if target is still valid - only clear if the target is completely removed
-        // or if isDestroyed is true (animation completed)
-        if (!this.targetEntity || this.targetEntity.isDestroyed === true) {
+        if (!this.targetEntity || this.targetEntity.isDestroyed) {
             this.targetEntity = null;
             this.isAttacking = false;
+            this.isMoving = false;  // Immediately stop moving towards a dead target
+            this.targetX = null;
+            this.targetY = null;
             return;
         }
-        
-        // Keep attacking even if health is 0 or below, until the server removes the entity
-        // or until the death animation is complete
         
         // Calculate distance to target
         const center = this.getCenter();
@@ -622,23 +620,27 @@ class Unit extends Entity {
      * Render the unit
      */
     render(ctx, camera) {
-        const screenPos = camera.worldToScreen(this.x, this.y);
-        
+        // Convert unit's cartesian position to isometric
+        const isoX = (this.x - this.y) / 2;
+        const isoY = (this.x + this.y) / 4;
+
+        const screenPos = camera.worldToScreen(isoX, isoY);
+
         // Draw selection indicator if selected
         if (this.isSelected) {
             ctx.beginPath();
             ctx.strokeStyle = 'yellow';
             ctx.lineWidth = 2;
             ctx.arc(
-                screenPos.x + this.width / 2,
-                screenPos.y + this.height / 2,
+                screenPos.x,
+                screenPos.y,
                 this.width / 1.5,
                 0,
                 Math.PI * 2
             );
             ctx.stroke();
         }
-        
+
         // Draw attack indicator if attacking
         if (this.isAttacking && this.attackAnimationTime) {
             const elapsed = Date.now() - this.attackAnimationTime;
@@ -648,29 +650,35 @@ class Unit extends Entity {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 2 * (1 - progress);
             ctx.arc(
-                screenPos.x + this.width / 2,
-                screenPos.y + this.height / 2,
+                screenPos.x,
+                screenPos.y,
                 this.width / 1.2 * (1 + progress * 0.5),
                 0,
                 Math.PI * 2
             );
             ctx.stroke();
         }
-        
-        // Draw unit image normally if not fully dead
+
+        // Draw the unit normally
         if (this.image && this.image.complete) {
-            ctx.drawImage(this.image, screenPos.x, screenPos.y, this.width, this.height);
+            ctx.drawImage(
+                this.image,
+                screenPos.x - this.width / 2,
+                screenPos.y - this.height / 2,
+                this.width,
+                this.height
+            );
         } else {
             ctx.fillStyle = this.playerColor || 'blue';
-            ctx.fillRect(screenPos.x, screenPos.y, this.width, this.height);
+            ctx.fillRect(screenPos.x - this.width / 2, screenPos.y - this.height / 2, this.width, this.height);
         }
-        
-        // Render health bar only if health > 0
+
+        // Health bar only when alive
         if (this.health > 0) {
             this.renderHealthBar(ctx, screenPos);
         }
-        
-        // Explicitly draw red "X" when destroyed
+
+        // Red "X" when destroyed, properly isometric
         if (this.isDestroyed) {
             ctx.strokeStyle = 'red';
             ctx.lineWidth = 4;
@@ -681,7 +689,6 @@ class Unit extends Entity {
             ctx.lineTo(screenPos.x - this.width / 2, screenPos.y + this.height / 2);
             ctx.stroke();
 
-            // Mark for removal after 3 seconds
             if (Date.now() - this.deathAnimationTime >= 3000) {
                 this.markForRemoval = true;
             }
@@ -3087,6 +3094,18 @@ class Renderer {
             );
         }
         
+        // Draw red "X" over the unit if it's destroyed (dead)
+        if (unit.isDestroyed) {
+            this.ctx.strokeStyle = 'red';
+            this.ctx.lineWidth = 4 * this.camera.zoom;
+            this.ctx.beginPath();
+            this.ctx.moveTo(screenPos.x - width / 2, screenPos.y - height / 2);
+            this.ctx.lineTo(screenPos.x + width / 2, screenPos.y + height / 2);
+            this.ctx.moveTo(screenPos.x + width / 2, screenPos.y - height / 2);
+            this.ctx.lineTo(screenPos.x - width / 2, screenPos.y + height / 2);
+            this.ctx.stroke();
+        }
+        
         // Draw selection indicator if unit is selected AND belongs to the player
         if (unit.isSelected && unit.playerId === this.game.playerId) {
             console.log(`Drawing selection indicator for unit ${unit.id} at (${screenPos.x}, ${screenPos.y}) with radius ${(width / 2) + 5 * this.camera.zoom}`);
@@ -3121,28 +3140,30 @@ class Renderer {
             console.log(`Selection indicator drawn with color ${Config.COLORS.SELECTION}`);
         }
         
-        // Draw health bar
-        const healthBarWidth = width;
-        const healthBarHeight = 4 * this.camera.zoom;
-        const healthPercentage = unit.health / unit.maxHealth;
-        
-        // Health bar background
-        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        this.ctx.fillRect(
-            screenPos.x - width / 2,
-            screenPos.y - height / 2 - healthBarHeight - 2,
-            healthBarWidth,
-            healthBarHeight
-        );
-        
-        // Health bar fill
-        this.ctx.fillStyle = this.getHealthColor(healthPercentage);
-        this.ctx.fillRect(
-            screenPos.x - width / 2,
-            screenPos.y - height / 2 - healthBarHeight - 2,
-            healthBarWidth * healthPercentage,
-            healthBarHeight
-        );
+        // Draw health bar only if the unit is not destroyed
+        if (!unit.isDestroyed) {
+            const healthBarWidth = width;
+            const healthBarHeight = 4 * this.camera.zoom;
+            const healthPercentage = unit.health / unit.maxHealth;
+            
+            // Health bar background
+            this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            this.ctx.fillRect(
+                screenPos.x - width / 2,
+                screenPos.y - height / 2 - healthBarHeight - 2,
+                healthBarWidth,
+                healthBarHeight
+            );
+            
+            // Health bar fill
+            this.ctx.fillStyle = this.getHealthColor(healthPercentage);
+            this.ctx.fillRect(
+                screenPos.x - width / 2,
+                screenPos.y - height / 2 - healthBarHeight - 2,
+                healthBarWidth * healthPercentage,
+                healthBarHeight
+            );
+        }
         
         // Draw level indicator if level > 1
         if (unit.level > 1) {
@@ -5660,20 +5681,20 @@ app.get('/public/index.html', (req, res) => {
 function getMapDimensions(playerCount) {
   if (playerCount <= 5) {
     return { 
-      width: 40, 
-      height: 40,
+      width: 200, 
+      height: 200,
       zoomFactor: 1.5 // Higher zoom factor for smaller maps
     };
   } else if (playerCount <= 15) {
     return { 
-      width: 60, 
-      height: 60,
+      width: 400, 
+      height: 400,
       zoomFactor: 1.0 // Medium zoom factor
     };
   } else {
     return { 
-      width: 80, 
-      height: 80,
+      width: 800, 
+      height: 800,
       zoomFactor: 0.75 // Lower zoom factor for larger maps
     };
   }
