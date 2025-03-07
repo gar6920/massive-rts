@@ -697,6 +697,9 @@ setInterval(() => {
             // Check if any bases have been destroyed
             checkBaseDestruction();
             
+            // Update buildings (production, etc.)
+            updateBuildings(deltaTime);
+            
             // Only update units if the game hasn't ended
             updateAIUnits(deltaTime);
             updatePlayerUnits(deltaTime);
@@ -1239,6 +1242,67 @@ io.on('connection', (socket) => {
       socket.emit('joinNextGameConfirmed', {});
     }
   });
+  
+  // Handle unit production queue request
+  socket.on('queueUnit', (data) => {
+    // Check if game is running
+    if (!gameState.isRunning) {
+      socket.emit('queueUnitError', { message: 'Game has ended' });
+      return;
+    }
+    
+    console.log(`Received queueUnit request: building ${data.buildingId}, unit type ${data.unitType}`);
+    
+    // Validate the data
+    if (!data.buildingId || !data.unitType) {
+      console.error('Invalid queueUnit data received');
+      return;
+    }
+    
+    // Find the player ID associated with this socket
+    const playerId = Object.keys(gameState.players).find(
+      id => gameState.players[id].socketId === socket.id
+    );
+    
+    if (!playerId) {
+      console.error('Player not found for socket', socket.id);
+      return;
+    }
+    
+    // Get the building
+    const building = gameState.entities[data.buildingId];
+    if (!building) {
+      console.error(`Building ${data.buildingId} not found`);
+      return;
+    }
+    
+    // Verify the building belongs to the player's team
+    if (building.playerId !== playerId && building.playerId !== 'human-team') {
+      console.error(`Building ${data.buildingId} does not belong to player ${playerId} or human team`);
+      return;
+    }
+    
+    // Initialize production queue if it doesn't exist
+    if (!building.productionQueue) {
+      building.productionQueue = [];
+    }
+    
+    // Add unit to production queue
+    building.productionQueue.push(data.unitType);
+    console.log(`Added ${data.unitType} to production queue for building ${data.buildingId}`);
+    
+    // Set production rate if not already set
+    if (!building.productionRate) {
+      building.productionRate = 0.1; // Default production rate
+    }
+    
+    // Confirm to the player
+    socket.emit('queueUnitConfirmed', {
+      buildingId: data.buildingId,
+      unitType: data.unitType,
+      queueLength: building.productionQueue.length
+    });
+  });
 });
 
 // Start the server
@@ -1247,4 +1311,105 @@ server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Game client available at http://localhost:${PORT}`);
   console.log(`Initial map size: ${gameState.mapDimensions.width}x${gameState.mapDimensions.height} (zoom: ${gameState.mapDimensions.zoomFactor})`);
-}); 
+});
+
+// Function to update buildings (production, etc.)
+function updateBuildings(deltaTime) {
+  // Process each building
+  Object.values(gameState.entities)
+    .filter(entity => entity.type === 'building')
+    .forEach(building => {
+      // Skip buildings that don't produce units or have empty queues
+      if (!building.productionRate || !building.productionQueue || building.productionQueue.length === 0) {
+        return;
+      }
+      
+      // Update production progress
+      building.productionProgress = (building.productionProgress || 0) + (building.productionRate * deltaTime) / 1000;
+      
+      // Check if production is complete
+      if (building.productionProgress >= 1) {
+        // Get the unit type from the queue
+        const unitType = building.productionQueue.shift();
+        
+        // Reset production progress
+        building.productionProgress = 0;
+        
+        // Create the unit
+        const unitId = uuidv4();
+        
+        // Calculate spawn position (near the building)
+        const spawnX = building.x + building.width + 10;
+        const spawnY = building.y + building.height / 2;
+        
+        // Get unit attributes based on type
+        const unitAttributes = {
+          SOLDIER: {
+            health: 100,
+            maxHealth: 100,
+            attackDamage: 10,
+            attackRange: 50,
+            attackCooldown: 1000,
+            speed: 20
+          },
+          TANK: {
+            health: 200,
+            maxHealth: 200,
+            attackDamage: 20,
+            attackRange: 60,
+            attackCooldown: 1500,
+            speed: 15
+          },
+          SCOUT: {
+            health: 80,
+            maxHealth: 80,
+            attackDamage: 5,
+            attackRange: 40,
+            attackCooldown: 800,
+            speed: 30
+          }
+        }[unitType] || {
+          health: 100,
+          maxHealth: 100,
+          attackDamage: 10,
+          attackRange: 50,
+          attackCooldown: 1000,
+          speed: 20
+        };
+        
+        // Create the unit entity
+        const newUnit = {
+          id: unitId,
+          type: 'unit',
+          unitType: unitType,
+          playerColor: building.playerColor,
+          x: spawnX,
+          y: spawnY,
+          width: 32,
+          height: 32,
+          playerId: building.playerId,
+          isPlayerControlled: building.playerId !== 'ai-team',
+          health: unitAttributes.health,
+          maxHealth: unitAttributes.maxHealth,
+          attackDamage: unitAttributes.attackDamage,
+          attackRange: unitAttributes.attackRange,
+          attackCooldown: unitAttributes.attackCooldown,
+          speed: unitAttributes.speed,
+          level: 1,
+          experience: 0,
+          targetX: null,
+          targetY: null,
+          isMoving: false,
+          lastUpdateTime: Date.now()
+        };
+        
+        // Add the unit to the game state
+        gameState.entities[unitId] = newUnit;
+        
+        console.log(`Building ${building.id} produced a ${unitType} unit (${unitId})`);
+        
+        // Broadcast the unit creation to all clients
+        io.emit('unitCreated', { unit: newUnit });
+      }
+    });
+} 

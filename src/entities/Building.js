@@ -68,65 +68,15 @@ class Building extends Entity {
    * Update building state
    */
   update(deltaTime, game) {
-    // Handle production if this building produces units
-    if (this.productionRate > 0 && this.productionQueue.length > 0) {
-      this.updateProduction(deltaTime, game);
-    }
-  }
-  
-  /**
-   * Update production progress
-   */
-  updateProduction(deltaTime, game) {
-    // Increase production progress
-    this.productionProgress += (this.productionRate * deltaTime) / 1000;
-    
-    // Check if production is complete
-    if (this.productionProgress >= 1) {
-      this.completeProduction(game);
-      this.productionProgress = 0;
-    }
-  }
-  
-  /**
-   * Complete production of a unit
-   */
-  completeProduction(game) {
-    if (this.productionQueue.length === 0) return;
-    
-    // Get the unit type from the queue
-    const unitType = this.productionQueue.shift();
-    
-    // Calculate spawn position (near the building)
-    const spawnX = this.x + this.width + 10;
-    const spawnY = this.y + this.height / 2;
-    
-    // Create the unit
-    const unit = new Unit(
-      spawnX,
-      spawnY,
-      Config.UNIT_SIZE,
-      Config.UNIT_SIZE,
-      this.isPlayerControlled,
-      unitType,
-      this.playerColor
-    );
-    
-    // Set the player ID
-    unit.playerId = this.playerId;
-    
-    // Add the unit to the game
-    game.entities.push(unit);
-    
-    console.log(`Building produced a ${unitType}`);
+    // Production is now handled server-side
   }
   
   /**
    * Queue a unit for production
    */
   queueUnit(unitType) {
-    this.productionQueue.push(unitType);
-    console.log(`Added ${unitType} to production queue`);
+    window.game.multiplayer.socket.emit('queueUnit', { buildingId: this.id, unitType });
+    console.log(`Requested server to queue ${unitType} production for building ${this.id}`);
   }
   
   /**
