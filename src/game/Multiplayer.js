@@ -547,6 +547,10 @@ class Multiplayer {
             this.game.processServerEntities({ [data.unit.id]: data.unit });
             console.log('Unit processed and added to game');
             
+            // First set zoom to a much higher level for a closer view of the unit
+            // Do this BEFORE centering to avoid position calculation issues
+            this.game.camera.zoom = 1.8; // More zoomed in for a better initial view
+            
             // Convert unit position to isometric coordinates for camera centering
             const isoX = (data.unit.x - data.unit.y) / 2;
             const isoY = (data.unit.x + data.unit.y) / 4;
@@ -554,11 +558,10 @@ class Multiplayer {
             // Center camera on the player's unit in isometric space
             this.game.camera.centerOn(isoX, isoY);
             
-            // Set zoom to a much higher level for a closer view of the unit
-            this.game.camera.zoom = 1.8; // More zoomed in for a better initial view
-            
             // Ensure camera position is within bounds
             this.game.camera.clampPosition();
+            
+            console.log(`Camera positioned at (${this.game.camera.x}, ${this.game.camera.y}) with zoom ${this.game.camera.zoom}`);
         } else {
             console.error('Join game success but no unit data received');
         }
@@ -666,8 +669,25 @@ class Multiplayer {
             target.takeDamage(data.damage);
         }
         
-        // Add visual effects
-        this.game.renderer.addEffect('attack', target.x + target.width/2, target.y + target.height/2);
+        // Add visual effects at the correct isometric position
+        if (target instanceof Building) {
+            // For buildings, convert grid coordinates to isometric coordinates
+            const gridX = Math.floor(target.x / Config.TILE_SIZE);
+            const gridY = Math.floor(target.y / Config.TILE_SIZE);
+            
+            // Convert grid coordinates to isometric world coordinates
+            const isoPos = this.game.map.gridToIso(gridX, gridY);
+            
+            // Add effect at the isometric position
+            this.game.renderer.addEffect('attack', isoPos.x, isoPos.y);
+        } else {
+            // For units, use the direct Cartesian-to-isometric conversion
+            const isoX = (target.x - target.y) / 2;
+            const isoY = (target.x + target.y) / 4;
+            
+            // Add effect at the isometric position
+            this.game.renderer.addEffect('attack', isoX, isoY);
+        }
     }
     
     /**
