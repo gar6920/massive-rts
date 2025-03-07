@@ -24,7 +24,11 @@ const gameState = {
   mapDimensions: { width: 40, height: 40, zoomFactor: 1.5 },
   lastUpdateTime: Date.now(),
   serverStartTime: Date.now(),
-  isRunning: false
+  isRunning: false,
+  gameEndTime: null,
+  countdown: null,
+  winner: null,
+  playersForNextGame: []
 };
 
 // Function to start the game
@@ -38,6 +42,10 @@ function startGame() {
   gameState.serverStartTime = Date.now();
   gameState.lastUpdateTime = Date.now();
   gameState.mapDimensions = getMapDimensions(0); // Initialize with default dimensions
+  gameState.gameEndTime = null;
+  gameState.countdown = null;
+  gameState.winner = null;
+  gameState.playersForNextGame = [];
   
   // Generate initial map
   console.log('Generating initial map...');
@@ -619,6 +627,12 @@ function updateAIUnits(deltaTime) {
                     if (!aiUnit.lastAttackTime || Date.now() - aiUnit.lastAttackTime >= aiUnit.attackCooldown) {
                         // Attack the target
                         targetEntity.health -= aiUnit.attackDamage;
+                        
+                        // Clamp health to zero if negative
+                        if (targetEntity.health < 0) {
+                            targetEntity.health = 0;
+                        }
+                        
                         aiUnit.lastAttackTime = Date.now();
                         
                         // Broadcast attack
@@ -631,9 +645,37 @@ function updateAIUnits(deltaTime) {
                         
                         // Check if target is destroyed
                         if (targetEntity.health <= 0) {
-                            delete gameState.entities[targetEntity.id];
-                            aiUnit.targetEntityId = null;
-                            io.emit('entityDestroyed', { entityId: targetEntity.id });
+                            // Check if this is a base building
+                            if (targetEntity.type === 'building' && targetEntity.buildingType === 'BASE') {
+                                // Trigger end game logic
+                                if (!gameState.gameEndTime) {
+                                    const winner = targetEntity.playerId === 'human-team' ? 'ai-team' : 'human-team';
+                                    
+                                    console.log(`Base of team ${targetEntity.playerId} has been destroyed. ${winner} wins!`);
+                                    
+                                    // Set the game end state
+                                    gameState.gameEndTime = Date.now();
+                                    gameState.winner = winner;
+                                    
+                                    // Start the countdown (30 seconds)
+                                    gameState.countdown = 30;
+                                    
+                                    // Notify all clients that the game has ended
+                                    io.emit('gameEnded', { 
+                                        winner: winner,
+                                        message: winner === 'human-team' ? 'The enemy base has fallen!' : 'Your base was destroyed!',
+                                        countdown: gameState.countdown
+                                    });
+                                    
+                                    // Start the countdown timer
+                                    startEndGameCountdown();
+                                }
+                            } else {
+                                // For non-base entities, destroy them
+                                delete gameState.entities[targetEntity.id];
+                                aiUnit.targetEntityId = null;
+                                io.emit('entityDestroyed', { entityId: targetEntity.id });
+                            }
                         }
                     }
                 }
@@ -650,10 +692,20 @@ setInterval(() => {
         const deltaTime = currentTime - lastUpdateTime;
         lastUpdateTime = currentTime;
         
-        updateAIUnits(deltaTime);
-        updatePlayerUnits(deltaTime);
+        // Check for base destruction if game is still active
+        if (!gameState.gameEndTime) {
+            // Check if any bases have been destroyed
+            checkBaseDestruction();
+            
+            // Only update units if the game hasn't ended
+            updateAIUnits(deltaTime);
+            updatePlayerUnits(deltaTime);
+        } else if (gameState.countdown) {
+            // Handle countdown if game has ended
+            updateEndGameCountdown();
+        }
     }
-}, 50); // Update every 50ms (20 times per second)
+}, 50);
 
 // Function to update player-controlled units
 function updatePlayerUnits(deltaTime) {
@@ -698,24 +750,58 @@ function updatePlayerUnits(deltaTime) {
                         // Apply damage to target
                         const damage = unit.attackDamage || 10; // Default damage
                         targetEntity.health -= damage;
+                        
+                        // Clamp health to zero if negative
+                        if (targetEntity.health < 0) {
+                            targetEntity.health = 0;
+                        }
+                        
                         unit.lastAttackTime = now;
                         
                         // Broadcast attack
                         io.emit('unitAttack', {
                             attackerId: unit.id,
                             targetId: unit.targetEntityId,
-                            damage: damage
+                            damage: damage,
+                            targetHealth: targetEntity.health
                         });
                         
                         // Check if target is destroyed
                         if (targetEntity.health <= 0) {
-                            // Entity destroyed
-                            io.emit('entityDestroyed', {
-                                entityId: targetEntity.id
-                            });
-                            
-                            // Remove entity from game state
-                            delete gameState.entities[targetEntity.id];
+                            // Check if this is a base building
+                            if (targetEntity.type === 'building' && targetEntity.buildingType === 'BASE') {
+                                // Trigger end game logic
+                                if (!gameState.gameEndTime) {
+                                    const winner = targetEntity.playerId === 'human-team' ? 'ai-team' : 'human-team';
+                                    
+                                    console.log(`Base of team ${targetEntity.playerId} has been destroyed. ${winner} wins!`);
+                                    
+                                    // Set the game end state
+                                    gameState.gameEndTime = Date.now();
+                                    gameState.winner = winner;
+                                    
+                                    // Start the countdown (30 seconds)
+                                    gameState.countdown = 30;
+                                    
+                                    // Notify all clients that the game has ended
+                                    io.emit('gameEnded', { 
+                                        winner: winner,
+                                        message: winner === 'human-team' ? 'The enemy base has fallen!' : 'Your base was destroyed!',
+                                        countdown: gameState.countdown
+                                    });
+                                    
+                                    // Start the countdown timer
+                                    startEndGameCountdown();
+                                }
+                            } else {
+                                // For non-base entities, destroy them
+                                io.emit('entityDestroyed', {
+                                    entityId: targetEntity.id
+                                });
+                                
+                                // Remove entity from game state
+                                delete gameState.entities[targetEntity.id];
+                            }
                             
                             // Clear attack target
                             unit.targetEntityId = null;
@@ -770,6 +856,77 @@ function updatePlayerUnits(deltaTime) {
             }
         }
     }
+}
+
+// Function to check if any bases have been destroyed
+function checkBaseDestruction() {
+    // Find all bases
+    const bases = Object.values(gameState.entities).filter(
+        entity => entity.type === 'building' && entity.buildingType === 'BASE'
+    );
+    
+    // Check each base
+    for (const base of bases) {
+        if (base.health <= 0) {
+            // Determine the winner
+            const winner = base.playerId === 'human-team' ? 'ai-team' : 'human-team';
+            
+            console.log(`Base of team ${base.playerId} has been destroyed. ${winner} wins!`);
+            
+            // Set the game end state
+            gameState.gameEndTime = Date.now();
+            gameState.winner = winner;
+            
+            // Start the countdown (30 seconds)
+            gameState.countdown = 30;
+            
+            // Notify all clients that the game has ended
+            io.emit('gameEnded', { 
+                winner: winner,
+                message: winner === 'human-team' ? 'The enemy base has fallen!' : 'Your base was destroyed!',
+                countdown: gameState.countdown
+            });
+            
+            // Start the countdown timer
+            startEndGameCountdown();
+            
+            // Only need to handle one base destruction
+            break;
+        }
+    }
+}
+
+// Function to start the end game countdown
+function startEndGameCountdown() {
+    // Send countdown updates every second
+    const countdownInterval = setInterval(() => {
+        // Decrement countdown
+        gameState.countdown--;
+        
+        // Send countdown update to all clients
+        io.emit('countdownUpdate', { 
+            secondsRemaining: gameState.countdown 
+        });
+        
+        // When countdown reaches 0, reset and start a new game
+        if (gameState.countdown <= 0) {
+            clearInterval(countdownInterval);
+            
+            // Prompt players to join next game
+            io.emit('prepareNextGame', {});
+            
+            // After 5 more seconds, start the next game
+            setTimeout(() => {
+                startGame();
+            }, 5000);
+        }
+    }, 1000);
+}
+
+// Function to update the end game countdown
+function updateEndGameCountdown() {
+    // This is handled by the startEndGameCountdown interval
+    // Function is kept for clarity in the game update loop
 }
 
 // Handle socket connections
@@ -1063,6 +1220,23 @@ io.on('connection', (socket) => {
       
       // Check if map needs to be resized after player disconnection
       checkAndResizeMap();
+    }
+  });
+
+  // Handle player opting in for the next game
+  socket.on('joinNextGame', (data) => {
+    const playerId = data.playerId;
+    
+    if (playerId && gameState.players[playerId]) {
+      console.log(`Player ${playerId} opts in for the next game`);
+      
+      // Add player to the list for next game if not already there
+      if (!gameState.playersForNextGame.includes(playerId)) {
+        gameState.playersForNextGame.push(playerId);
+      }
+      
+      // Confirm to the player
+      socket.emit('joinNextGameConfirmed', {});
     }
   });
 });

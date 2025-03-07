@@ -13,10 +13,10 @@ class Multiplayer {
         this.connected = false;
         this.serverEntities = {}; // Entities from the server
         this.pendingCommands = []; // Commands waiting to be sent
-        this.lastServerUpdate = 0;
+        this.lastServerUpdate = Date.now();
         this.serverStartTime = null; // Store server start time
         
-        // Bind methods
+        // Bind methods to this instance
         this.onConnect = this.onConnect.bind(this);
         this.onDisconnect = this.onDisconnect.bind(this);
         this.onGameState = this.onGameState.bind(this);
@@ -33,6 +33,13 @@ class Multiplayer {
         this.onUnitsAttacking = this.onUnitsAttacking.bind(this);
         this.onUnitAttack = this.onUnitAttack.bind(this);
         this.onEntityDestroyed = this.onEntityDestroyed.bind(this);
+        this.onGameEnded = this.onGameEnded.bind(this);
+        this.onCountdownUpdate = this.onCountdownUpdate.bind(this);
+        this.onPrepareNextGame = this.onPrepareNextGame.bind(this);
+        this.onServerStarted = this.onServerStarted.bind(this);
+        
+        // Connect to the server
+        this.connect();
     }
     
     /**
@@ -65,6 +72,10 @@ class Multiplayer {
         this.socket.on('mapResized', this.onMapResized);
         this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
         this.socket.on('joinGameError', this.onJoinGameError);
+        this.socket.on('gameEnded', this.onGameEnded);
+        this.socket.on('countdownUpdate', this.onCountdownUpdate);
+        this.socket.on('prepareNextGame', this.onPrepareNextGame);
+        this.socket.on('serverStarted', this.onServerStarted.bind(this));
     }
     
     /**
@@ -647,8 +658,13 @@ class Multiplayer {
             attacker.performAttackAnimation();
         }
         
-        // Apply damage visually
-        target.takeDamage(data.damage);
+        // If the server provided the target's health, use that value directly
+        if (data.targetHealth !== undefined) {
+            target.health = data.targetHealth;
+        } else {
+            // Otherwise, apply damage locally
+            target.takeDamage(data.damage);
+        }
         
         // Add visual effects
         this.game.renderer.addEffect('attack', target.x + target.width/2, target.y + target.height/2);
@@ -681,6 +697,157 @@ class Multiplayer {
             setTimeout(() => {
                 this.game.removeEntity(data.entityId);
             }, 1000); // Match death animation duration
+        }
+    }
+    
+    /**
+     * Handle game ended event
+     */
+    onGameEnded(data) {
+        console.log(`Game ended. Winner: ${data.winner}`);
+        
+        // Check if the player's team won
+        const playerWon = data.winner === 'human-team';
+        
+        // Create game end overlay
+        this.createGameEndOverlay(playerWon, data.message, data.countdown);
+        
+        // Disable input during end game
+        this.game.inputHandler.disableInput();
+    }
+    
+    /**
+     * Handle countdown update
+     */
+    onCountdownUpdate(data) {
+        console.log(`Countdown: ${data.secondsRemaining}`);
+        
+        // Update the countdown display
+        const countdownElement = document.getElementById('game-end-countdown');
+        if (countdownElement) {
+            countdownElement.textContent = `Next game in: ${data.secondsRemaining}s`;
+        }
+    }
+    
+    /**
+     * Handle prepare for next game event
+     */
+    onPrepareNextGame(data) {
+        console.log('Preparing for next game');
+        
+        // Show join next game button
+        const overlay = document.getElementById('game-end-overlay');
+        if (overlay) {
+            // Create join button if it doesn't exist yet
+            if (!document.getElementById('join-next-game-button')) {
+                const joinButton = document.createElement('button');
+                joinButton.id = 'join-next-game-button';
+                joinButton.textContent = 'Join Next Game';
+                joinButton.classList.add('game-button');
+                joinButton.addEventListener('click', () => {
+                    this.joinNextGame();
+                    joinButton.disabled = true;
+                    joinButton.textContent = 'Joined';
+                });
+                
+                overlay.appendChild(joinButton);
+            }
+            
+            // Update countdown text
+            const countdownElement = document.getElementById('game-end-countdown');
+            if (countdownElement) {
+                countdownElement.textContent = 'New game starting soon!';
+            }
+        }
+    }
+    
+    /**
+     * Send join next game request
+     */
+    joinNextGame() {
+        if (this.connected && this.playerId) {
+            console.log('Requesting to join next game');
+            this.socket.emit('joinNextGame', { playerId: this.playerId });
+        }
+    }
+    
+    /**
+     * Create the game end overlay
+     */
+    createGameEndOverlay(victory, message, countdown) {
+        // Remove existing overlay if it exists
+        const existingOverlay = document.getElementById('game-end-overlay');
+        if (existingOverlay) {
+            existingOverlay.remove();
+        }
+        
+        // Create overlay container
+        const overlay = document.createElement('div');
+        overlay.id = 'game-end-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.justifyContent = 'center';
+        overlay.style.alignItems = 'center';
+        overlay.style.zIndex = '1000';
+        overlay.style.color = 'white';
+        overlay.style.fontFamily = 'Arial, sans-serif';
+        
+        // Create result header
+        const resultHeader = document.createElement('h1');
+        resultHeader.textContent = victory ? 'VICTORY' : 'DEFEAT';
+        resultHeader.style.fontSize = '48px';
+        resultHeader.style.marginBottom = '20px';
+        resultHeader.style.color = victory ? '#4CAF50' : '#F44336';
+        
+        // Create message
+        const messageElement = document.createElement('p');
+        messageElement.textContent = message;
+        messageElement.style.fontSize = '24px';
+        messageElement.style.marginBottom = '30px';
+        
+        // Create countdown
+        const countdownElement = document.createElement('p');
+        countdownElement.id = 'game-end-countdown';
+        countdownElement.textContent = `Next game in: ${countdown}s`;
+        countdownElement.style.fontSize = '20px';
+        countdownElement.style.marginBottom = '30px';
+        
+        // Add elements to overlay
+        overlay.appendChild(resultHeader);
+        overlay.appendChild(messageElement);
+        overlay.appendChild(countdownElement);
+        
+        // Add overlay to the document
+        document.body.appendChild(overlay);
+    }
+    
+    /**
+     * Handle server started event
+     */
+    onServerStarted(data) {
+        console.log('Server started a new game');
+        
+        // Remove game end overlay if it exists
+        const overlay = document.getElementById('game-end-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+        
+        // Re-enable input
+        this.game.inputHandler.enableInput();
+        
+        // Update game state from server
+        if (data.gameState) {
+            this.game.processServerEntities(data.gameState.entities);
+            
+            // Store server start time
+            this.serverStartTime = data.gameState.serverStartTime;
         }
     }
 } 

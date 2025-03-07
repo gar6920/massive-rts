@@ -24,6 +24,7 @@ class InputHandler {
         this.selectionEndY = 0;
         this.isSelecting = false;
         this.clickStartTime = 0;
+        this.inputEnabled = true; // Flag to control input
         
         // Minimap element
         this.minimapElement = document.getElementById('minimap');
@@ -62,6 +63,9 @@ class InputHandler {
      * Handle key down events
      */
     handleKeyDown(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         this.keys[e.key] = true;
         
         // Handle specific key presses
@@ -91,6 +95,9 @@ class InputHandler {
      * Handle mouse down events
      */
     handleMouseDown(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         this.mouseX = e.clientX;
         this.mouseY = e.clientY;
         this.lastMouseX = e.clientX;
@@ -121,6 +128,14 @@ class InputHandler {
      * Handle mouse up events
      */
     handleMouseUp(e) {
+        // Only update mouse state if input is disabled
+        if (!this.inputEnabled) {
+            if (e.button === 0) this.mouseDown = false;
+            else if (e.button === 2) this.rightMouseDown = false;
+            else if (e.button === 1) this.middleMouseDown = false;
+            return;
+        }
+        
         if (e.button === 0) {
             this.mouseDown = false;
 
@@ -155,6 +170,13 @@ class InputHandler {
     handleMouseMove(e) {
         this.mouseX = e.clientX;
         this.mouseY = e.clientY;
+        
+        // Skip selection and panning if input is disabled
+        if (!this.inputEnabled) {
+            this.lastMouseX = e.clientX;
+            this.lastMouseY = e.clientY;
+            return;
+        }
         
         // Start selection if mouse has moved enough while button is down
         if (this.mouseDown && !this.isSelecting) {
@@ -193,6 +215,9 @@ class InputHandler {
      * Handle mouse wheel events for zooming
      */
     handleMouseWheel(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         e.preventDefault();
         
         // Determine zoom direction
@@ -207,6 +232,9 @@ class InputHandler {
      */
     handleRightClick(e) {
         e.preventDefault(); // Prevent context menu
+        
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
         
         // If we have selected entities, issue a command
         if (this.game.selectedEntities.length > 0) {
@@ -265,8 +293,11 @@ class InputHandler {
      * Update method called each frame
      */
     update() {
-        this.updateCameraFromKeys();
-        this.updateCameraFromMouse();
+        // Only update camera from keyboard and mouse if input is enabled
+        if (this.inputEnabled) {
+            this.updateCameraFromKeys();
+            this.updateCameraFromMouse();
+        }
     }
     
     /**
@@ -287,6 +318,9 @@ class InputHandler {
      * Handle minimap clicks
      */
     handleMinimapClick(e) {
+        // Skip if input is disabled
+        if (!this.inputEnabled) return;
+        
         e.stopPropagation(); // Prevent event from bubbling to canvas
         
         // Get minimap dimensions
@@ -325,5 +359,22 @@ class InputHandler {
                 this.game.handleCommand(isoPos.x, isoPos.y);
             }
         }
+    }
+    
+    /**
+     * Disable user input (for game end screen)
+     */
+    disableInput() {
+        console.log('Disabling game input');
+        this.inputEnabled = false;
+        this.game.deselectAll(); // Clear selection when game ends
+    }
+    
+    /**
+     * Enable user input (when a new game starts)
+     */
+    enableInput() {
+        console.log('Enabling game input');
+        this.inputEnabled = true;
     }
 } 
