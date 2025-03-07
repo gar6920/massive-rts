@@ -14,9 +14,11 @@
 - units show movement when right clicked to a destination
 - units move and attack a target including following a moving target
 
-
 ## ACTIVE FEATURES WE ARE WORKING ON
-- unit should not be able to destroy his own base
+- game ends / restarts after a base is destroyed
+- work on making more AI units spawn
+- make terrain objects of varying sizes and facilitate their import into the map
+- then will work on making buildings - allowing clients (and maybe AI) to make buildings
 
 ## Flow of coding in cursor
 - request made in agent text by User
