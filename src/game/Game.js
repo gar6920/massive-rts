@@ -208,6 +208,9 @@ class Game {
                     entity.serverY = serverEntity.y;
                     entity.interpolationStartTime = Date.now();
                     
+                    // Double check isPlayerControlled flag
+                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
+                    
                     // Add to entities array
                     this.entities.push(entity);
                     console.log(`Added new unit to game:`, entity);
@@ -230,6 +233,9 @@ class Game {
                     entity.health = serverEntity.health;
                     entity.maxHealth = serverEntity.maxHealth;
                     
+                    // Double check isPlayerControlled flag
+                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
+                    
                     // Add to entities array
                     this.entities.push(entity);
                     console.log(`Added new building to game:`, entity);
@@ -248,13 +254,23 @@ class Game {
                     entity.isMoving = serverEntity.isMoving;
                     entity.health = serverEntity.health;
                     entity.maxHealth = serverEntity.maxHealth;
+                    
+                    // Always update playerId and isPlayerControlled
+                    entity.playerId = serverEntity.playerId;
                     entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
+                    
+                    if (entity.isPlayerControlled) {
+                        console.log(`Updated unit ${entity.id} - Controlled by player ${entity.playerId}`);
+                    }
                 } else {
                     // For non-moving entities like buildings, update position directly
                     entity.x = serverEntity.x;
                     entity.y = serverEntity.y;
                     entity.health = serverEntity.health;
                     entity.maxHealth = serverEntity.maxHealth;
+                    
+                    // Always update playerId and isPlayerControlled
+                    entity.playerId = serverEntity.playerId;
                     entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
                 }
             }
