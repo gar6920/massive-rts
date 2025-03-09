@@ -92,44 +92,33 @@ class Renderer {
      */
     renderMap() {
         // Calculate visible tile range based on camera position and zoom
-        // For isometric view, we need a different approach to determine visible tiles
+        const buffer = 2; // Add buffer tiles around visible area
         
-        // Convert camera position to grid coordinates
-        const cameraWorldPos = {
-            x: this.camera.x,
-            y: this.camera.y
-        };
+        // Get camera bounds in world coordinates
+        const cameraBounds = this.camera.getWorldBounds();
         
-        // Get the viewport dimensions in world coordinates
-        const viewportWidth = this.camera.width / this.camera.zoom;
-        const viewportHeight = this.camera.height / this.camera.zoom;
+        // Convert world bounds to grid coordinates
+        let minGridX = Math.floor((cameraBounds.left - this.tileWidth) / this.tileWidth);
+        let minGridY = Math.floor((cameraBounds.top - this.tileHeight) / this.tileHeight);
+        let maxGridX = Math.ceil((cameraBounds.right + this.tileWidth) / this.tileWidth);
+        let maxGridY = Math.ceil((cameraBounds.bottom + this.tileHeight) / this.tileHeight);
         
-        // Calculate the viewport corners in world coordinates
-        const viewportCorners = [
-            { x: cameraWorldPos.x, y: cameraWorldPos.y }, // Top-left
-            { x: cameraWorldPos.x + viewportWidth, y: cameraWorldPos.y }, // Top-right
-            { x: cameraWorldPos.x, y: cameraWorldPos.y + viewportHeight }, // Bottom-left
-            { x: cameraWorldPos.x + viewportWidth, y: cameraWorldPos.y + viewportHeight } // Bottom-right
-        ];
-        
-        // Convert viewport corners to grid coordinates
-        const gridCorners = viewportCorners.map(corner => this.map.isoToGrid(corner.x, corner.y));
-        
-        // Find the min and max grid coordinates that cover the viewport
-        let minGridX = Math.floor(Math.min(...gridCorners.map(corner => corner.x)));
-        let maxGridX = Math.ceil(Math.max(...gridCorners.map(corner => corner.x)));
-        let minGridY = Math.floor(Math.min(...gridCorners.map(corner => corner.y)));
-        let maxGridY = Math.ceil(Math.max(...gridCorners.map(corner => corner.y)));
-        
-        // Add a buffer to ensure we render tiles that are partially visible
-        const buffer = 15;
+        // Add buffer and clamp to map boundaries
         minGridX = Math.max(0, minGridX - buffer);
         minGridY = Math.max(0, minGridY - buffer);
-        maxGridX = Math.min(this.map.width, maxGridX + buffer);
-        maxGridY = Math.min(this.map.height, maxGridY + buffer);
+        maxGridX = Math.min(this.map.width - 1, maxGridX + buffer);
+        maxGridY = Math.min(this.map.height - 1, maxGridY + buffer);
+        
+        console.log('\n=== Rendering Map ===');
+        console.log('Camera position:', this.camera.x, this.camera.y);
+        console.log('Camera zoom:', this.camera.zoom);
+        console.log('Map dimensions:', this.map.width, 'x', this.map.height);
+        console.log('Rendering tiles from gridX:', minGridX, 'to', maxGridX, 'and gridY:', minGridY, 'to', maxGridY);
         
         // Render tiles in the correct order for isometric view (back to front)
-        // This ensures proper overlapping of tiles
+        let tilesRendered = 0;
+        let tilesByType = {};
+        
         for (let sum = minGridX + minGridY; sum <= maxGridX + maxGridY; sum++) {
             for (let gridX = minGridX; gridX <= maxGridX; gridX++) {
                 const gridY = sum - gridX;
@@ -138,7 +127,10 @@ class Renderer {
                 
                 // Get the tile at this grid position
                 const tile = this.map.getTile(gridX, gridY);
-                if (!tile) continue;
+                if (!tile) {
+                    console.warn(`No tile found at ${gridX},${gridY}`);
+                    continue;
+                }
                 
                 // Convert grid coordinates to isometric world coordinates
                 const isoPos = this.map.gridToIso(gridX, gridY);
@@ -150,18 +142,21 @@ class Renderer {
                 const tileWidthZoomed = this.tileWidth * this.camera.zoom;
                 const tileHeightZoomed = this.tileHeight * this.camera.zoom;
                 
+                // Track tile types for statistics
+                const terrainType = tile.terrainType || tile.type || 'unknown';
+                tilesByType[terrainType] = (tilesByType[terrainType] || 0) + 1;
+                
                 // Draw the tile
                 if (this.imagesLoaded) {
                     // Use the appropriate tile image based on terrain type
-                    const terrainType = tile.terrainType || tile.type;
                     const tileImage = this.map.getTileImage(terrainType);
                     
                     if (tileImage && tileImage.complete) {
                         // Draw the isometric tile image
                         this.ctx.drawImage(
                             tileImage,
-                            screenPos.x - (tileWidthZoomed / 2), // Center the image horizontally
-                            screenPos.y - (tileHeightZoomed / 2), // Center the image vertically
+                            screenPos.x - (tileWidthZoomed / 2),
+                            screenPos.y - (tileHeightZoomed / 2),
                             tileWidthZoomed,
                             tileHeightZoomed
                         );
@@ -172,7 +167,7 @@ class Renderer {
                             screenPos.y,
                             tileWidthZoomed,
                             tileHeightZoomed,
-                            this.getTileColor(tile.terrainType || tile.type)
+                            this.getTileColor(terrainType)
                         );
                     }
                 } else {
@@ -182,21 +177,17 @@ class Renderer {
                         screenPos.y,
                         tileWidthZoomed,
                         tileHeightZoomed,
-                        this.getTileColor(tile.terrainType || tile.type)
+                        this.getTileColor(terrainType)
                     );
                 }
                 
-                // Draw grid lines if enabled
-                if (Config.SHOW_GRID) {
-                    this.drawIsometricGrid(
-                        screenPos.x,
-                        screenPos.y,
-                        tileWidthZoomed,
-                        tileHeightZoomed
-                    );
-                }
+                tilesRendered++;
             }
         }
+        
+        console.log('Tiles rendered:', tilesRendered);
+        console.log('Tiles by type:', tilesByType);
+        console.log('=== Map Rendering Complete ===\n');
     }
     
     /**
@@ -237,14 +228,21 @@ class Renderer {
     /**
      * Get the color for a tile type
      */
-    getTileColor(tileType) {
-        switch (tileType) {
-            case 'grass': return Config.COLORS.GRASS;
-            case 'water': return Config.COLORS.WATER;
-            case 'sand': return Config.COLORS.SAND;
-            case 'mountain': return Config.COLORS.MOUNTAIN;
-            case 'forest': return Config.COLORS.FOREST;
-            default: return Config.COLORS.GRASS;
+    getTileColor(terrainType) {
+        switch (terrainType) {
+            case 'grass':
+                return '#90EE90'; // Light green
+            case 'water':
+                return '#4169E1'; // Royal blue
+            case 'mountain':
+                return '#A0522D'; // Brown
+            case 'forest':
+                return '#228B22'; // Forest green
+            case 'sand':
+                return '#F4A460'; // Sandy brown
+            default:
+                console.warn(`Unknown terrain type: ${terrainType}, using default color`);
+                return '#808080'; // Gray for unknown types
         }
     }
     

@@ -6094,29 +6094,26 @@ var Renderer = /*#__PURE__*/function () {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
 
-    // Isometric tile dimensions
+    // Tile dimensions
     this.tileWidth = 64;
     this.tileHeight = 32;
 
     // Camera position and zoom
     this.cameraX = 0;
     this.cameraY = 0;
-    this.zoom = 1;
+    this.zoom = 1.0;
 
-    // Colors
+    // Colors for different terrain types
     this.colors = {
-      // Tile colors
-      tile: '#8fbc8f',
-      tileOutline: '#2e8b57',
-      // Entity colors
-      humanHero: '#0000ff',
-      humanUnit: '#4169e1',
-      humanBuilding: '#4682b4',
-      aiHero: '#ff0000',
-      aiUnit: '#ff4500',
-      aiBuilding: '#8b0000',
-      // Selection color
-      selection: '#ffff00'
+      tile: '#4a8505',
+      // Default grass
+      tileOutline: '#45790b',
+      water: '#0077be',
+      mountain: '#736357',
+      forest: '#1b4001',
+      plains: '#90b53d',
+      desert: '#d4b167',
+      selection: 'rgba(255, 255, 255, 0.3)'
     };
 
     // Set canvas size
@@ -6134,8 +6131,7 @@ var Renderer = /*#__PURE__*/function () {
   return _createClass(Renderer, [{
     key: "clear",
     value: function clear() {
-      this.ctx.fillStyle = '#000000';
-      this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     }
 
     /**
@@ -6157,14 +6153,16 @@ var Renderer = /*#__PURE__*/function () {
   }, {
     key: "gridToScreen",
     value: function gridToScreen(x, y) {
-      // Isometric projection
-      var screenX = (x - y) * this.tileWidth / 2;
-      var screenY = (x + y) * this.tileHeight / 2;
+      // Convert grid coordinates to isometric screen coordinates
+      var screenX = (x - y) * (this.tileWidth * this.zoom / 2);
+      var screenY = (x + y) * (this.tileHeight * this.zoom / 2);
 
-      // Apply camera position and zoom
+      // Center the map on screen
+      var offsetX = this.canvas.width / 2;
+      var offsetY = this.canvas.height / 4;
       return {
-        x: (screenX - this.cameraX) * this.zoom + this.canvas.width / 2,
-        y: (screenY - this.cameraY) * this.zoom + this.canvas.height / 2
+        x: screenX + offsetX,
+        y: screenY + offsetY
       };
     }
 
@@ -6195,19 +6193,44 @@ var Renderer = /*#__PURE__*/function () {
   }, {
     key: "renderMap",
     value: function renderMap(map) {
-      if (!map || !map.length) return;
+      var _map$, _map$2;
+      console.log('=== Render Map Called ===');
+      console.log('Map data received:', map);
+      console.log('Map type:', map ? Array.isArray(map) ? 'Array' : _typeof(map) : 'undefined');
+      if (!map || !map.length) {
+        console.warn('No map data to render');
+        console.log('Camera position:', {
+          x: this.cameraX,
+          y: this.cameraY
+        });
+        console.log('Zoom level:', this.zoom);
+        return;
+      }
+      console.log('Map dimensions:', {
+        length: map.length,
+        firstRowLength: (_map$ = map[0]) === null || _map$ === void 0 ? void 0 : _map$.length,
+        isValid2DArray: map.every(function (row) {
+          return Array.isArray(row);
+        })
+      });
 
-      // Calculate map size (assuming square map)
-      var mapSize = Math.sqrt(map.length);
+      // Sample some map data
+      if (map.length > 0 && ((_map$2 = map[0]) === null || _map$2 === void 0 ? void 0 : _map$2.length) > 0) {
+        var _map$Math$floor, _map;
+        console.log('Sample tile data:');
+        console.log('Top-left:', map[0][0]);
+        console.log('Center:', (_map$Math$floor = map[Math.floor(map.length / 2)]) === null || _map$Math$floor === void 0 ? void 0 : _map$Math$floor[Math.floor(map[0].length / 2)]);
+        console.log('Bottom-right:', (_map = map[map.length - 1]) === null || _map === void 0 ? void 0 : _map[map[0].length - 1]);
+      }
 
-      // Render tiles
-      for (var y = 0; y < mapSize; y++) {
-        for (var x = 0; x < mapSize; x++) {
-          var index = y * mapSize + x;
-          var tileType = map[index];
-          this.renderTile(x, y, tileType);
+      // Iterate through the map grid
+      for (var y = 0; y < map.length; y++) {
+        for (var x = 0; x < map[y].length; x++) {
+          var tile = map[y][x];
+          this.renderTile(x, y, tile);
         }
       }
+      console.log('=== Map Render Complete ===\n');
     }
 
     /**
@@ -6221,8 +6244,33 @@ var Renderer = /*#__PURE__*/function () {
     value: function renderTile(x, y, tileType) {
       var screenPos = this.gridToScreen(x, y);
 
+      // Get color based on tile type
+      var color = this.colors.tile;
+      switch (tileType) {
+        case 1:
+          // Water
+          color = this.colors.water;
+          break;
+        case 2:
+          // Mountain
+          color = this.colors.mountain;
+          break;
+        case 3:
+          // Forest
+          color = this.colors.forest;
+          break;
+        case 4:
+          // Plains
+          color = this.colors.plains;
+          break;
+        case 5:
+          // Desert
+          color = this.colors.desert;
+          break;
+      }
+
       // Draw tile
-      this.drawIsometricTile(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, this.colors.tile);
+      this.drawIsometricTile(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, color);
 
       // Draw tile outline
       this.drawIsometricTileOutline(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, this.colors.tileOutline);
@@ -6241,13 +6289,13 @@ var Renderer = /*#__PURE__*/function () {
     value: function drawIsometricTile(x, y, width, height, color) {
       var halfWidth = width / 2;
       var halfHeight = height / 2;
-      this.ctx.fillStyle = color;
       this.ctx.beginPath();
       this.ctx.moveTo(x, y - halfHeight); // Top
       this.ctx.lineTo(x + halfWidth, y); // Right
       this.ctx.lineTo(x, y + halfHeight); // Bottom
       this.ctx.lineTo(x - halfWidth, y); // Left
       this.ctx.closePath();
+      this.ctx.fillStyle = color;
       this.ctx.fill();
     }
 
@@ -6264,14 +6312,13 @@ var Renderer = /*#__PURE__*/function () {
     value: function drawIsometricTileOutline(x, y, width, height, color) {
       var halfWidth = width / 2;
       var halfHeight = height / 2;
-      this.ctx.strokeStyle = color;
-      this.ctx.lineWidth = 1;
       this.ctx.beginPath();
       this.ctx.moveTo(x, y - halfHeight); // Top
       this.ctx.lineTo(x + halfWidth, y); // Right
       this.ctx.lineTo(x, y + halfHeight); // Bottom
       this.ctx.lineTo(x - halfWidth, y); // Left
       this.ctx.closePath();
+      this.ctx.strokeStyle = color;
       this.ctx.stroke();
     }
 
@@ -6285,25 +6332,12 @@ var Renderer = /*#__PURE__*/function () {
     value: function renderHero(hero, isCurrentPlayer) {
       if (!hero || !hero.position) return;
       var screenPos = this.gridToScreen(hero.position.x, hero.position.y);
-      var color = hero.owner === 'ai' ? this.colors.aiHero : this.colors.humanHero;
 
-      // Draw hero as a circle
-      this.ctx.fillStyle = color;
+      // Draw hero (larger than regular units)
       this.ctx.beginPath();
-      this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth * 0.3 * this.zoom, 0, Math.PI * 2);
+      this.ctx.fillStyle = isCurrentPlayer ? "#f1c40f" : "#9b59b6";
+      this.ctx.arc(screenPos.x, screenPos.y, 15 * this.zoom, 0, Math.PI * 2);
       this.ctx.fill();
-
-      // Draw outline for current player's hero
-      if (isCurrentPlayer) {
-        this.ctx.strokeStyle = this.colors.selection;
-        this.ctx.lineWidth = 2;
-        this.ctx.beginPath();
-        this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth * 0.35 * this.zoom, 0, Math.PI * 2);
-        this.ctx.stroke();
-      }
-
-      // Draw health bar
-      this.renderHealthBar(screenPos.x, screenPos.y - this.tileHeight * 0.5 * this.zoom, this.tileWidth * 0.6 * this.zoom, this.tileHeight * 0.1 * this.zoom, hero.health / 100);
     }
 
     /**
@@ -6315,14 +6349,12 @@ var Renderer = /*#__PURE__*/function () {
     value: function renderUnit(unit) {
       if (!unit || !unit.position) return;
       var screenPos = this.gridToScreen(unit.position.x, unit.position.y);
-      var color = unit.owner === 'ai' ? this.colors.aiUnit : this.colors.humanUnit;
 
-      // Draw unit as a small square
-      this.ctx.fillStyle = color;
-      this.ctx.fillRect(screenPos.x - this.tileWidth * 0.2 * this.zoom, screenPos.y - this.tileHeight * 0.2 * this.zoom, this.tileWidth * 0.4 * this.zoom, this.tileHeight * 0.4 * this.zoom);
-
-      // Draw health bar
-      this.renderHealthBar(screenPos.x, screenPos.y - this.tileHeight * 0.3 * this.zoom, this.tileWidth * 0.4 * this.zoom, this.tileHeight * 0.1 * this.zoom, unit.health / 50);
+      // Draw unit (for now, just a colored circle)
+      this.ctx.beginPath();
+      this.ctx.fillStyle = unit.owner === "human" ? "#2ecc71" : "#e67e22";
+      this.ctx.arc(screenPos.x, screenPos.y, 10 * this.zoom, 0, Math.PI * 2);
+      this.ctx.fill();
     }
 
     /**
@@ -6334,87 +6366,10 @@ var Renderer = /*#__PURE__*/function () {
     value: function renderBuilding(building) {
       if (!building || !building.position) return;
       var screenPos = this.gridToScreen(building.position.x, building.position.y);
-      var color = building.owner === 'ai' ? this.colors.aiBuilding : this.colors.humanBuilding;
 
-      // Draw building as a larger diamond
-      this.drawIsometricTile(screenPos.x, screenPos.y, this.tileWidth * 1.5 * this.zoom, this.tileHeight * 1.5 * this.zoom, color);
-
-      // Draw building outline
-      this.drawIsometricTileOutline(screenPos.x, screenPos.y, this.tileWidth * 1.5 * this.zoom, this.tileHeight * 1.5 * this.zoom, this.darkenColor(color, 0.5));
-
-      // Draw health bar
-      this.renderHealthBar(screenPos.x, screenPos.y - this.tileHeight * 0.8 * this.zoom, this.tileWidth * 0.8 * this.zoom, this.tileHeight * 0.1 * this.zoom, building.health / 200);
-
-      // Draw build progress if not complete
-      if (!building.isComplete) {
-        this.renderBuildProgress(screenPos.x, screenPos.y - this.tileHeight * 0.6 * this.zoom, this.tileWidth * 0.8 * this.zoom, this.tileHeight * 0.1 * this.zoom, building.buildProgress / 100);
-      }
-    }
-
-    /**
-     * Render a health bar
-     * @param {number} x - Screen x coordinate
-     * @param {number} y - Screen y coordinate
-     * @param {number} width - Bar width
-     * @param {number} height - Bar height
-     * @param {number} percentage - Health percentage (0-1)
-     */
-  }, {
-    key: "renderHealthBar",
-    value: function renderHealthBar(x, y, width, height, percentage) {
-      // Clamp percentage to 0-1
-      percentage = Math.max(0, Math.min(1, percentage));
-
-      // Bar background
-      this.ctx.fillStyle = '#333333';
-      this.ctx.fillRect(x - width / 2, y - height / 2, width, height);
-
-      // Health bar color based on percentage
-      var color;
-      if (percentage > 0.6) {
-        color = '#00ff00'; // Green
-      } else if (percentage > 0.3) {
-        color = '#ffff00'; // Yellow
-      } else {
-        color = '#ff0000'; // Red
-      }
-
-      // Health bar
-      this.ctx.fillStyle = color;
-      this.ctx.fillRect(x - width / 2, y - height / 2, width * percentage, height);
-
-      // Outline
-      this.ctx.strokeStyle = '#000000';
-      this.ctx.lineWidth = 1;
-      this.ctx.strokeRect(x - width / 2, y - height / 2, width, height);
-    }
-
-    /**
-     * Render a build progress bar
-     * @param {number} x - Screen x coordinate
-     * @param {number} y - Screen y coordinate
-     * @param {number} width - Bar width
-     * @param {number} height - Bar height
-     * @param {number} percentage - Progress percentage (0-1)
-     */
-  }, {
-    key: "renderBuildProgress",
-    value: function renderBuildProgress(x, y, width, height, percentage) {
-      // Clamp percentage to 0-1
-      percentage = Math.max(0, Math.min(1, percentage));
-
-      // Bar background
-      this.ctx.fillStyle = '#333333';
-      this.ctx.fillRect(x - width / 2, y - height / 2, width, height);
-
-      // Progress bar
-      this.ctx.fillStyle = '#0088ff';
-      this.ctx.fillRect(x - width / 2, y - height / 2, width * percentage, height);
-
-      // Outline
-      this.ctx.strokeStyle = '#000000';
-      this.ctx.lineWidth = 1;
-      this.ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+      // Draw building (for now, just a colored rectangle)
+      this.ctx.fillStyle = building.owner === "human" ? "#3498db" : "#e74c3c";
+      this.drawIsometricTile(screenPos.x, screenPos.y, this.tileWidth * 1.2 * this.zoom, this.tileHeight * 1.2 * this.zoom, this.ctx.fillStyle);
     }
 
     /**
@@ -6426,50 +6381,12 @@ var Renderer = /*#__PURE__*/function () {
     value: function renderSelection(entity) {
       if (!entity || !entity.position) return;
       var screenPos = this.gridToScreen(entity.position.x, entity.position.y);
-      this.ctx.strokeStyle = this.colors.selection;
-      this.ctx.lineWidth = 2;
-      if (entity.type === 'hero') {
-        // Highlight hero with a circle
-        this.ctx.beginPath();
-        this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth * 0.35 * this.zoom, 0, Math.PI * 2);
-        this.ctx.stroke();
-      } else if (entity.type === 'unit') {
-        // Highlight unit with a square
-        this.ctx.strokeRect(screenPos.x - this.tileWidth * 0.25 * this.zoom, screenPos.y - this.tileHeight * 0.25 * this.zoom, this.tileWidth * 0.5 * this.zoom, this.tileHeight * 0.5 * this.zoom);
-      } else {
-        // Highlight building with a diamond
-        var halfWidth = this.tileWidth * 0.75 * this.zoom;
-        var halfHeight = this.tileHeight * 0.75 * this.zoom;
-        this.ctx.beginPath();
-        this.ctx.moveTo(screenPos.x, screenPos.y - halfHeight);
-        this.ctx.lineTo(screenPos.x + halfWidth, screenPos.y);
-        this.ctx.lineTo(screenPos.x, screenPos.y + halfHeight);
-        this.ctx.lineTo(screenPos.x - halfWidth, screenPos.y);
-        this.ctx.closePath();
-        this.ctx.stroke();
-      }
-    }
 
-    /**
-     * Darken a color by a factor
-     * @param {string} color - CSS color string
-     * @param {number} factor - Darken factor (0-1)
-     * @returns {string} Darkened color
-     */
-  }, {
-    key: "darkenColor",
-    value: function darkenColor(color, factor) {
-      // Simple darkening for hex colors
-      if (color.startsWith('#')) {
-        var r = parseInt(color.substr(1, 2), 16);
-        var g = parseInt(color.substr(3, 2), 16);
-        var b = parseInt(color.substr(5, 2), 16);
-        r = Math.floor(r * (1 - factor));
-        g = Math.floor(g * (1 - factor));
-        b = Math.floor(b * (1 - factor));
-        return "#".concat(r.toString(16).padStart(2, '0')).concat(g.toString(16).padStart(2, '0')).concat(b.toString(16).padStart(2, '0'));
-      }
-      return color;
+      // Draw selection highlight
+      this.ctx.beginPath();
+      this.ctx.fillStyle = this.colors.selection;
+      this.ctx.arc(screenPos.x, screenPos.y, 20 * this.zoom, 0, Math.PI * 2);
+      this.ctx.fill();
     }
 
     /**
@@ -6993,9 +6910,21 @@ var Game = /*#__PURE__*/function () {
     value: function setupStateListeners() {
       var _this = this;
       // Listen for game state changes
-      this.room.onStateChange(function (state) {
-        // Update local game state from server state
+      this.room.onMessage("gameState", function (state) {
+        console.log('Received gameState message:', state);
         _this.updateGameState(state);
+      });
+
+      // Listen for player join events
+      this.room.onMessage("player_joined", function (data) {
+        console.log('Player joined:', data.id);
+      });
+
+      // Listen for game over events
+      this.room.onMessage("game_over", function (data) {
+        console.log('Game over! Winner:', data.winner);
+        console.log('Final scores - Human base:', data.humanBaseHealth, 'AI base:', data.aiBaseHealth);
+        console.log('Game duration:', data.gameTime, 'seconds');
       });
     }
   }, {
@@ -7027,35 +6956,81 @@ var Game = /*#__PURE__*/function () {
     key: "updateGameState",
     value: function updateGameState(state) {
       var _this3 = this;
-      // Update players
-      this.players.clear();
-      state.players.forEach(function (playerData, id) {
-        _this3.players.set(id, playerData);
-      });
+      console.log('\n=== Updating Game State ===');
+      console.log('Raw state received:', state);
 
-      // Update buildings
-      this.buildings.clear();
-      state.buildings.forEach(function (building, id) {
-        _this3.buildings.set(id, building);
-      });
-
-      // Update units
-      this.units.clear();
-      state.units.forEach(function (unit, id) {
-        _this3.units.set(id, unit);
-      });
-
-      // Update map if it has changed
-      if (state.map.length !== this.map.length) {
-        this.map = Array.from(state.map);
+      // Extract the actual game state from the message
+      var gameState = state.gameState || state;
+      console.log('Processed gameState:', gameState);
+      if (!gameState) {
+        console.error('No game state data received');
+        return;
       }
+      try {
+        // Update players
+        this.players.clear();
+        if (gameState.players && typeof gameState.players.forEach === 'function') {
+          gameState.players.forEach(function (playerData, id) {
+            _this3.players.set(id, playerData);
+          });
+          console.log('Players updated:', this.players.size);
+        } else {
+          console.log('No valid players data in gameState:', gameState.players);
+        }
 
-      // Update base health
-      this.humanBaseHealth = state.humanBaseHealth;
-      this.aiBaseHealth = state.aiBaseHealth;
+        // Update buildings
+        this.buildings.clear();
+        if (gameState.buildings && typeof gameState.buildings.forEach === 'function') {
+          gameState.buildings.forEach(function (building, id) {
+            _this3.buildings.set(id, building);
+          });
+          console.log('Buildings updated:', this.buildings.size);
+        } else {
+          console.log('No valid buildings data in gameState:', gameState.buildings);
+        }
 
-      // Update game time
-      this.gameTime = state.gameTime;
+        // Update units
+        this.units.clear();
+        if (gameState.units && typeof gameState.units.forEach === 'function') {
+          gameState.units.forEach(function (unit, id) {
+            _this3.units.set(id, unit);
+          });
+          console.log('Units updated:', this.units.size);
+        } else {
+          console.log('No valid units data in gameState:', gameState.units);
+        }
+
+        // Update map
+        if (gameState.map && Array.isArray(gameState.map)) {
+          console.log('Updating map data:', gameState.map);
+          this.map = Array.from(gameState.map);
+          console.log('Map updated:', this.map.length, 'tiles');
+          if (this.map.length === 0) {
+            console.warn('Map array is empty');
+          }
+        } else {
+          console.warn('No valid map data in gameState:', gameState.map);
+        }
+
+        // Update base health
+        if (typeof gameState.humanBaseHealth === 'number') {
+          this.humanBaseHealth = gameState.humanBaseHealth;
+        }
+        if (typeof gameState.aiBaseHealth === 'number') {
+          this.aiBaseHealth = gameState.aiBaseHealth;
+        }
+        console.log('Base health - Human:', this.humanBaseHealth, 'AI:', this.aiBaseHealth);
+
+        // Update game time
+        if (typeof gameState.gameTime === 'number') {
+          this.gameTime = gameState.gameTime;
+        }
+        console.log('Game time:', this.gameTime);
+      } catch (error) {
+        console.error('Error updating game state:', error);
+        console.error('State that caused error:', gameState);
+      }
+      console.log('=== Game State Update Complete ===\n');
     }
   }, {
     key: "gameLoop",

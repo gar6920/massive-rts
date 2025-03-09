@@ -10,16 +10,22 @@ class GameRoom extends Room {
   }
 
   onCreate(options) {
-    console.log("GameRoom created!");
+    console.log("\n=== Creating Game Room ===");
+    console.log("GameRoom created with options:", options);
     
     // Set max clients based on options or default to 100
     this.maxClients = options.maxPlayers || 100;
+    console.log("Max clients set to:", this.maxClients);
     
     // Create and set the game state
     this.setState(new GameState());
+    console.log("Game state initialized");
     
     // Generate map size based on player count (10 tiles per expected player)
     const mapSize = Math.max(20, Math.min(100, this.maxClients * 10));
+    console.log("Calculated map size:", mapSize);
+    
+    // Generate the map
     this.generateMap(mapSize);
     
     // Set up human and AI bases
@@ -47,16 +53,81 @@ class GameRoom extends Room {
     // Set up message handlers
     this.setupMessageHandlers();
     
-    console.log("GameRoom initialized with map size:", mapSize);
+    // Log the initial state
+    console.log("\nInitial Game State:");
+    console.log("Map size:", mapSize);
+    console.log("Map array length:", this.state.map.length);
+    console.log("Sample map data:", this.state.map.slice(0, 3));
+    console.log("Buildings:", this.state.buildings.size);
+    console.log("=== Game Room Creation Complete ===\n");
   }
   
   generateMap(mapSize) {
-    // Simple map generation - 0 represents empty tile
-    for (let i = 0; i < mapSize * mapSize; i++) {
-      this.state.map.push(0);
+    console.log('\n=== Generating Map ===');
+    console.log(`Generating map with size: ${mapSize}x${mapSize}`);
+    
+    // Clear existing map data
+    while (this.state.map.length > 0) {
+      this.state.map.pop();
     }
     
-    // TODO: Add more complex map generation with terrain, resources, etc.
+    // Create 2D array for map data
+    const mapData = [];
+    
+    // Generate map with terrain types
+    for (let y = 0; y < mapSize; y++) {
+      const row = [];
+      for (let x = 0; x < mapSize; x++) {
+        // Create tile data
+        const tile = {
+          terrainType: 'grass', // Default terrain
+          type: 'grass', // For backward compatibility
+          passable: true,
+          walkable: true,
+          elevation: 1,
+          x: x,
+          y: y
+        };
+        
+        // Add some variety with different terrain types
+        const rand = Math.random();
+        if (rand < 0.1) {
+          tile.terrainType = 'water';
+          tile.type = 'water';
+          tile.passable = false;
+          tile.walkable = false;
+          tile.elevation = 0;
+        } else if (rand < 0.2) {
+          tile.terrainType = 'forest';
+          tile.type = 'forest';
+          tile.elevation = 2;
+        } else if (rand < 0.25) {
+          tile.terrainType = 'mountain';
+          tile.type = 'mountain';
+          tile.passable = false;
+          tile.walkable = false;
+          tile.elevation = 3;
+        }
+        
+        row.push(tile);
+      }
+      mapData.push(row);
+    }
+    
+    // Store the map data in state
+    this.state.map = mapData;
+    
+    console.log(`Generated map dimensions: ${mapSize}x${mapSize}`);
+    console.log('Map structure:', {
+      rows: mapData.length,
+      columns: mapData[0].length,
+      totalTiles: mapData.length * mapData[0].length
+    });
+    console.log('Sample tiles:');
+    console.log('Top-left:', mapData[0][0]);
+    console.log('Center:', mapData[Math.floor(mapSize/2)][Math.floor(mapSize/2)]);
+    console.log('Bottom-right:', mapData[mapSize-1][mapSize-1]);
+    console.log('=== Map Generation Complete ===\n');
   }
   
   setupBases(mapSize) {
@@ -186,7 +257,9 @@ class GameRoom extends Room {
   }
   
   onJoin(client, options) {
-    console.log(client.sessionId, "joined!");
+    console.log('\n=== Player Joining ===');
+    console.log('Client ID:', client.sessionId);
+    console.log('Join options:', options);
     
     // Create player data
     const playerData = new PlayerData();
@@ -207,8 +280,37 @@ class GameRoom extends Room {
     playerData.hero = hero;
     this.state.players.set(client.sessionId, playerData);
     
+    // Send initial game state to the joining client
+    const gameState = {
+      playerId: client.sessionId,
+      gameState: {
+        map: this.state.map,
+        mapDimensions: {
+          width: this.state.map.length,
+          height: this.state.map[0].length,
+          zoomFactor: 1.0
+        },
+        players: this.state.players,
+        buildings: this.state.buildings,
+        units: this.state.units,
+        serverStartTime: this.state.serverStartTime,
+        gameTime: this.state.gameTime
+      }
+    };
+    
+    console.log('Sending initial game state:');
+    console.log('- Map dimensions:', `${gameState.gameState.mapDimensions.width}x${gameState.gameState.mapDimensions.height}`);
+    console.log('- Players:', this.state.players.size);
+    console.log('- Buildings:', this.state.buildings.size);
+    console.log('- Units:', this.state.units.size);
+    
+    // Send the game state to the client
+    client.send("gameState", gameState);
+    
     // Broadcast player join event
     this.broadcast("player_joined", { id: client.sessionId });
+    
+    console.log('=== Player Join Complete ===\n');
   }
   
   onLeave(client, consented) {

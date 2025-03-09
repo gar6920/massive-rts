@@ -88,9 +88,21 @@ class Game {
   
   setupStateListeners() {
     // Listen for game state changes
-    this.room.onStateChange((state) => {
-      // Update local game state from server state
+    this.room.onMessage("gameState", (state) => {
+      console.log('Received gameState message:', state);
       this.updateGameState(state);
+    });
+
+    // Listen for player join events
+    this.room.onMessage("player_joined", (data) => {
+      console.log('Player joined:', data.id);
+    });
+
+    // Listen for game over events
+    this.room.onMessage("game_over", (data) => {
+      console.log('Game over! Winner:', data.winner);
+      console.log('Final scores - Human base:', data.humanBaseHealth, 'AI base:', data.aiBaseHealth);
+      console.log('Game duration:', data.gameTime, 'seconds');
     });
   }
   
@@ -118,35 +130,86 @@ class Game {
   }
   
   updateGameState(state) {
-    // Update players
-    this.players.clear();
-    state.players.forEach((playerData, id) => {
-      this.players.set(id, playerData);
-    });
+    console.log('\n=== Updating Game State ===');
+    console.log('Raw state received:', state);
     
-    // Update buildings
-    this.buildings.clear();
-    state.buildings.forEach((building, id) => {
-      this.buildings.set(id, building);
-    });
+    // Extract the actual game state from the message
+    const gameState = state.gameState || state;
+    console.log('Processed gameState:', gameState);
     
-    // Update units
-    this.units.clear();
-    state.units.forEach((unit, id) => {
-      this.units.set(id, unit);
-    });
-    
-    // Update map if it has changed
-    if (state.map.length !== this.map.length) {
-      this.map = Array.from(state.map);
+    if (!gameState) {
+      console.error('No game state data received');
+      return;
+    }
+
+    try {
+      // Update players
+      this.players.clear();
+      if (gameState.players && typeof gameState.players.forEach === 'function') {
+        gameState.players.forEach((playerData, id) => {
+          this.players.set(id, playerData);
+        });
+        console.log('Players updated:', this.players.size);
+      } else {
+        console.log('No valid players data in gameState:', gameState.players);
+      }
+
+      // Update buildings
+      this.buildings.clear();
+      if (gameState.buildings && typeof gameState.buildings.forEach === 'function') {
+        gameState.buildings.forEach((building, id) => {
+          this.buildings.set(id, building);
+        });
+        console.log('Buildings updated:', this.buildings.size);
+      } else {
+        console.log('No valid buildings data in gameState:', gameState.buildings);
+      }
+
+      // Update units
+      this.units.clear();
+      if (gameState.units && typeof gameState.units.forEach === 'function') {
+        gameState.units.forEach((unit, id) => {
+          this.units.set(id, unit);
+        });
+        console.log('Units updated:', this.units.size);
+      } else {
+        console.log('No valid units data in gameState:', gameState.units);
+      }
+
+      // Update map
+      if (gameState.map && Array.isArray(gameState.map)) {
+        console.log('Updating map data:', gameState.map);
+        this.map = Array.from(gameState.map);
+        console.log('Map updated:', this.map.length, 'tiles');
+        
+        if (this.map.length === 0) {
+          console.warn('Map array is empty');
+        }
+      } else {
+        console.warn('No valid map data in gameState:', gameState.map);
+      }
+
+      // Update base health
+      if (typeof gameState.humanBaseHealth === 'number') {
+        this.humanBaseHealth = gameState.humanBaseHealth;
+      }
+      if (typeof gameState.aiBaseHealth === 'number') {
+        this.aiBaseHealth = gameState.aiBaseHealth;
+      }
+      console.log('Base health - Human:', this.humanBaseHealth, 'AI:', this.aiBaseHealth);
+
+      // Update game time
+      if (typeof gameState.gameTime === 'number') {
+        this.gameTime = gameState.gameTime;
+      }
+      console.log('Game time:', this.gameTime);
+      
+    } catch (error) {
+      console.error('Error updating game state:', error);
+      console.error('State that caused error:', gameState);
     }
     
-    // Update base health
-    this.humanBaseHealth = state.humanBaseHealth;
-    this.aiBaseHealth = state.aiBaseHealth;
-    
-    // Update game time
-    this.gameTime = state.gameTime;
+    console.log('=== Game State Update Complete ===\n');
   }
   
   gameLoop() {

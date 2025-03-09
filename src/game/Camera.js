@@ -5,60 +5,56 @@ class Camera {
     /**
      * Initialize the camera
      */
-    constructor() {
-        // Camera position (top-left corner of the viewport in world coordinates)
+    constructor(game) {
+        this.game = game;
+        
+        // Camera position in world coordinates
         this.x = 0;
         this.y = 0;
         
-        // Camera dimensions (viewport size)
+        // Camera dimensions
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
         
         // Camera zoom level
-        this.zoom = Config.ZOOM_DEFAULT;
+        this.zoom = 1.0;
         
-        // Calculate initial boundaries based on current map dimensions
-        this.updateBoundaries();
+        // Update dimensions initially
+        this.updateDimensions();
         
-        // We'll center on player units later when they're created
-        // Don't call centerOnMap() here
-        
-        console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
+        console.log('\n=== Camera Initialized ===');
+        console.log('Dimensions:', `${this.width}x${this.height}`);
+        console.log('Initial position:', `(${this.x}, ${this.y})`);
+        console.log('Initial zoom:', this.zoom);
+        console.log('=== Camera Setup Complete ===\n');
     }
 
     /**
      * Center the camera on the map
      */
     centerOnMap() {
-        // Calculate the map dimensions in isometric coordinates
-        const mapWidth = Config.MAP_WIDTH;
-        const mapHeight = Config.MAP_HEIGHT;
-        const tileSize = Config.TILE_SIZE;
+        console.log('\n=== Centering Camera on Map ===');
         
-        // Calculate the isometric map width and height
-        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
-        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
+        if (!this.game.map) {
+            console.error('Cannot center camera: map not initialized');
+            return;
+        }
         
-        // Calculate the center in grid coordinates
-        const centerGridX = mapWidth / 2;
-        const centerGridY = mapHeight / 2;
+        // Calculate the center point of the map in isometric coordinates
+        const centerX = (this.game.map.width * Config.TILE_SIZE) / 2;
+        const centerY = (this.game.map.height * Config.TILE_SIZE) / 4;
         
-        // Convert to isometric coordinates
-        const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
-        const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
+        // Adjust camera position to center the map
+        this.x = centerX - (this.width / this.zoom) / 2;
+        this.y = centerY - (this.height / this.zoom) / 2;
         
-        // Calculate the viewport dimensions in world space
-        const viewportWorldWidth = this.width / this.zoom;
-        const viewportWorldHeight = this.height / this.zoom;
-        
-        // Set camera position to center on the map
-        this.x = isoCenterX - (viewportWorldWidth / 2);
-        this.y = isoCenterY - (viewportWorldHeight / 2);
-        
-        // Ensure camera stays within boundaries
+        // Ensure camera stays within bounds
         this.clampPosition();
         
-        console.log(`Camera centered on map at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
+        console.log('Map dimensions:', `${this.game.map.width}x${this.game.map.height}`);
+        console.log('Center point:', `(${centerX}, ${centerY})`);
+        console.log('New camera position:', `(${this.x}, ${this.y})`);
+        console.log('=== Camera Centered ===\n');
     }
 
     /**
@@ -204,17 +200,33 @@ class Camera {
      * Update camera dimensions when window is resized or map dimensions change
      */
     updateDimensions() {
-        // Update viewport dimensions
+        console.log('\n=== Updating Camera Dimensions ===');
+        
+        // Store old dimensions
+        const oldWidth = this.width;
+        const oldHeight = this.height;
+        
+        // Update dimensions
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
         
-        // Update boundaries based on current map dimensions
-        this.updateBoundaries();
+        // Calculate world bounds
+        if (this.game.map) {
+            const worldWidth = this.game.map.width * Config.TILE_SIZE;
+            const worldHeight = this.game.map.height * Config.TILE_SIZE;
+            
+            console.log('World bounds:', `${worldWidth}x${worldHeight}`);
+            console.log('Viewport dimensions:', `${this.width}x${this.height}`);
+            console.log('Zoom level:', this.zoom);
+        }
         
-        // Ensure camera position is still valid
-        this.clampPosition();
+        // If dimensions changed, recenter the camera
+        if (oldWidth !== this.width || oldHeight !== this.height) {
+            console.log('Dimensions changed, recentering camera');
+            this.centerOnMap();
+        }
         
-        console.log(`Camera dimensions updated: width=${this.width}, height=${this.height}, map=${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
+        console.log('=== Camera Dimensions Updated ===\n');
     }
 
     /**
@@ -339,6 +351,15 @@ class Camera {
             y: this.y - buffer,
             width: viewportWidth + buffer * 2,
             height: viewportHeight + buffer * 2
+        };
+    }
+
+    getWorldBounds() {
+        return {
+            left: this.x,
+            top: this.y,
+            right: this.x + (this.width / this.zoom),
+            bottom: this.y + (this.height / this.zoom)
         };
     }
 } 

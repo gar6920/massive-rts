@@ -1,79 +1,41 @@
 /**
- * Game configuration constants
+ * Game configuration
  */
-class Config {
-    // Canvas and rendering
-    static CANVAS_WIDTH = window.innerWidth;
-    static CANVAS_HEIGHT = window.innerHeight;
+const Config = {
+    // Canvas dimensions
+    CANVAS_WIDTH: 1024,
+    CANVAS_HEIGHT: 768,
     
     // Map settings
-    static MAP_WIDTH = 100; // Number of tiles horizontally
-    static MAP_HEIGHT = 100; // Number of tiles vertically
-    static TILE_SIZE = 64; // Size of each tile in pixels - increased for better isometric rendering
+    MAP_WIDTH: 100,
+    MAP_HEIGHT: 100,
+    TILE_SIZE: 64,
     
     // Camera settings
-    static CAMERA_SPEED = 10; // Camera movement speed
-    static CAMERA_EDGE_THRESHOLD = 50; // Pixels from edge to trigger camera movement
-    static ZOOM_MIN = 0.5; // Minimum zoom level (50%)
-    static ZOOM_MAX = 2.0; // Maximum zoom level (200%)
-    static ZOOM_SPEED = 0.1; // How much to zoom per mouse wheel tick
-    static ZOOM_DEFAULT = 1.2; // Default zoom level - increased for a more detailed view
-    
-    // Unit settings
-    static UNIT_SPEED = 2; // Movement speed of units
-    static UNIT_SIZE = 32; // Size of units in pixels
-    static UNIT_ATTRIBUTES = {
-        SOLDIER: {
-            health: 100,
-            attackDamage: 10,
-            attackRange: 50,
-            attackCooldown: 1000,
-            speed: 2
-        }
-    };
-    
-    // Building settings
-    static BUILDING_ATTRIBUTES = {
-        BASE: {
-            health: 1000,
-            productionRate: 0.1, // Units per second
-            productionType: 'SOLDIER'
-        },
-        BARRACKS: {
-            health: 500,
-            productionRate: 0.2,
-            productionType: 'SOLDIER'
-        }
-    };
-    
-    // Player settings
-    static PLAYER_COLORS = [
-        'red',
-        'blue',
-        'green',
-        'yellow'
-    ];
-    
-    // Colors
-    static COLORS = {
-        GRASS: '#3a8c3a',
-        WATER: '#4286f4',
-        SAND: '#e6d56e',
-        MOUNTAIN: '#7a7a7a',
-        FOREST: '#1f5e1f',
-        PLAYER_UNIT: '#0000ff',
-        ENEMY_UNIT: '#ff0000',
-        SELECTION: '#ffffff',
-        GRID: 'rgba(0, 0, 0, 0.2)'
-    };
+    ZOOM_MIN: 0.5,
+    ZOOM_MAX: 2.0,
+    ZOOM_DEFAULT: 1.0,
+    CAMERA_SPEED: 500,
+    CAMERA_ZOOM_SPEED: 0.1,
     
     // Debug settings
-    static DEBUG_MODE = true; // Enable/disable debug information
-    static SHOW_GRID = false; // Show grid lines
+    DEBUG_MODE: true,
     
-    // Update the canvas dimensions when the window is resized
-    static updateDimensions() {
-        this.CANVAS_WIDTH = window.innerWidth;
-        this.CANVAS_HEIGHT = window.innerHeight;
+    // Colors
+    COLORS: {
+        SELECTION: '#00ff00',
+        PLAYER_UNIT: '#0000ff',
+        ENEMY_UNIT: '#ff0000',
+        GRID: 'rgba(255, 255, 255, 0.1)',
+        GRASS: '#90EE90',
+        WATER: '#4169E1',
+        MOUNTAIN: '#A0522D',
+        FOREST: '#228B22',
+        SAND: '#F4A460'
     }
+};
+
+// Export the config
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { Config };
 } 

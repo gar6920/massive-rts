@@ -1,10 +1,10 @@
 Massive RTS Game - Code Compilation 
-Created: Sun 03/09/2025 15:14:20.61 
+Created: Sun 03/09/2025 19:16:49.78 
 ======================================== 
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\index.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\index.js 
 ======================================== 
  
 import { Client } from "colyseus.js";
@@ -30,7 +30,7 @@ class Game {
     console.log("Initializing game...");
     
     // Colyseus client
-    this.client = new Client("ws://localhost:2567");
+    this.client = new Client("ws://localhost:3000");
     this.room = null;
     
     // Game components
@@ -97,9 +97,21 @@ class Game {
   
   setupStateListeners() {
     // Listen for game state changes
-    this.room.onStateChange((state) => {
-      // Update local game state from server state
+    this.room.onMessage("gameState", (state) => {
+      console.log('Received gameState message:', state);
       this.updateGameState(state);
+    });
+
+    // Listen for player join events
+    this.room.onMessage("player_joined", (data) => {
+      console.log('Player joined:', data.id);
+    });
+
+    // Listen for game over events
+    this.room.onMessage("game_over", (data) => {
+      console.log('Game over! Winner:', data.winner);
+      console.log('Final scores - Human base:', data.humanBaseHealth, 'AI base:', data.aiBaseHealth);
+      console.log('Game duration:', data.gameTime, 'seconds');
     });
   }
   
@@ -127,35 +139,52 @@ class Game {
   }
   
   updateGameState(state) {
-    // Update players
-    this.players.clear();
-    state.players.forEach((playerData, id) => {
-      this.players.set(id, playerData);
-    });
+    console.log('\n=== Updating Game State ===');
     
-    // Update buildings
-    this.buildings.clear();
-    state.buildings.forEach((building, id) => {
-      this.buildings.set(id, building);
-    });
-    
-    // Update units
-    this.units.clear();
-    state.units.forEach((unit, id) => {
-      this.units.set(id, unit);
-    });
-    
-    // Update map if it has changed
-    if (state.map.length !== this.map.length) {
-      this.map = Array.from(state.map);
+    // Extract the actual game state from the message
+    const gameState = state.gameState;
+    if (!gameState) {
+      console.error('Invalid game state received:', state);
+      return;
     }
     
+    // Update players
+    this.players.clear();
+    gameState.players.forEach((playerData, id) => {
+      this.players.set(id, playerData);
+    });
+    console.log('Players updated:', this.players.size);
+
+    // Update buildings
+    this.buildings.clear();
+    gameState.buildings.forEach((building, id) => {
+      this.buildings.set(id, building);
+    });
+    console.log('Buildings updated:', this.buildings.size);
+
+    // Update units
+    this.units.clear();
+    gameState.units.forEach((unit, id) => {
+      this.units.set(id, unit);
+    });
+    console.log('Units updated:', this.units.size);
+
+    // Update map if it has changed
+    if (gameState.map && (!this.map || gameState.map.length !== this.map.length)) {
+      console.log('Updating map:', gameState.map.length, 'tiles');
+      this.map = Array.from(gameState.map);
+    }
+
     // Update base health
-    this.humanBaseHealth = state.humanBaseHealth;
-    this.aiBaseHealth = state.aiBaseHealth;
-    
+    this.humanBaseHealth = gameState.humanBaseHealth;
+    this.aiBaseHealth = gameState.aiBaseHealth;
+    console.log('Base health - Human:', this.humanBaseHealth, 'AI:', this.aiBaseHealth);
+
     // Update game time
-    this.gameTime = state.gameTime;
+    this.gameTime = gameState.gameTime;
+    console.log('Game time:', this.gameTime);
+    
+    console.log('=== Game State Update Complete ===\n');
   }
   
   gameLoop() {
@@ -255,7 +284,7 @@ export { Game };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Building.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\entities\Building.js 
 ======================================== 
  
 /**
@@ -430,7 +459,7 @@ class Building extends Entity {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Entity.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\entities\Entity.js 
 ======================================== 
  
 /**
@@ -560,7 +589,7 @@ class Entity {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Unit.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\entities\Unit.js 
 ======================================== 
  
 /**
@@ -949,7 +978,7 @@ class Unit extends Entity {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\BuildingImageLoader.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\BuildingImageLoader.js 
 ======================================== 
  
 /**
@@ -1024,7 +1053,7 @@ class BuildingImageLoader {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Camera.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Camera.js 
 ======================================== 
  
 /**
@@ -1034,60 +1063,56 @@ class Camera {
     /**
      * Initialize the camera
      */
-    constructor() {
-        // Camera position (top-left corner of the viewport in world coordinates)
+    constructor(game) {
+        this.game = game;
+        
+        // Camera position in world coordinates
         this.x = 0;
         this.y = 0;
         
-        // Camera dimensions (viewport size)
+        // Camera dimensions
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
         
         // Camera zoom level
-        this.zoom = Config.ZOOM_DEFAULT;
+        this.zoom = 1.0;
         
-        // Calculate initial boundaries based on current map dimensions
-        this.updateBoundaries();
+        // Update dimensions initially
+        this.updateDimensions();
         
-        // We'll center on player units later when they're created
-        // Don't call centerOnMap() here
-        
-        console.log(`Camera initialized at position (${this.x}, ${this.y}) with zoom ${this.zoom}`);
+        console.log('\n=== Camera Initialized ===');
+        console.log('Dimensions:', `${this.width}x${this.height}`);
+        console.log('Initial position:', `(${this.x}, ${this.y})`);
+        console.log('Initial zoom:', this.zoom);
+        console.log('=== Camera Setup Complete ===\n');
     }
 
     /**
      * Center the camera on the map
      */
     centerOnMap() {
-        // Calculate the map dimensions in isometric coordinates
-        const mapWidth = Config.MAP_WIDTH;
-        const mapHeight = Config.MAP_HEIGHT;
-        const tileSize = Config.TILE_SIZE;
+        console.log('\n=== Centering Camera on Map ===');
         
-        // Calculate the isometric map width and height
-        const isoMapWidth = (mapWidth + mapHeight) * (tileSize / 2);
-        const isoMapHeight = (mapWidth + mapHeight) * (tileSize / 4);
+        if (!this.game.map) {
+            console.error('Cannot center camera: map not initialized');
+            return;
+        }
         
-        // Calculate the center in grid coordinates
-        const centerGridX = mapWidth / 2;
-        const centerGridY = mapHeight / 2;
+        // Calculate the center point of the map in isometric coordinates
+        const centerX = (this.game.map.width * Config.TILE_SIZE) / 2;
+        const centerY = (this.game.map.height * Config.TILE_SIZE) / 4;
         
-        // Convert to isometric coordinates
-        const isoCenterX = (centerGridX - centerGridY) * (tileSize / 2);
-        const isoCenterY = (centerGridX + centerGridY) * (tileSize / 4);
+        // Adjust camera position to center the map
+        this.x = centerX - (this.width / this.zoom) / 2;
+        this.y = centerY - (this.height / this.zoom) / 2;
         
-        // Calculate the viewport dimensions in world space
-        const viewportWorldWidth = this.width / this.zoom;
-        const viewportWorldHeight = this.height / this.zoom;
-        
-        // Set camera position to center on the map
-        this.x = isoCenterX - (viewportWorldWidth / 2);
-        this.y = isoCenterY - (viewportWorldHeight / 2);
-        
-        // Ensure camera stays within boundaries
+        // Ensure camera stays within bounds
         this.clampPosition();
         
-        console.log(`Camera centered on map at (${this.x.toFixed(2)}, ${this.y.toFixed(2)})`);
+        console.log('Map dimensions:', `${this.game.map.width}x${this.game.map.height}`);
+        console.log('Center point:', `(${centerX}, ${centerY})`);
+        console.log('New camera position:', `(${this.x}, ${this.y})`);
+        console.log('=== Camera Centered ===\n');
     }
 
     /**
@@ -1233,17 +1258,33 @@ class Camera {
      * Update camera dimensions when window is resized or map dimensions change
      */
     updateDimensions() {
-        // Update viewport dimensions
+        console.log('\n=== Updating Camera Dimensions ===');
+        
+        // Store old dimensions
+        const oldWidth = this.width;
+        const oldHeight = this.height;
+        
+        // Update dimensions
         this.width = Config.CANVAS_WIDTH;
         this.height = Config.CANVAS_HEIGHT;
         
-        // Update boundaries based on current map dimensions
-        this.updateBoundaries();
+        // Calculate world bounds
+        if (this.game.map) {
+            const worldWidth = this.game.map.width * Config.TILE_SIZE;
+            const worldHeight = this.game.map.height * Config.TILE_SIZE;
+            
+            console.log('World bounds:', `${worldWidth}x${worldHeight}`);
+            console.log('Viewport dimensions:', `${this.width}x${this.height}`);
+            console.log('Zoom level:', this.zoom);
+        }
         
-        // Ensure camera position is still valid
-        this.clampPosition();
+        // If dimensions changed, recenter the camera
+        if (oldWidth !== this.width || oldHeight !== this.height) {
+            console.log('Dimensions changed, recentering camera');
+            this.centerOnMap();
+        }
         
-        console.log(`Camera dimensions updated: width=${this.width}, height=${this.height}, map=${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
+        console.log('=== Camera Dimensions Updated ===\n');
     }
 
     /**
@@ -1370,96 +1411,67 @@ class Camera {
             height: viewportHeight + buffer * 2
         };
     }
-}  
- 
- 
-======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Config.js 
-======================================== 
- 
-/**
- * Game configuration constants
- */
-class Config {
-    // Canvas and rendering
-    static CANVAS_WIDTH = window.innerWidth;
-    static CANVAS_HEIGHT = window.innerHeight;
-    
-    // Map settings
-    static MAP_WIDTH = 100; // Number of tiles horizontally
-    static MAP_HEIGHT = 100; // Number of tiles vertically
-    static TILE_SIZE = 64; // Size of each tile in pixels - increased for better isometric rendering
-    
-    // Camera settings
-    static CAMERA_SPEED = 10; // Camera movement speed
-    static CAMERA_EDGE_THRESHOLD = 50; // Pixels from edge to trigger camera movement
-    static ZOOM_MIN = 0.5; // Minimum zoom level (50%)
-    static ZOOM_MAX = 2.0; // Maximum zoom level (200%)
-    static ZOOM_SPEED = 0.1; // How much to zoom per mouse wheel tick
-    static ZOOM_DEFAULT = 1.2; // Default zoom level - increased for a more detailed view
-    
-    // Unit settings
-    static UNIT_SPEED = 2; // Movement speed of units
-    static UNIT_SIZE = 32; // Size of units in pixels
-    static UNIT_ATTRIBUTES = {
-        SOLDIER: {
-            health: 100,
-            attackDamage: 10,
-            attackRange: 50,
-            attackCooldown: 1000,
-            speed: 2
-        }
-    };
-    
-    // Building settings
-    static BUILDING_ATTRIBUTES = {
-        BASE: {
-            health: 1000,
-            productionRate: 0.1, // Units per second
-            productionType: 'SOLDIER'
-        },
-        BARRACKS: {
-            health: 500,
-            productionRate: 0.2,
-            productionType: 'SOLDIER'
-        }
-    };
-    
-    // Player settings
-    static PLAYER_COLORS = [
-        'red',
-        'blue',
-        'green',
-        'yellow'
-    ];
-    
-    // Colors
-    static COLORS = {
-        GRASS: '#3a8c3a',
-        WATER: '#4286f4',
-        SAND: '#e6d56e',
-        MOUNTAIN: '#7a7a7a',
-        FOREST: '#1f5e1f',
-        PLAYER_UNIT: '#0000ff',
-        ENEMY_UNIT: '#ff0000',
-        SELECTION: '#ffffff',
-        GRID: 'rgba(0, 0, 0, 0.2)'
-    };
-    
-    // Debug settings
-    static DEBUG_MODE = true; // Enable/disable debug information
-    static SHOW_GRID = false; // Show grid lines
-    
-    // Update the canvas dimensions when the window is resized
-    static updateDimensions() {
-        this.CANVAS_WIDTH = window.innerWidth;
-        this.CANVAS_HEIGHT = window.innerHeight;
+
+    getWorldBounds() {
+        return {
+            left: this.x,
+            top: this.y,
+            right: this.x + (this.width / this.zoom),
+            bottom: this.y + (this.height / this.zoom)
+        };
     }
 }  
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Game.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Config.js 
+======================================== 
+ 
+/**
+ * Game configuration
+ */
+const Config = {
+    // Canvas dimensions
+    CANVAS_WIDTH: 1024,
+    CANVAS_HEIGHT: 768,
+    
+    // Map settings
+    MAP_WIDTH: 100,
+    MAP_HEIGHT: 100,
+    TILE_SIZE: 64,
+    
+    // Camera settings
+    ZOOM_MIN: 0.5,
+    ZOOM_MAX: 2.0,
+    ZOOM_DEFAULT: 1.0,
+    CAMERA_SPEED: 500,
+    CAMERA_ZOOM_SPEED: 0.1,
+    
+    // Debug settings
+    DEBUG_MODE: true,
+    
+    // Colors
+    COLORS: {
+        SELECTION: '#00ff00',
+        PLAYER_UNIT: '#0000ff',
+        ENEMY_UNIT: '#ff0000',
+        GRID: 'rgba(255, 255, 255, 0.1)',
+        GRASS: '#90EE90',
+        WATER: '#4169E1',
+        MOUNTAIN: '#A0522D',
+        FOREST: '#228B22',
+        SAND: '#F4A460'
+    }
+};
+
+// Export the config
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { Config };
+}  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Game.js 
 ======================================== 
  
 // This file is now replaced by the Game class in src/index.js
@@ -1468,11 +1480,248 @@ FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Game.js
 import { Game as NewGame } from '../index';
 
 // Export the same Game class from index.js
-export const Game = NewGame;  
+export const Game = NewGame;
+
+/**
+ * Main game class
+ */
+class Game {
+    /**
+     * Initialize the game
+     */
+    constructor(canvas) {
+        console.log('\n=== Initializing Game ===');
+        
+        this.canvas = canvas;
+        this.ctx = canvas.getContext('2d');
+        
+        // Set canvas dimensions
+        this.canvas.width = Config.CANVAS_WIDTH;
+        this.canvas.height = Config.CANVAS_HEIGHT;
+        
+        console.log('Canvas dimensions:', `${this.canvas.width}x${this.canvas.height}`);
+        
+        // Initialize game components
+        this.map = new Map();
+        console.log('Map initialized');
+        
+        this.camera = new Camera(this);
+        console.log('Camera initialized');
+        
+        // Initialize game state
+        this.entities = [];
+        this.selectedEntities = [];
+        this.playerId = null;
+        this.gameTime = 0;
+        this.fps = 0;
+        
+        // Initialize input handler
+        this.inputHandler = new InputHandler(this);
+        console.log('Input handler initialized');
+        
+        // Initialize multiplayer
+        this.multiplayer = new Multiplayer(this);
+        console.log('Multiplayer initialized');
+        
+        // Start game loop
+        this.lastFrameTime = performance.now();
+        this.gameLoop();
+        
+        console.log('=== Game Initialization Complete ===\n');
+    }
+    
+    /**
+     * Process game state received from server
+     */
+    processGameState(data) {
+        console.log('\n=== Processing Game State ===');
+        console.log('Received data:', {
+            hasPlayerId: !!data.playerId,
+            hasGameState: !!data.gameState,
+            mapDimensions: data.gameState?.mapDimensions,
+            mapDataPresent: !!data.gameState?.map
+        });
+        
+        // Set player ID
+        if (data.playerId) {
+            this.playerId = data.playerId;
+            console.log('Set player ID:', this.playerId);
+        }
+        
+        // Process game state
+        if (data.gameState) {
+            // Update map if provided
+            if (data.gameState.map) {
+                console.log('Setting map from server data');
+                this.map.setMapFromServer(data.gameState.map);
+                
+                // Update camera after map is set
+                console.log('Updating camera with new map dimensions');
+                this.camera.updateDimensions();
+                this.camera.centerOnMap();
+            }
+            
+            // Update entities
+            this.processServerEntities(data.gameState);
+            
+            // Store game time
+            this.gameTime = data.gameState.gameTime || 0;
+        }
+        
+        console.log('=== Game State Processing Complete ===\n');
+    }
+    
+    /**
+     * Process entities from server
+     */
+    processServerEntities(gameState) {
+        console.log('\n=== Processing Server Entities ===');
+        
+        // Clear existing entities
+        this.entities = [];
+        
+        // Process buildings
+        if (gameState.buildings) {
+            console.log('Processing buildings:', gameState.buildings.size);
+            gameState.buildings.forEach((buildingData, id) => {
+                const building = new Building(
+                    id,
+                    buildingData.type,
+                    buildingData.owner,
+                    buildingData.x,
+                    buildingData.y,
+                    buildingData.health
+                );
+                this.entities.push(building);
+            });
+        }
+        
+        // Process units
+        if (gameState.units) {
+            console.log('Processing units:', gameState.units.size);
+            gameState.units.forEach((unitData, id) => {
+                const unit = new Unit(
+                    id,
+                    unitData.type,
+                    unitData.owner,
+                    unitData.x,
+                    unitData.y,
+                    unitData.health
+                );
+                this.entities.push(unit);
+            });
+        }
+        
+        // Process heroes from player data
+        if (gameState.players) {
+            console.log('Processing heroes from players:', gameState.players.size);
+            gameState.players.forEach((playerData, id) => {
+                if (playerData.hero) {
+                    const hero = new Hero(
+                        playerData.hero.id,
+                        id,
+                        playerData.hero.x,
+                        playerData.hero.y,
+                        playerData.hero.health
+                    );
+                    this.entities.push(hero);
+                }
+            });
+        }
+        
+        console.log('Total entities processed:', this.entities.length);
+        console.log('=== Entity Processing Complete ===\n');
+    }
+    
+    /**
+     * Main game loop
+     */
+    gameLoop() {
+        // Calculate FPS
+        const currentTime = performance.now();
+        const deltaTime = currentTime - this.lastFrameTime;
+        this.fps = 1000 / deltaTime;
+        this.lastFrameTime = currentTime;
+        
+        // Update game state
+        this.update(deltaTime);
+        
+        // Render the game
+        this.render();
+        
+        // Request next frame
+        requestAnimationFrame(() => this.gameLoop());
+    }
+    
+    /**
+     * Update game state
+     */
+    update(deltaTime) {
+        // Update input handler
+        this.inputHandler.update();
+        
+        // Update entities
+        this.entities.forEach(entity => {
+            if (typeof entity.update === 'function') {
+                entity.update(deltaTime);
+            }
+        });
+    }
+    
+    /**
+     * Render the game
+     */
+    render() {
+        // Clear canvas
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Set up transform for isometric view
+        this.ctx.save();
+        
+        // Render map
+        this.map.render(this.ctx, this.camera);
+        
+        // Render entities
+        this.entities.forEach(entity => {
+            if (typeof entity.render === 'function') {
+                entity.render(this.ctx, this.camera);
+            }
+        });
+        
+        // Restore transform
+        this.ctx.restore();
+        
+        // Render UI
+        this.renderUI();
+    }
+    
+    /**
+     * Render UI elements
+     */
+    renderUI() {
+        // Render game time
+        const minutes = Math.floor(this.gameTime / 60);
+        const seconds = this.gameTime % 60;
+        const timeString = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+        
+        this.ctx.font = '20px Arial';
+        this.ctx.fillStyle = 'white';
+        this.ctx.textAlign = 'center';
+        this.ctx.fillText(timeString, this.canvas.width / 2, 30);
+        
+        // Render FPS if in debug mode
+        if (Config.DEBUG_MODE) {
+            this.ctx.font = '12px Arial';
+            this.ctx.fillStyle = 'white';
+            this.ctx.textAlign = 'left';
+            this.ctx.fillText(`FPS: ${Math.round(this.fps)}`, 10, 20);
+        }
+    }
+}  
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\InputHandler.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\InputHandler.js 
 ======================================== 
  
 /**
@@ -1909,7 +2158,7 @@ export { InputHandler };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Multiplayer.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Multiplayer.js 
 ======================================== 
  
 /**
@@ -1922,35 +2171,13 @@ class Multiplayer {
      */
     constructor(game) {
         this.game = game;
-        this.socket = null;
+        this.room = null;
         this.playerId = null;
         this.connected = false;
         this.serverEntities = {}; // Entities from the server
         this.pendingCommands = []; // Commands waiting to be sent
         this.lastServerUpdate = Date.now();
         this.serverStartTime = null; // Store server start time
-        
-        // Bind methods to this instance
-        this.onConnect = this.onConnect.bind(this);
-        this.onDisconnect = this.onDisconnect.bind(this);
-        this.onGameState = this.onGameState.bind(this);
-        this.onGameUpdate = this.onGameUpdate.bind(this);
-        this.onPlayerJoined = this.onPlayerJoined.bind(this);
-        this.onPlayerLeft = this.onPlayerLeft.bind(this);
-        this.onUnitCreated = this.onUnitCreated.bind(this);
-        this.onUnitsMoved = this.onUnitsMoved.bind(this);
-        this.onUpdateUnitPosition = this.onUpdateUnitPosition.bind(this);
-        this.onEntityRemoved = this.onEntityRemoved.bind(this);
-        this.onMapResized = this.onMapResized.bind(this);
-        this.onJoinGameSuccess = this.onJoinGameSuccess.bind(this);
-        this.onJoinGameError = this.onJoinGameError.bind(this);
-        this.onUnitsAttacking = this.onUnitsAttacking.bind(this);
-        this.onUnitAttack = this.onUnitAttack.bind(this);
-        this.onEntityDestroyed = this.onEntityDestroyed.bind(this);
-        this.onGameEnded = this.onGameEnded.bind(this);
-        this.onCountdownUpdate = this.onCountdownUpdate.bind(this);
-        this.onPrepareNextGame = this.onPrepareNextGame.bind(this);
-        this.onServerStarted = this.onServerStarted.bind(this);
         
         // Connect to the server
         this.connect();
@@ -1959,405 +2186,98 @@ class Multiplayer {
     /**
      * Connect to the game server
      */
-    connect() {
-        // Connect to the server on the same host and port
-        // Since we're serving the client from the same server
-        const serverUrl = window.location.origin;
+    async connect() {
+        try {
+            console.log('Connecting to game server...');
+            
+            // Create Colyseus client
+            const client = new Colyseus.Client(window.location.protocol.replace("http", "ws") + "//" + window.location.host);
+            
+            // Join the game room
+            this.room = await client.joinOrCreate("game");
+            
+            console.log("Connected to game room:", this.room.id);
+            this.connected = true;
+            
+            // Set up message handlers
+            this.setupMessageHandlers();
+            
+        } catch (error) {
+            console.error("Failed to connect:", error);
+        }
+    }
+    
+    /**
+     * Set up message handlers for the room
+     */
+    setupMessageHandlers() {
+        // Handle state changes
+        this.room.onStateChange((state) => {
+            console.log("State updated:", state);
+            this.processGameState(state);
+        });
         
-        console.log(`Connecting to game server at ${serverUrl}`);
+        // Handle player join/leave
+        this.room.onMessage("player_joined", (data) => {
+            console.log("Player joined:", data.id);
+        });
         
-        // Create socket connection
-        this.socket = io(serverUrl);
+        this.room.onMessage("player_left", (data) => {
+            console.log("Player left:", data.id);
+        });
         
-        // Set up event handlers
-        this.socket.on('connect', this.onConnect);
-        this.socket.on('disconnect', this.onDisconnect);
-        this.socket.on('gameState', this.onGameState);
-        this.socket.on('gameUpdate', this.onGameUpdate);
-        this.socket.on('playerJoined', this.onPlayerJoined);
-        this.socket.on('playerLeft', this.onPlayerLeft);
-        this.socket.on('unitCreated', this.onUnitCreated);
-        this.socket.on('unitsMoved', this.onUnitsMoved);
-        this.socket.on('updateUnitPosition', this.onUpdateUnitPosition);
-        this.socket.on('unitsAttacking', this.onUnitsAttacking);
-        this.socket.on('unitAttack', this.onUnitAttack);
-        this.socket.on('entityDestroyed', this.onEntityDestroyed);
-        this.socket.on('entityRemoved', this.onEntityRemoved);
-        this.socket.on('mapResized', this.onMapResized);
-        this.socket.on('joinGameSuccess', this.onJoinGameSuccess);
-        this.socket.on('joinGameError', this.onJoinGameError);
-        this.socket.on('gameEnded', this.onGameEnded);
-        this.socket.on('countdownUpdate', this.onCountdownUpdate);
-        this.socket.on('prepareNextGame', this.onPrepareNextGame);
-        this.socket.on('serverStarted', this.onServerStarted.bind(this));
+        // Handle game state
+        this.room.onMessage("gameState", (data) => {
+            console.log("Received game state:", data);
+            this.processGameState(data);
+        });
+    }
+    
+    /**
+     * Process game state from server
+     */
+    processGameState(data) {
+        console.log('\n=== Processing Game State ===');
+        
+        // Set player ID if not set
+        if (!this.playerId) {
+            this.playerId = this.room.sessionId;
+            this.game.playerId = this.room.sessionId;
+            console.log('Set player ID:', this.playerId);
+        }
+        
+        // Process map data if available
+        if (data.map) {
+            console.log('Processing map data...');
+            this.game.map.setMapFromServer(data.map);
+            this.game.camera.centerOnMap();
+        }
+        
+        // Process entities
+        if (data.buildings || data.units) {
+            console.log('Processing entities...');
+            this.game.processServerEntities({
+                buildings: data.buildings,
+                units: data.units
+            });
+        }
+        
+        console.log('=== Game State Processing Complete ===\n');
     }
     
     /**
      * Disconnect from the game server
      */
     disconnect() {
-        if (this.socket) {
-            this.socket.disconnect();
-            this.socket = null;
+        if (this.room) {
+            this.room.leave();
+            this.room = null;
         }
         this.connected = false;
     }
     
     /**
-     * Handle connection to the server
-     */
-    onConnect() {
-        console.log('Connected to game server');
-        this.connected = true;
-        
-        // Process any pending commands
-        this.processPendingCommands();
-    }
-    
-    /**
-     * Handle disconnection from the server
-     */
-    onDisconnect() {
-        console.log('Disconnected from game server');
-        this.connected = false;
-    }
-    
-    /**
-     * Handle initial game state from server
-     */
-    onGameState(data) {
-        console.log('Received initial game state from server');
-        this.playerId = data.playerId;
-        this.game.playerId = data.playerId;
-        console.log(`My playerId is: ${this.playerId}`);
-        
-        // Store server start time
-        if (data.gameState && data.gameState.serverStartTime) {
-            console.log('Setting server start time:', new Date(data.gameState.serverStartTime));
-            this.serverStartTime = data.gameState.serverStartTime;
-        }
-        
-        // Update map dimensions from server data
-        if (data.gameState && data.gameState.mapDimensions) {
-            console.log('Setting map dimensions from server data:', data.gameState.mapDimensions);
-            this.updateMapDimensions(data.gameState.mapDimensions);
-        }
-        
-        // Set the map from server data
-        if (data.gameState && data.gameState.map) {
-            console.log('Setting map from server data');
-            this.game.map.setMapFromServer(data.gameState.map);
-        } else {
-            console.error('No map data received from server');
-        }
-        
-        // Clear existing entities before processing new ones
-        this.game.entities = [];
-        
-        // Process entities from server data (should only be buildings at this point)
-        if (data.gameState && data.gameState.entities) {
-            console.log('Processing initial entities from server data (buildings only)');
-            this.game.processServerEntities(data.gameState.entities);
-        }
-
-        // Show the join button
-        this.showJoinButton();
-    }
-    
-    /**
-     * Show the join button in the UI
-     */
-    showJoinButton() {
-        // Create join button container if it doesn't exist
-        let joinContainer = document.getElementById('joinContainer');
-        if (!joinContainer) {
-            joinContainer = document.createElement('div');
-            joinContainer.id = 'joinContainer';
-            joinContainer.style.position = 'absolute';
-            joinContainer.style.top = '50%';
-            joinContainer.style.left = '50%';
-            joinContainer.style.transform = 'translate(-50%, -50%)';
-            joinContainer.style.textAlign = 'center';
-            joinContainer.style.zIndex = '1000';
-            document.body.appendChild(joinContainer);
-        }
-
-        // Create join button if it doesn't exist
-        let joinButton = document.getElementById('joinButton');
-        if (!joinButton) {
-            joinButton = document.createElement('button');
-            joinButton.id = 'joinButton';
-            joinButton.textContent = 'Join Game';
-            joinButton.style.padding = '15px 30px';
-            joinButton.style.fontSize = '18px';
-            joinButton.style.cursor = 'pointer';
-            joinButton.style.backgroundColor = '#4CAF50';
-            joinButton.style.color = 'white';
-            joinButton.style.border = 'none';
-            joinButton.style.borderRadius = '5px';
-            joinButton.style.boxShadow = '0 2px 4px rgba(0,0,0,0.2)';
-            
-            // Add hover effect
-            joinButton.onmouseover = () => {
-                joinButton.style.backgroundColor = '#45a049';
-            };
-            joinButton.onmouseout = () => {
-                joinButton.style.backgroundColor = '#4CAF50';
-            };
-
-            // Add click handler
-            joinButton.onclick = () => {
-                this.requestJoinGame();
-                joinContainer.remove(); // Remove the button after clicking
-            };
-
-            joinContainer.appendChild(joinButton);
-        }
-    }
-    
-    /**
-     * Request to join the game and create initial unit
-     */
-    requestJoinGame() {
-        console.log('Requesting to join game with playerId:', this.playerId);
-        this.socket.emit('joinGame', { playerId: this.playerId });
-    }
-    
-    /**
-     * Handle map resize event from server
-     */
-    onMapResized(data) {
-        console.log('Received map resize event from server:', data.mapDimensions);
-        
-        // Update map dimensions
-        this.updateMapDimensions(data.mapDimensions);
-        
-        // Update the map tiles
-        if (data.map) {
-            this.game.map.setMapFromServer(data.map);
-        }
-        
-        // Update entities
-        if (data.entities) {
-            this.game.processServerEntities(data.entities);
-        }
-        
-        // Reset camera position to ensure it's within bounds
-        this.game.camera.updateDimensions();
-        this.game.camera.clampPosition();
-    }
-    
-    /**
-     * Update map dimensions based on server data
-     */
-    updateMapDimensions(mapDimensions) {
-        if (!mapDimensions) return;
-        
-        // Update Config with new map dimensions
-        Config.MAP_WIDTH = mapDimensions.width;
-        Config.MAP_HEIGHT = mapDimensions.height;
-        
-        // Apply zoom factor if provided
-        if (mapDimensions.zoomFactor) {
-            this.game.camera.zoom = mapDimensions.zoomFactor;
-        }
-        
-        console.log(`Updated map dimensions to ${Config.MAP_WIDTH}x${Config.MAP_HEIGHT}`);
-        
-        // Update camera boundaries
-        this.game.camera.updateDimensions();
-    }
-    
-    /**
-     * Handle game update from server
-     */
-    onGameUpdate(data) {
-        const currentTime = Date.now();
-        
-        // Update server start time if provided
-        if (data.serverStartTime && (!this.serverStartTime || this.serverStartTime !== data.serverStartTime)) {
-            this.serverStartTime = data.serverStartTime;
-        }
-
-        Object.values(data.entities).forEach(serverEntity => {
-            let localEntity = this.game.entities.find(e => e.id === serverEntity.id);
-
-            if (localEntity) {
-                if (localEntity instanceof Unit) {
-                    // Explicitly store previous positions for interpolation
-                    localEntity.prevX = localEntity.x;
-                    localEntity.prevY = localEntity.y;
-                    localEntity.serverX = serverEntity.x;
-                    localEntity.serverY = serverEntity.y;
-                    localEntity.interpolationStartTime = currentTime;
-                }
-            }
-        });
-        
-        this.game.processServerEntities(data.entities);
-    }
-    
-    /**
-     * Handle new player joining
-     */
-    onPlayerJoined(data) {
-        console.log('Player joined:', data.player);
-        // Could show a notification or update player list
-    }
-    
-    /**
-     * Handle player leaving
-     */
-    onPlayerLeft(data) {
-        console.log('Player left:', data.playerId);
-        // Could show a notification or update player list
-    }
-    
-    /**
-     * Handle new unit creation
-     */
-    onUnitCreated(data) {
-        console.log('\n=== Unit Created Event ===');
-        console.log('Received unit created event:', data);
-        
-        if (data.unit) {
-            console.log(`Processing new unit - ID: ${data.unit.id}, PlayerId: ${data.unit.playerId}`);
-            // Add the new unit to the game
-            this.game.processServerEntities({ [data.unit.id]: data.unit });
-            console.log('Unit added to game entities');
-            
-            // If this is our unit, center the camera on it
-            if (data.unit.playerId === this.playerId) {
-                console.log('Unit belongs to this player, centering camera');
-                // Convert unit position to isometric coordinates for camera centering
-                const isoX = (data.unit.x - data.unit.y) / 2;
-                const isoY = (data.unit.x + data.unit.y) / 4;
-                
-                // Center camera on the player's unit in isometric space
-                this.game.camera.centerOn(isoX, isoY);
-                
-                // Ensure camera position is within bounds
-                this.game.camera.clampPosition();
-            }
-        } else {
-            console.error('Unit created event received but no unit data present');
-        }
-        console.log('=== Unit Created Complete ===\n');
-    }
-    
-    /**
-     * Handle units being moved
-     */
-    onUnitsMoved(data) {
-        const { unitIds, targetX, targetY } = data;
-        
-        unitIds.forEach(unitId => {
-            const unit = this.game.entities.find(e => e.id === unitId);
-            if (unit) {
-                // Set the target for the unit to move to
-                unit.targetX = targetX;
-                unit.targetY = targetY;
-                unit.isMoving = true;
-            }
-        });
-    }
-    
-    /**
-     * Handle entity removal
-     */
-    onEntityRemoved(data) {
-        const entityIndex = this.game.entities.findIndex(e => e.id === data.entityId);
-        if (entityIndex !== -1) {
-            this.game.entities.splice(entityIndex, 1);
-        }
-    }
-    
-    /**
-     * Create an entity from server data
-     */
-    createEntityFromServer(entityData) {
-        // This method is now deprecated in favor of processServerEntities
-        console.warn('createEntityFromServer is deprecated, use processServerEntities instead');
-        
-        if (entityData.type === 'unit') {
-            const unit = new Unit(
-                entityData.x,
-                entityData.y,
-                entityData.width,
-                entityData.height,
-                entityData.playerId === this.playerId,
-                entityData.unitType || 'SOLDIER',
-                entityData.playerColor || 'red'
-            );
-            
-            // Set server-specific properties
-            unit.id = entityData.id;
-            unit.playerId = entityData.playerId;
-            
-            // Set unit attributes from server data
-            if (entityData.health !== undefined) unit.health = entityData.health;
-            if (entityData.maxHealth !== undefined) unit.maxHealth = entityData.maxHealth;
-            if (entityData.attackDamage !== undefined) unit.attackDamage = entityData.attackDamage;
-            if (entityData.attackRange !== undefined) unit.attackRange = entityData.attackRange;
-            if (entityData.attackCooldown !== undefined) unit.attackCooldown = entityData.attackCooldown;
-            if (entityData.speed !== undefined) unit.speed = entityData.speed;
-            if (entityData.level !== undefined) unit.level = entityData.level;
-            if (entityData.experience !== undefined) unit.experience = entityData.experience;
-            
-            // Set movement properties
-            if (entityData.targetX !== undefined) unit.targetX = entityData.targetX;
-            if (entityData.targetY !== undefined) unit.targetY = entityData.targetY;
-            if (entityData.isMoving !== undefined) unit.isMoving = entityData.isMoving;
-            
-            // Add to game entities
-            this.game.entities.push(unit);
-            return unit;
-        } else if (entityData.type === 'building') {
-            const building = new Building(
-                entityData.x,
-                entityData.y,
-                entityData.width,
-                entityData.height,
-                entityData.playerId === this.playerId,
-                entityData.buildingType || 'BASE',
-                entityData.playerColor || 'red'
-            );
-            
-            // Set server-specific properties
-            building.id = entityData.id;
-            building.playerId = entityData.playerId;
-            
-            // Set building attributes from server data
-            if (entityData.health !== undefined) building.health = entityData.health;
-            if (entityData.maxHealth !== undefined) building.maxHealth = entityData.maxHealth;
-            
-            // Add to game entities
-            this.game.entities.push(building);
-            return building;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Create a new unit
-     */
-    createUnit(x, y, isPlayerControlled, unitType = 'SOLDIER') {
-        if (!this.connected) {
-            console.error('Cannot create unit: not connected to server');
-            return;
-        }
-        
-        this.socket.emit('createUnit', {
-            x,
-            y,
-            isPlayerControlled,
-            unitType
-        });
-    }
-    
-    /**
-     * Move units and send to server
+     * Move units
      */
     moveUnits(unitIds, targetX, targetY) {
         if (!this.connected) {
@@ -2365,7 +2285,7 @@ class Multiplayer {
             return;
         }
         
-        this.socket.emit('moveUnits', {
+        this.room.send("moveUnits", {
             unitIds,
             targetX,
             targetY
@@ -2373,7 +2293,7 @@ class Multiplayer {
     }
     
     /**
-     * Attack target and send to server
+     * Attack target
      */
     attackTarget(unitIds, targetEntityId) {
         if (!this.connected) {
@@ -2381,9 +2301,9 @@ class Multiplayer {
             return;
         }
         
-        this.socket.emit('attackTarget', {
+        this.room.send("attack", {
             unitIds,
-            targetEntityId
+            targetId: targetEntityId
         });
     }
     
@@ -2398,403 +2318,14 @@ class Multiplayer {
             command();
         }
     }
-    
-    /**
-     * Update multiplayer state
-     */
-    update(deltaTime) {
-        const interpolationDuration = 100; // Time between server updates in ms
-        const currentTime = Date.now();
+}
 
-        this.game.entities.forEach(entity => {
-            if (entity instanceof Unit && 
-                entity.serverX !== undefined && 
-                entity.serverY !== undefined &&
-                !entity.isDestroyed  // Critical Fix: Ignore destroyed units
-            ) {
-                const elapsed = currentTime - entity.interpolationStartTime;
-                const t = Math.min(elapsed / interpolationDuration, 1); // interpolationDuration ~100ms
-
-                entity.x = entity.prevX + (entity.serverX - entity.prevX) * t;
-                entity.y = entity.prevY + (entity.serverY - entity.prevY) * t;
-
-                if (t >= 1) {
-                    entity.prevX = entity.serverX;
-                    entity.prevY = entity.serverY;
-                }
-            }
-        });
-    }
-    
-    /**
-     * Get the elapsed time since the server started
-     * @returns {string} Formatted elapsed time (HH:MM:SS)
-     */
-    getElapsedTime() {
-        if (!this.serverStartTime) {
-            return "00:00:00";
-        }
-        
-        // Calculate elapsed time in seconds
-        const elapsedMs = Date.now() - this.serverStartTime;
-        const elapsedSeconds = Math.floor(elapsedMs / 1000);
-        
-        // Calculate hours, minutes, and seconds
-        const hours = Math.floor(elapsedSeconds / 3600);
-        const minutes = Math.floor((elapsedSeconds % 3600) / 60);
-        const seconds = elapsedSeconds % 60;
-        
-        // Format as HH:MM:SS
-        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-    }
-    
-    /**
-     * Handle successful game join
-     */
-    onJoinGameSuccess(data) {
-        console.log('\n=== Join Game Success ===');
-        console.log('Received join game success with unit:', data.unit);
-        
-        if (data.unit) {
-            console.log(`Unit details - ID: ${data.unit.id}, PlayerId: ${data.unit.playerId}, Position: (${data.unit.x}, ${data.unit.y})`);
-            // Process the new unit
-            this.game.processServerEntities({ [data.unit.id]: data.unit });
-            console.log('Unit processed and added to game');
-            
-            // First set zoom to a much higher level for a closer view of the unit
-            // Do this BEFORE centering to avoid position calculation issues
-            this.game.camera.zoom = 1.8; // More zoomed in for a better initial view
-            
-            // Convert unit position to isometric coordinates for camera centering
-            const isoX = (data.unit.x - data.unit.y) / 2;
-            const isoY = (data.unit.x + data.unit.y) / 4;
-            
-            // Center camera on the player's unit in isometric space
-            this.game.camera.centerOn(isoX, isoY);
-            
-            // Ensure camera position is within bounds
-            this.game.camera.clampPosition();
-            
-            console.log(`Camera positioned at (${this.game.camera.x}, ${this.game.camera.y}) with zoom ${this.game.camera.zoom}`);
-        } else {
-            console.error('Join game success but no unit data received');
-        }
-        
-        // Remove join button
-        const joinButton = document.getElementById('joinButton');
-        if (joinButton) {
-            joinButton.remove();
-            console.log('Join button removed');
-        }
-        console.log('=== Join Game Complete ===\n');
-    }
-    
-    /**
-     * Handle game join error
-     */
-    onJoinGameError(data) {
-        console.error('Failed to join game:', data.message);
-        alert(`Failed to join game: ${data.message}`);
-        // Show join button again
-        this.showJoinButton();
-    }
-    
-    /**
-     * Handle unit position updates from server
-     */
-    onUpdateUnitPosition(data) {
-        const { unitId, x, y, isMoving } = data;
-        const unit = this.game.entities.find(e => e.id === unitId);
-        
-        if (unit) {
-            // Store previous position for interpolation
-            unit.prevX = unit.x;
-            unit.prevY = unit.y;
-            unit.serverX = x;
-            unit.serverY = y;
-            unit.isMoving = isMoving;
-            unit.interpolationStartTime = Date.now();
-            
-            // If the unit has stopped moving, clear the target
-            if (!isMoving) {
-                unit.targetX = null;
-                unit.targetY = null;
-            }
-        }
-    }
-    
-    /**
-     * Handle units attacking event
-     */
-    onUnitsAttacking(data) {
-        console.log(`Units ${data.unitIds.join(', ')} attacking entity ${data.targetEntityId}`);
-        
-        // Update unit targets in the game
-        const targetEntity = this.game.getEntityById(data.targetEntityId);
-        if (!targetEntity) {
-            console.error(`Target entity ${data.targetEntityId} not found for attack command`);
-            return;
-        }
-        
-        // Update each unit's target
-        data.unitIds.forEach(unitId => {
-            const unit = this.game.getEntityById(unitId);
-            if (unit && unit instanceof Unit) {
-                // Set the target entity to follow and attack
-                unit.targetEntity = targetEntity;
-                
-                // Set visual state for attack
-                unit.isAttacking = true;
-                
-                // Also update movement target to match the target's position
-                // This ensures units will follow moving targets
-                const targetCenter = targetEntity.getCenter();
-                unit.setTarget(targetCenter.x, targetCenter.y);
-                
-                console.log(`Unit ${unitId} set to follow and attack target ${data.targetEntityId} at (${targetCenter.x}, ${targetCenter.y})`);
-            }
-        });
-    }
-    
-    /**
-     * Handle unit attack event
-     */
-    onUnitAttack(data) {
-        console.log(`Unit ${data.attackerId} attacked ${data.targetId} for ${data.damage} damage`);
-        
-        const attacker = this.game.getEntityById(data.attackerId);
-        const target = this.game.getEntityById(data.targetId);
-        
-        if (!attacker || !target) {
-            console.error('Could not find attacker or target for attack event');
-            return;
-        }
-        
-        // Update visual state
-        if (attacker instanceof Unit) {
-            attacker.performAttackAnimation();
-        }
-        
-        // If the server provided the target's health, use that value directly
-        if (data.targetHealth !== undefined) {
-            target.health = data.targetHealth;
-        } else {
-            // Otherwise, apply damage locally
-            target.takeDamage(data.damage);
-        }
-        
-        // Add visual effects at the correct isometric position
-        if (target instanceof Building) {
-            // For buildings, convert grid coordinates to isometric coordinates
-            const gridX = Math.floor(target.x / Config.TILE_SIZE);
-            const gridY = Math.floor(target.y / Config.TILE_SIZE);
-            
-            // Convert grid coordinates to isometric world coordinates
-            const isoPos = this.game.map.gridToIso(gridX, gridY);
-            
-            // Add effect at the isometric position
-            this.game.renderer.addEffect('attack', isoPos.x, isoPos.y);
-        } else {
-            // For units, use the direct Cartesian-to-isometric conversion
-            const isoX = (target.x - target.y) / 2;
-            const isoY = (target.x + target.y) / 4;
-            
-            // Add effect at the isometric position
-            this.game.renderer.addEffect('attack', isoX, isoY);
-        }
-    }
-    
-    /**
-     * Handle entity destroyed event
-     */
-    onEntityDestroyed(data) {
-        console.log(`Entity ${data.entityId} was destroyed`);
-        
-        const entity = this.game.getEntityById(data.entityId);
-        if (entity) {
-            // Trigger death animation
-            entity.playDeathAnimation();
-            
-            // Add visual effects
-            this.game.renderer.addEffect('explosion', entity.x + entity.width/2, entity.y + entity.height/2);
-            
-            // Notify any units targeting this entity to stop attacking
-            this.game.entities.forEach(e => {
-                if (e instanceof Unit && e.targetEntity && e.targetEntity.id === data.entityId) {
-                    console.log(`Unit ${e.id} stopping attack on destroyed entity ${data.entityId}`);
-                    // Don't immediately clear the target to let the death animation play
-                    // The unit's updateCombat will check for isDestroyed and stop attacking
-                }
-            });
-            
-            // Wait for death animation to complete before removing
-            setTimeout(() => {
-                this.game.removeEntity(data.entityId);
-            }, 1000); // Match death animation duration
-        }
-    }
-    
-    /**
-     * Handle game ended event
-     */
-    onGameEnded(data) {
-        console.log(`Game ended. Winner: ${data.winner}`);
-        
-        // Check if the player's team won
-        const playerWon = data.winner === 'human-team';
-        
-        // Create game end overlay
-        this.createGameEndOverlay(playerWon, data.message, data.countdown);
-        
-        // Disable input during end game
-        this.game.inputHandler.disableInput();
-    }
-    
-    /**
-     * Handle countdown update
-     */
-    onCountdownUpdate(data) {
-        console.log(`Countdown: ${data.secondsRemaining}`);
-        
-        // Update the countdown display
-        const countdownElement = document.getElementById('game-end-countdown');
-        if (countdownElement) {
-            countdownElement.textContent = `Next game in: ${data.secondsRemaining}s`;
-        }
-    }
-    
-    /**
-     * Handle prepare for next game event
-     */
-    onPrepareNextGame(data) {
-        console.log('Preparing for next game');
-        
-        // Show join next game button
-        const overlay = document.getElementById('game-end-overlay');
-        if (overlay) {
-            // Create join button if it doesn't exist yet
-            if (!document.getElementById('join-next-game-button')) {
-                const joinButton = document.createElement('button');
-                joinButton.id = 'join-next-game-button';
-                joinButton.textContent = 'Join Next Game';
-                joinButton.classList.add('game-button');
-                joinButton.addEventListener('click', () => {
-                    this.joinNextGame();
-                    joinButton.disabled = true;
-                    joinButton.textContent = 'Joined';
-                });
-                
-                overlay.appendChild(joinButton);
-            }
-            
-            // Update countdown text
-            const countdownElement = document.getElementById('game-end-countdown');
-            if (countdownElement) {
-                countdownElement.textContent = 'New game starting soon!';
-            }
-        }
-    }
-    
-    /**
-     * Send join next game request
-     */
-    joinNextGame() {
-        if (this.connected && this.playerId) {
-            console.log('Requesting to join next game');
-            this.socket.emit('joinNextGame', { playerId: this.playerId });
-        }
-    }
-    
-    /**
-     * Create the game end overlay
-     */
-    createGameEndOverlay(victory, message, countdown) {
-        // Remove existing overlay if it exists
-        const existingOverlay = document.getElementById('game-end-overlay');
-        if (existingOverlay) {
-            existingOverlay.remove();
-        }
-        
-        // Create overlay container
-        const overlay = document.createElement('div');
-        overlay.id = 'game-end-overlay';
-        overlay.style.position = 'absolute';
-        overlay.style.top = '0';
-        overlay.style.left = '0';
-        overlay.style.width = '100%';
-        overlay.style.height = '100%';
-        overlay.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-        overlay.style.display = 'flex';
-        overlay.style.flexDirection = 'column';
-        overlay.style.justifyContent = 'center';
-        overlay.style.alignItems = 'center';
-        overlay.style.zIndex = '1000';
-        overlay.style.color = 'white';
-        overlay.style.fontFamily = 'Arial, sans-serif';
-        
-        // Create result header
-        const resultHeader = document.createElement('h1');
-        resultHeader.textContent = victory ? 'VICTORY' : 'DEFEAT';
-        resultHeader.style.fontSize = '48px';
-        resultHeader.style.marginBottom = '20px';
-        resultHeader.style.color = victory ? '#4CAF50' : '#F44336';
-        
-        // Create message
-        const messageElement = document.createElement('p');
-        messageElement.textContent = message;
-        messageElement.style.fontSize = '24px';
-        messageElement.style.marginBottom = '30px';
-        
-        // Create countdown
-        const countdownElement = document.createElement('p');
-        countdownElement.id = 'game-end-countdown';
-        countdownElement.textContent = `Next game in: ${countdown}s`;
-        countdownElement.style.fontSize = '20px';
-        countdownElement.style.marginBottom = '30px';
-        
-        // Add elements to overlay
-        overlay.appendChild(resultHeader);
-        overlay.appendChild(messageElement);
-        overlay.appendChild(countdownElement);
-        
-        // Add overlay to the document
-        document.body.appendChild(overlay);
-    }
-    
-    /**
-     * Handle server started event
-     */
-    onServerStarted(data) {
-        console.log('Server started a new game');
-        
-        // Remove game end overlay if it exists
-        const overlay = document.getElementById('game-end-overlay');
-        if (overlay) {
-            overlay.remove();
-        }
-        
-        // Re-enable input
-        this.game.inputHandler.enableInput();
-        
-        // Update game state from server
-        if (data.gameState) {
-            // Fully clear entities before rebuilding
-            this.game.entities = [];
-            
-            // Process entities from server data
-            this.game.processServerEntities(data.gameState.entities);
-            
-            // Store server start time
-            this.serverStartTime = data.gameState.serverStartTime;
-            
-            console.log(`Entities after server start: ${this.game.entities.length}`);
-        }
-    }
-}  
+// Export the Multiplayer class
+export default Multiplayer;  
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Renderer.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Renderer.js 
 ======================================== 
  
 /**
@@ -2891,44 +2422,33 @@ class Renderer {
      */
     renderMap() {
         // Calculate visible tile range based on camera position and zoom
-        // For isometric view, we need a different approach to determine visible tiles
+        const buffer = 2; // Add buffer tiles around visible area
         
-        // Convert camera position to grid coordinates
-        const cameraWorldPos = {
-            x: this.camera.x,
-            y: this.camera.y
-        };
+        // Get camera bounds in world coordinates
+        const cameraBounds = this.camera.getWorldBounds();
         
-        // Get the viewport dimensions in world coordinates
-        const viewportWidth = this.camera.width / this.camera.zoom;
-        const viewportHeight = this.camera.height / this.camera.zoom;
+        // Convert world bounds to grid coordinates
+        let minGridX = Math.floor((cameraBounds.left - this.tileWidth) / this.tileWidth);
+        let minGridY = Math.floor((cameraBounds.top - this.tileHeight) / this.tileHeight);
+        let maxGridX = Math.ceil((cameraBounds.right + this.tileWidth) / this.tileWidth);
+        let maxGridY = Math.ceil((cameraBounds.bottom + this.tileHeight) / this.tileHeight);
         
-        // Calculate the viewport corners in world coordinates
-        const viewportCorners = [
-            { x: cameraWorldPos.x, y: cameraWorldPos.y }, // Top-left
-            { x: cameraWorldPos.x + viewportWidth, y: cameraWorldPos.y }, // Top-right
-            { x: cameraWorldPos.x, y: cameraWorldPos.y + viewportHeight }, // Bottom-left
-            { x: cameraWorldPos.x + viewportWidth, y: cameraWorldPos.y + viewportHeight } // Bottom-right
-        ];
-        
-        // Convert viewport corners to grid coordinates
-        const gridCorners = viewportCorners.map(corner => this.map.isoToGrid(corner.x, corner.y));
-        
-        // Find the min and max grid coordinates that cover the viewport
-        let minGridX = Math.floor(Math.min(...gridCorners.map(corner => corner.x)));
-        let maxGridX = Math.ceil(Math.max(...gridCorners.map(corner => corner.x)));
-        let minGridY = Math.floor(Math.min(...gridCorners.map(corner => corner.y)));
-        let maxGridY = Math.ceil(Math.max(...gridCorners.map(corner => corner.y)));
-        
-        // Add a buffer to ensure we render tiles that are partially visible
-        const buffer = 15;
+        // Add buffer and clamp to map boundaries
         minGridX = Math.max(0, minGridX - buffer);
         minGridY = Math.max(0, minGridY - buffer);
-        maxGridX = Math.min(this.map.width, maxGridX + buffer);
-        maxGridY = Math.min(this.map.height, maxGridY + buffer);
+        maxGridX = Math.min(this.map.width - 1, maxGridX + buffer);
+        maxGridY = Math.min(this.map.height - 1, maxGridY + buffer);
+        
+        console.log('\n=== Rendering Map ===');
+        console.log('Camera position:', this.camera.x, this.camera.y);
+        console.log('Camera zoom:', this.camera.zoom);
+        console.log('Map dimensions:', this.map.width, 'x', this.map.height);
+        console.log('Rendering tiles from gridX:', minGridX, 'to', maxGridX, 'and gridY:', minGridY, 'to', maxGridY);
         
         // Render tiles in the correct order for isometric view (back to front)
-        // This ensures proper overlapping of tiles
+        let tilesRendered = 0;
+        let tilesByType = {};
+        
         for (let sum = minGridX + minGridY; sum <= maxGridX + maxGridY; sum++) {
             for (let gridX = minGridX; gridX <= maxGridX; gridX++) {
                 const gridY = sum - gridX;
@@ -2937,7 +2457,10 @@ class Renderer {
                 
                 // Get the tile at this grid position
                 const tile = this.map.getTile(gridX, gridY);
-                if (!tile) continue;
+                if (!tile) {
+                    console.warn(`No tile found at ${gridX},${gridY}`);
+                    continue;
+                }
                 
                 // Convert grid coordinates to isometric world coordinates
                 const isoPos = this.map.gridToIso(gridX, gridY);
@@ -2949,18 +2472,21 @@ class Renderer {
                 const tileWidthZoomed = this.tileWidth * this.camera.zoom;
                 const tileHeightZoomed = this.tileHeight * this.camera.zoom;
                 
+                // Track tile types for statistics
+                const terrainType = tile.terrainType || tile.type || 'unknown';
+                tilesByType[terrainType] = (tilesByType[terrainType] || 0) + 1;
+                
                 // Draw the tile
                 if (this.imagesLoaded) {
                     // Use the appropriate tile image based on terrain type
-                    const terrainType = tile.terrainType || tile.type;
                     const tileImage = this.map.getTileImage(terrainType);
                     
                     if (tileImage && tileImage.complete) {
                         // Draw the isometric tile image
                         this.ctx.drawImage(
                             tileImage,
-                            screenPos.x - (tileWidthZoomed / 2), // Center the image horizontally
-                            screenPos.y - (tileHeightZoomed / 2), // Center the image vertically
+                            screenPos.x - (tileWidthZoomed / 2),
+                            screenPos.y - (tileHeightZoomed / 2),
                             tileWidthZoomed,
                             tileHeightZoomed
                         );
@@ -2971,7 +2497,7 @@ class Renderer {
                             screenPos.y,
                             tileWidthZoomed,
                             tileHeightZoomed,
-                            this.getTileColor(tile.terrainType || tile.type)
+                            this.getTileColor(terrainType)
                         );
                     }
                 } else {
@@ -2981,21 +2507,17 @@ class Renderer {
                         screenPos.y,
                         tileWidthZoomed,
                         tileHeightZoomed,
-                        this.getTileColor(tile.terrainType || tile.type)
+                        this.getTileColor(terrainType)
                     );
                 }
                 
-                // Draw grid lines if enabled
-                if (Config.SHOW_GRID) {
-                    this.drawIsometricGrid(
-                        screenPos.x,
-                        screenPos.y,
-                        tileWidthZoomed,
-                        tileHeightZoomed
-                    );
-                }
+                tilesRendered++;
             }
         }
+        
+        console.log('Tiles rendered:', tilesRendered);
+        console.log('Tiles by type:', tilesByType);
+        console.log('=== Map Rendering Complete ===\n');
     }
     
     /**
@@ -3036,14 +2558,21 @@ class Renderer {
     /**
      * Get the color for a tile type
      */
-    getTileColor(tileType) {
-        switch (tileType) {
-            case 'grass': return Config.COLORS.GRASS;
-            case 'water': return Config.COLORS.WATER;
-            case 'sand': return Config.COLORS.SAND;
-            case 'mountain': return Config.COLORS.MOUNTAIN;
-            case 'forest': return Config.COLORS.FOREST;
-            default: return Config.COLORS.GRASS;
+    getTileColor(terrainType) {
+        switch (terrainType) {
+            case 'grass':
+                return '#90EE90'; // Light green
+            case 'water':
+                return '#4169E1'; // Royal blue
+            case 'mountain':
+                return '#A0522D'; // Brown
+            case 'forest':
+                return '#228B22'; // Forest green
+            case 'sand':
+                return '#F4A460'; // Sandy brown
+            default:
+                console.warn(`Unknown terrain type: ${terrainType}, using default color`);
+                return '#808080'; // Gray for unknown types
         }
     }
     
@@ -3859,7 +3388,7 @@ class Renderer {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\RendererColyseus.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\RendererColyseus.js 
 ======================================== 
  
 /**
@@ -3874,32 +3403,25 @@ class Renderer {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     
-    // Isometric tile dimensions
+    // Tile dimensions
     this.tileWidth = 64;
     this.tileHeight = 32;
     
     // Camera position and zoom
     this.cameraX = 0;
     this.cameraY = 0;
-    this.zoom = 1;
+    this.zoom = 1.0;
     
-    // Colors
+    // Colors for different terrain types
     this.colors = {
-      // Tile colors
-      tile: '#8fbc8f',
-      tileOutline: '#2e8b57',
-      
-      // Entity colors
-      humanHero: '#0000ff',
-      humanUnit: '#4169e1',
-      humanBuilding: '#4682b4',
-      
-      aiHero: '#ff0000',
-      aiUnit: '#ff4500',
-      aiBuilding: '#8b0000',
-      
-      // Selection color
-      selection: '#ffff00'
+      tile: '#4a8505', // Default grass
+      tileOutline: '#45790b',
+      water: '#0077be',
+      mountain: '#736357',
+      forest: '#1b4001',
+      plains: '#90b53d',
+      desert: '#d4b167',
+      selection: 'rgba(255, 255, 255, 0.3)'
     };
     
     // Set canvas size
@@ -3913,8 +3435,7 @@ class Renderer {
    * Clear the canvas
    */
   clear() {
-    this.ctx.fillStyle = '#000000';
-    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
   }
   
   /**
@@ -3932,14 +3453,17 @@ class Renderer {
    * @returns {Object} Screen coordinates {x, y}
    */
   gridToScreen(x, y) {
-    // Isometric projection
-    const screenX = (x - y) * this.tileWidth / 2;
-    const screenY = (x + y) * this.tileHeight / 2;
+    // Convert grid coordinates to isometric screen coordinates
+    const screenX = (x - y) * (this.tileWidth * this.zoom / 2);
+    const screenY = (x + y) * (this.tileHeight * this.zoom / 2);
     
-    // Apply camera position and zoom
+    // Center the map on screen
+    const offsetX = this.canvas.width / 2;
+    const offsetY = this.canvas.height / 4;
+    
     return {
-      x: (screenX - this.cameraX) * this.zoom + this.canvas.width / 2,
-      y: (screenY - this.cameraY) * this.zoom + this.canvas.height / 2
+      x: screenX + offsetX,
+      y: screenY + offsetY
     };
   }
   
@@ -3966,18 +3490,18 @@ class Renderer {
    * @param {Array} map - Array of tile values
    */
   renderMap(map) {
-    if (!map || !map.length) return;
+    if (!map || !map.length) {
+      console.warn('No map data to render');
+      return;
+    }
     
-    // Calculate map size (assuming square map)
-    const mapSize = Math.sqrt(map.length);
+    console.log('Rendering map:', map.length, 'tiles');
     
-    // Render tiles
-    for (let y = 0; y < mapSize; y++) {
-      for (let x = 0; x < mapSize; x++) {
-        const index = y * mapSize + x;
-        const tileType = map[index];
-        
-        this.renderTile(x, y, tileType);
+    // Iterate through the map grid
+    for (let y = 0; y < map.length; y++) {
+      for (let x = 0; x < map[y].length; x++) {
+        const tile = map[y][x];
+        this.renderTile(x, y, tile);
       }
     }
   }
@@ -3991,13 +3515,33 @@ class Renderer {
   renderTile(x, y, tileType) {
     const screenPos = this.gridToScreen(x, y);
     
+    // Get color based on tile type
+    let color = this.colors.tile;
+    switch (tileType) {
+      case 1: // Water
+        color = this.colors.water;
+        break;
+      case 2: // Mountain
+        color = this.colors.mountain;
+        break;
+      case 3: // Forest
+        color = this.colors.forest;
+        break;
+      case 4: // Plains
+        color = this.colors.plains;
+        break;
+      case 5: // Desert
+        color = this.colors.desert;
+        break;
+    }
+    
     // Draw tile
     this.drawIsometricTile(
       screenPos.x,
       screenPos.y,
       this.tileWidth * this.zoom,
       this.tileHeight * this.zoom,
-      this.colors.tile
+      color
     );
     
     // Draw tile outline
@@ -4022,13 +3566,14 @@ class Renderer {
     const halfWidth = width / 2;
     const halfHeight = height / 2;
     
-    this.ctx.fillStyle = color;
     this.ctx.beginPath();
     this.ctx.moveTo(x, y - halfHeight); // Top
     this.ctx.lineTo(x + halfWidth, y); // Right
     this.ctx.lineTo(x, y + halfHeight); // Bottom
     this.ctx.lineTo(x - halfWidth, y); // Left
     this.ctx.closePath();
+    
+    this.ctx.fillStyle = color;
     this.ctx.fill();
   }
   
@@ -4044,14 +3589,14 @@ class Renderer {
     const halfWidth = width / 2;
     const halfHeight = height / 2;
     
-    this.ctx.strokeStyle = color;
-    this.ctx.lineWidth = 1;
     this.ctx.beginPath();
     this.ctx.moveTo(x, y - halfHeight); // Top
     this.ctx.lineTo(x + halfWidth, y); // Right
     this.ctx.lineTo(x, y + halfHeight); // Bottom
     this.ctx.lineTo(x - halfWidth, y); // Left
     this.ctx.closePath();
+    
+    this.ctx.strokeStyle = color;
     this.ctx.stroke();
   }
   
@@ -4064,43 +3609,12 @@ class Renderer {
     if (!hero || !hero.position) return;
     
     const screenPos = this.gridToScreen(hero.position.x, hero.position.y);
-    const color = hero.owner === 'ai' ? this.colors.aiHero : this.colors.humanHero;
     
-    // Draw hero as a circle
-    this.ctx.fillStyle = color;
+    // Draw hero (larger than regular units)
     this.ctx.beginPath();
-    this.ctx.arc(
-      screenPos.x,
-      screenPos.y,
-      this.tileWidth * 0.3 * this.zoom,
-      0,
-      Math.PI * 2
-    );
+    this.ctx.fillStyle = isCurrentPlayer ? "#f1c40f" : "#9b59b6";
+    this.ctx.arc(screenPos.x, screenPos.y, 15 * this.zoom, 0, Math.PI * 2);
     this.ctx.fill();
-    
-    // Draw outline for current player's hero
-    if (isCurrentPlayer) {
-      this.ctx.strokeStyle = this.colors.selection;
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.arc(
-        screenPos.x,
-        screenPos.y,
-        this.tileWidth * 0.35 * this.zoom,
-        0,
-        Math.PI * 2
-      );
-      this.ctx.stroke();
-    }
-    
-    // Draw health bar
-    this.renderHealthBar(
-      screenPos.x,
-      screenPos.y - this.tileHeight * 0.5 * this.zoom,
-      this.tileWidth * 0.6 * this.zoom,
-      this.tileHeight * 0.1 * this.zoom,
-      hero.health / 100
-    );
   }
   
   /**
@@ -4111,25 +3625,12 @@ class Renderer {
     if (!unit || !unit.position) return;
     
     const screenPos = this.gridToScreen(unit.position.x, unit.position.y);
-    const color = unit.owner === 'ai' ? this.colors.aiUnit : this.colors.humanUnit;
     
-    // Draw unit as a small square
-    this.ctx.fillStyle = color;
-    this.ctx.fillRect(
-      screenPos.x - this.tileWidth * 0.2 * this.zoom,
-      screenPos.y - this.tileHeight * 0.2 * this.zoom,
-      this.tileWidth * 0.4 * this.zoom,
-      this.tileHeight * 0.4 * this.zoom
-    );
-    
-    // Draw health bar
-    this.renderHealthBar(
-      screenPos.x,
-      screenPos.y - this.tileHeight * 0.3 * this.zoom,
-      this.tileWidth * 0.4 * this.zoom,
-      this.tileHeight * 0.1 * this.zoom,
-      unit.health / 50
-    );
+    // Draw unit (for now, just a colored circle)
+    this.ctx.beginPath();
+    this.ctx.fillStyle = unit.owner === "human" ? "#2ecc71" : "#e67e22";
+    this.ctx.arc(screenPos.x, screenPos.y, 10 * this.zoom, 0, Math.PI * 2);
+    this.ctx.fill();
   }
   
   /**
@@ -4140,117 +3641,16 @@ class Renderer {
     if (!building || !building.position) return;
     
     const screenPos = this.gridToScreen(building.position.x, building.position.y);
-    const color = building.owner === 'ai' ? this.colors.aiBuilding : this.colors.humanBuilding;
     
-    // Draw building as a larger diamond
+    // Draw building (for now, just a colored rectangle)
+    this.ctx.fillStyle = building.owner === "human" ? "#3498db" : "#e74c3c";
     this.drawIsometricTile(
       screenPos.x,
       screenPos.y,
-      this.tileWidth * 1.5 * this.zoom,
-      this.tileHeight * 1.5 * this.zoom,
-      color
+      this.tileWidth * 1.2 * this.zoom,
+      this.tileHeight * 1.2 * this.zoom,
+      this.ctx.fillStyle
     );
-    
-    // Draw building outline
-    this.drawIsometricTileOutline(
-      screenPos.x,
-      screenPos.y,
-      this.tileWidth * 1.5 * this.zoom,
-      this.tileHeight * 1.5 * this.zoom,
-      this.darkenColor(color, 0.5)
-    );
-    
-    // Draw health bar
-    this.renderHealthBar(
-      screenPos.x,
-      screenPos.y - this.tileHeight * 0.8 * this.zoom,
-      this.tileWidth * 0.8 * this.zoom,
-      this.tileHeight * 0.1 * this.zoom,
-      building.health / 200
-    );
-    
-    // Draw build progress if not complete
-    if (!building.isComplete) {
-      this.renderBuildProgress(
-        screenPos.x,
-        screenPos.y - this.tileHeight * 0.6 * this.zoom,
-        this.tileWidth * 0.8 * this.zoom,
-        this.tileHeight * 0.1 * this.zoom,
-        building.buildProgress / 100
-      );
-    }
-  }
-  
-  /**
-   * Render a health bar
-   * @param {number} x - Screen x coordinate
-   * @param {number} y - Screen y coordinate
-   * @param {number} width - Bar width
-   * @param {number} height - Bar height
-   * @param {number} percentage - Health percentage (0-1)
-   */
-  renderHealthBar(x, y, width, height, percentage) {
-    // Clamp percentage to 0-1
-    percentage = Math.max(0, Math.min(1, percentage));
-    
-    // Bar background
-    this.ctx.fillStyle = '#333333';
-    this.ctx.fillRect(x - width / 2, y - height / 2, width, height);
-    
-    // Health bar color based on percentage
-    let color;
-    if (percentage > 0.6) {
-      color = '#00ff00'; // Green
-    } else if (percentage > 0.3) {
-      color = '#ffff00'; // Yellow
-    } else {
-      color = '#ff0000'; // Red
-    }
-    
-    // Health bar
-    this.ctx.fillStyle = color;
-    this.ctx.fillRect(
-      x - width / 2,
-      y - height / 2,
-      width * percentage,
-      height
-    );
-    
-    // Outline
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 1;
-    this.ctx.strokeRect(x - width / 2, y - height / 2, width, height);
-  }
-  
-  /**
-   * Render a build progress bar
-   * @param {number} x - Screen x coordinate
-   * @param {number} y - Screen y coordinate
-   * @param {number} width - Bar width
-   * @param {number} height - Bar height
-   * @param {number} percentage - Progress percentage (0-1)
-   */
-  renderBuildProgress(x, y, width, height, percentage) {
-    // Clamp percentage to 0-1
-    percentage = Math.max(0, Math.min(1, percentage));
-    
-    // Bar background
-    this.ctx.fillStyle = '#333333';
-    this.ctx.fillRect(x - width / 2, y - height / 2, width, height);
-    
-    // Progress bar
-    this.ctx.fillStyle = '#0088ff';
-    this.ctx.fillRect(
-      x - width / 2,
-      y - height / 2,
-      width * percentage,
-      height
-    );
-    
-    // Outline
-    this.ctx.strokeStyle = '#000000';
-    this.ctx.lineWidth = 1;
-    this.ctx.strokeRect(x - width / 2, y - height / 2, width, height);
   }
   
   /**
@@ -4262,64 +3662,11 @@ class Renderer {
     
     const screenPos = this.gridToScreen(entity.position.x, entity.position.y);
     
-    this.ctx.strokeStyle = this.colors.selection;
-    this.ctx.lineWidth = 2;
-    
-    if (entity.type === 'hero') {
-      // Highlight hero with a circle
-      this.ctx.beginPath();
-      this.ctx.arc(
-        screenPos.x,
-        screenPos.y,
-        this.tileWidth * 0.35 * this.zoom,
-        0,
-        Math.PI * 2
-      );
-      this.ctx.stroke();
-    } else if (entity.type === 'unit') {
-      // Highlight unit with a square
-      this.ctx.strokeRect(
-        screenPos.x - this.tileWidth * 0.25 * this.zoom,
-        screenPos.y - this.tileHeight * 0.25 * this.zoom,
-        this.tileWidth * 0.5 * this.zoom,
-        this.tileHeight * 0.5 * this.zoom
-      );
-    } else {
-      // Highlight building with a diamond
-      const halfWidth = this.tileWidth * 0.75 * this.zoom;
-      const halfHeight = this.tileHeight * 0.75 * this.zoom;
-      
-      this.ctx.beginPath();
-      this.ctx.moveTo(screenPos.x, screenPos.y - halfHeight);
-      this.ctx.lineTo(screenPos.x + halfWidth, screenPos.y);
-      this.ctx.lineTo(screenPos.x, screenPos.y + halfHeight);
-      this.ctx.lineTo(screenPos.x - halfWidth, screenPos.y);
-      this.ctx.closePath();
-      this.ctx.stroke();
-    }
-  }
-  
-  /**
-   * Darken a color by a factor
-   * @param {string} color - CSS color string
-   * @param {number} factor - Darken factor (0-1)
-   * @returns {string} Darkened color
-   */
-  darkenColor(color, factor) {
-    // Simple darkening for hex colors
-    if (color.startsWith('#')) {
-      let r = parseInt(color.substr(1, 2), 16);
-      let g = parseInt(color.substr(3, 2), 16);
-      let b = parseInt(color.substr(5, 2), 16);
-      
-      r = Math.floor(r * (1 - factor));
-      g = Math.floor(g * (1 - factor));
-      b = Math.floor(b * (1 - factor));
-      
-      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-    }
-    
-    return color;
+    // Draw selection highlight
+    this.ctx.beginPath();
+    this.ctx.fillStyle = this.colors.selection;
+    this.ctx.arc(screenPos.x, screenPos.y, 20 * this.zoom, 0, Math.PI * 2);
+    this.ctx.fill();
   }
   
   /**
@@ -4363,7 +3710,7 @@ export { Renderer };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\UIManager.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\UIManager.js 
 ======================================== 
  
 /**
@@ -4630,7 +3977,7 @@ export { UIManager };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\game\UnitImageLoader.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\UnitImageLoader.js 
 ======================================== 
  
 /**
@@ -4685,7 +4032,7 @@ class UnitImageLoader {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\map\Map.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\map\Map.js 
 ======================================== 
  
 /**
@@ -4712,13 +4059,26 @@ class Map {
      * Preload tile images for different terrain types
      */
     preloadTileImages() {
+        console.log('\n=== Loading Tile Images ===');
         const terrainTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
         
         terrainTypes.forEach(terrainType => {
             const img = new Image();
             img.src = `/images/terraintiles/${terrainType}.png`;
+            
+            img.onload = () => {
+                console.log(`Loaded image for ${terrainType} terrain`);
+            };
+            
+            img.onerror = () => {
+                console.warn(`Failed to load image for ${terrainType} terrain - will use color fallback`);
+            };
+            
             this.tileImages[terrainType] = img;
         });
+        
+        console.log(`Attempting to load ${terrainTypes.length} terrain images...`);
+        console.log('=== Tile Image Loading Started ===\n');
     }
     
     /**
@@ -4740,49 +4100,83 @@ class Map {
      * Set the map data from the server
      */
     setMapFromServer(mapData) {
-        console.log('Received map data from server', mapData ? 'valid' : 'invalid');
+        console.log('\n=== Processing Map Data ===');
+        console.log('Map data received:', {
+            isValid: !!mapData,
+            isArray: Array.isArray(mapData),
+            dimensions: mapData ? `${mapData.length}x${mapData[0]?.length}` : 'invalid',
+            sampleTile: mapData && mapData[0] ? mapData[0][0] : null
+        });
         
-        if (!mapData || !Array.isArray(mapData) || mapData.length === 0) {
+        if (!mapData || !Array.isArray(mapData) || mapData.length === 0 || !mapData[0]) {
             console.error('Invalid map data from server');
+            console.error('Expected 2D array of tiles, received:', mapData);
             return;
         }
         
+        // Update map dimensions
         this.height = mapData.length;
         this.width = mapData[0].length;
         
-        console.log(`Setting map from server data: ${this.width}x${this.height}`);
+        console.log(`Setting map dimensions: ${this.width}x${this.height}`);
         
-        // Convert server map data to our tile format
+        // Initialize tiles array
         this.tiles = new Array(this.height);
+        let invalidTiles = 0;
+        
+        // Process each tile
         for (let y = 0; y < this.height; y++) {
             this.tiles[y] = new Array(this.width);
             for (let x = 0; x < this.width; x++) {
                 if (!mapData[y] || !mapData[y][x]) {
                     console.error(`Missing tile data at ${x},${y}`);
                     this.tiles[y][x] = new Tile('grass');
+                    invalidTiles++;
                     continue;
                 }
                 
                 const serverTile = mapData[y][x];
-                // Use terrainType if available, fall back to type for backward compatibility
                 const terrainType = serverTile.terrainType || serverTile.type || 'grass';
-                this.tiles[y][x] = new Tile(terrainType);
                 
-                // Use passable if available, fall back to walkable for backward compatibility
+                // Create new tile with all properties
+                this.tiles[y][x] = new Tile(terrainType);
                 this.tiles[y][x].walkable = serverTile.passable !== undefined ? 
                     serverTile.passable : 
                     (serverTile.walkable !== undefined ? 
                         serverTile.walkable : 
                         (terrainType !== 'water' && terrainType !== 'mountain'));
-                
-                // Store elevation if available
-                if (serverTile.elevation !== undefined) {
-                    this.tiles[y][x].elevation = serverTile.elevation;
-                }
+                this.tiles[y][x].elevation = serverTile.elevation || 1;
+                this.tiles[y][x].x = x;
+                this.tiles[y][x].y = y;
             }
         }
         
-        console.log('Map set from server data');
+        if (invalidTiles > 0) {
+            console.warn(`Found ${invalidTiles} invalid tiles that were replaced with grass`);
+        }
+        
+        // Log map statistics
+        const terrainStats = {};
+        for (let y = 0; y < this.height; y++) {
+            for (let x = 0; x < this.width; x++) {
+                const terrainType = this.tiles[y][x].terrainType;
+                terrainStats[terrainType] = (terrainStats[terrainType] || 0) + 1;
+            }
+        }
+        
+        console.log('Map statistics:');
+        console.log('Dimensions:', `${this.width}x${this.height}`);
+        console.log('Total tiles:', this.width * this.height);
+        console.log('Terrain distribution:', terrainStats);
+        console.log('Sample tiles:');
+        console.log('Top-left:', this.tiles[0][0]);
+        console.log('Center:', this.tiles[Math.floor(this.height/2)][Math.floor(this.width/2)]);
+        console.log('Bottom-right:', this.tiles[this.height-1][this.width-1]);
+        console.log('=== Map Processing Complete ===\n');
+        
+        // Update Config with new map dimensions
+        Config.MAP_WIDTH = this.width;
+        Config.MAP_HEIGHT = this.height;
     }
     
     /**
@@ -4807,7 +4201,12 @@ class Map {
      * Get the tile image for a specific terrain type
      */
     getTileImage(terrainType) {
-        return this.tileImages[terrainType] || this.tileImages['grass'];
+        const image = this.tileImages[terrainType];
+        if (!image) {
+            console.warn(`No image found for terrain type: ${terrainType}`);
+            return this.tileImages['grass']; // Fallback to grass
+        }
+        return image;
     }
     
     /**
@@ -4848,146 +4247,212 @@ class Map {
         const tile = this.getTile(x, y);
         return tile && tile.buildable;
     }
+    
+    /**
+     * Render the map
+     */
+    render(ctx, camera) {
+        console.log('\n=== Rendering Map ===');
+        
+        // Get camera bounds
+        const bounds = camera.getWorldBounds();
+        
+        // Calculate visible tile range
+        const minGridX = Math.max(0, Math.floor(bounds.left / Config.TILE_SIZE));
+        const minGridY = Math.max(0, Math.floor(bounds.top / Config.TILE_SIZE));
+        const maxGridX = Math.min(this.width - 1, Math.ceil(bounds.right / Config.TILE_SIZE));
+        const maxGridY = Math.min(this.height - 1, Math.ceil(bounds.bottom / Config.TILE_SIZE));
+        
+        console.log('Rendering tile range:', {
+            x: `${minGridX} to ${maxGridX}`,
+            y: `${minGridY} to ${maxGridY}`
+        });
+        
+        // Track rendering statistics
+        let tilesRendered = 0;
+        const terrainStats = {};
+        
+        // Render tiles in isometric order (back to front)
+        for (let sum = minGridX + minGridY; sum <= maxGridX + maxGridY; sum++) {
+            for (let gridX = minGridX; gridX <= maxGridX; gridX++) {
+                const gridY = sum - gridX;
+                
+                if (gridY < minGridY || gridY > maxGridY) continue;
+                
+                const tile = this.getTile(gridX, gridY);
+                if (!tile) continue;
+                
+                // Convert grid coordinates to isometric world coordinates
+                const isoPos = this.gridToIso(gridX, gridY);
+                
+                // Convert world coordinates to screen coordinates
+                const screenPos = camera.worldToScreen(isoPos.x, isoPos.y);
+                
+                // Calculate tile dimensions with zoom
+                const tileWidth = Config.TILE_SIZE * camera.zoom;
+                const tileHeight = (Config.TILE_SIZE / 2) * camera.zoom;
+                
+                // Track terrain type
+                terrainStats[tile.terrainType] = (terrainStats[tile.terrainType] || 0) + 1;
+                
+                // Draw the tile
+                if (this.tileImages[tile.terrainType] && this.tileImages[tile.terrainType].complete) {
+                    // Draw tile image
+                    ctx.drawImage(
+                        this.tileImages[tile.terrainType],
+                        screenPos.x - tileWidth / 2,
+                        screenPos.y - tileHeight / 2,
+                        tileWidth,
+                        tileHeight
+                    );
+                } else {
+                    // Fallback to colored diamond
+                    this.drawIsometricTile(
+                        ctx,
+                        screenPos.x,
+                        screenPos.y,
+                        tileWidth,
+                        tileHeight,
+                        this.getTileColor(tile.terrainType)
+                    );
+                }
+                
+                tilesRendered++;
+            }
+        }
+        
+        console.log('Rendering statistics:', {
+            tilesRendered,
+            terrainDistribution: terrainStats
+        });
+        console.log('=== Map Rendering Complete ===\n');
+    }
+    
+    /**
+     * Draw an isometric tile
+     */
+    drawIsometricTile(ctx, x, y, width, height, color) {
+        ctx.fillStyle = color;
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.2)';
+        ctx.lineWidth = 1;
+        
+        // Draw diamond shape
+        ctx.beginPath();
+        ctx.moveTo(x, y - height / 2); // Top
+        ctx.lineTo(x + width / 2, y); // Right
+        ctx.lineTo(x, y + height / 2); // Bottom
+        ctx.lineTo(x - width / 2, y); // Left
+        ctx.closePath();
+        
+        // Fill and stroke
+        ctx.fill();
+        ctx.stroke();
+    }
+    
+    /**
+     * Get color for terrain type
+     */
+    getTileColor(terrainType) {
+        switch (terrainType) {
+            case 'grass':
+                return '#90EE90'; // Light green
+            case 'water':
+                return '#4169E1'; // Royal blue
+            case 'mountain':
+                return '#A0522D'; // Brown
+            case 'forest':
+                return '#228B22'; // Forest green
+            case 'sand':
+                return '#F4A460'; // Sandy brown
+            default:
+                return '#808080'; // Gray for unknown types
+        }
+    }
 }  
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\map\Tile.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\map\Tile.js 
 ======================================== 
  
 /**
- * Represents a single tile on the game map
+ * Represents a single tile in the game map
  */
 class Tile {
     /**
-     * Initialize a tile
+     * Initialize a new tile
+     * @param {string} terrainType - The type of terrain for this tile
      */
     constructor(terrainType = 'grass') {
-        // Ensure valid tile type
-        this.type = this.validateTerrainType(terrainType);
-        this.terrainType = this.type; // For consistency with server data
-        this.walkable = this.isWalkable(this.type);
-        this.buildable = this.isBuildable(this.type);
-        this.resourceType = this.getResourceType(this.type);
-        this.resourceAmount = this.resourceType ? Math.floor(Math.random() * 500) + 500 : 0;
-        this.elevation = 0; // Default elevation
-    }
-    
-    /**
-     * Validate and normalize terrain type
-     */
-    validateTerrainType(type) {
-        const validTypes = ['grass', 'water', 'mountain', 'forest', 'sand'];
+        this.terrainType = terrainType;
+        this.type = terrainType; // For backward compatibility
         
-        if (!type || typeof type !== 'string') {
-            console.warn(`Invalid tile type: ${type}, defaulting to grass`);
-            return 'grass';
-        }
+        // Position in the grid
+        this.x = 0;
+        this.y = 0;
         
-        const normalizedType = type.toLowerCase();
+        // Tile properties
+        this.walkable = terrainType !== 'water' && terrainType !== 'mountain';
+        this.passable = this.walkable;
+        this.buildable = terrainType === 'grass';
+        this.elevation = this.getDefaultElevation(terrainType);
         
-        if (!validTypes.includes(normalizedType)) {
-            console.warn(`Unknown tile type: ${normalizedType}, defaulting to grass`);
-            return 'grass';
-        }
-        
-        return normalizedType;
-    }
-    
-    /**
-     * Determine if a tile type is walkable
-     */
-    isWalkable(type) {
-        switch (type) {
-            case 'water':
-            case 'mountain':
-                return false;
-            case 'grass':
-            case 'sand':
-            case 'forest':
-                return true;
-            default:
-                return true;
-        }
-    }
-    
-    /**
-     * Determine if a tile type is buildable
-     */
-    isBuildable(type) {
-        switch (type) {
-            case 'grass':
-            case 'sand':
-                return true;
-            case 'water':
-            case 'mountain':
-            case 'forest':
-                return false;
-            default:
-                return false;
-        }
-    }
-    
-    /**
-     * Get resource type for a tile if applicable
-     */
-    getResourceType(type) {
-        switch (type) {
-            case 'forest':
-                return 'wood';
-            case 'mountain':
-                return 'stone';
-            default:
-                return null;
-        }
-    }
-    
-    /**
-     * Extract resources from the tile
-     */
-    extractResource(amount) {
-        if (!this.resourceType || this.resourceAmount <= 0) {
-            return 0;
-        }
-        
-        const extracted = Math.min(amount, this.resourceAmount);
-        this.resourceAmount -= extracted;
-        
-        // If resources are depleted, change the tile type
-        if (this.resourceAmount <= 0) {
-            this.depleteResource();
-        }
-        
-        return extracted;
-    }
-    
-    /**
-     * Handle resource depletion
-     */
-    depleteResource() {
-        switch (this.resourceType) {
-            case 'wood':
-                this.type = 'grass';
-                this.terrainType = 'grass';
-                break;
-            case 'stone':
-                this.type = 'mountain';
-                this.terrainType = 'mountain';
-                break;
-            default:
-                break;
-        }
-        
+        // Resource properties (if any)
         this.resourceType = null;
         this.resourceAmount = 0;
-        this.walkable = this.isWalkable(this.type);
-        this.buildable = this.isBuildable(this.type);
     }
+    
+    /**
+     * Get the default elevation for a terrain type
+     */
+    getDefaultElevation(terrainType) {
+        switch (terrainType) {
+            case 'water':
+                return 0;
+            case 'grass':
+                return 1;
+            case 'forest':
+                return 2;
+            case 'mountain':
+                return 3;
+            default:
+                return 1;
+        }
+    }
+    
+    /**
+     * Update tile properties from server data
+     */
+    updateFromServer(serverTile) {
+        if (!serverTile) return;
+        
+        this.terrainType = serverTile.terrainType || serverTile.type || this.terrainType;
+        this.type = this.terrainType; // Keep in sync
+        
+        this.walkable = serverTile.passable !== undefined ? 
+            serverTile.passable : 
+            (serverTile.walkable !== undefined ? 
+                serverTile.walkable : 
+                this.walkable);
+                
+        this.passable = this.walkable;
+        this.elevation = serverTile.elevation !== undefined ? 
+            serverTile.elevation : 
+            this.getDefaultElevation(this.terrainType);
+            
+        if (serverTile.x !== undefined) this.x = serverTile.x;
+        if (serverTile.y !== undefined) this.y = serverTile.y;
+    }
+}
+
+// Export the class
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { Tile };
 }  
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generateDetailedImages.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\tools\generateDetailedImages.js 
 ======================================== 
  
 /**
@@ -5508,7 +4973,7 @@ console.log('2. The game will automatically use these images');
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generateImages.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\tools\generateImages.js 
 ======================================== 
  
 const fs = require('fs');
@@ -6023,7 +5488,7 @@ generateAllImages();
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generatePlaceholderImages.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\tools\generatePlaceholderImages.js 
 ======================================== 
  
 /**
@@ -6233,7 +5698,7 @@ console.log('3. The game will automatically use these images');
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\utils\helpers.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\utils\helpers.js 
 ======================================== 
  
 /**
@@ -6378,7 +5843,7 @@ function manhattanDistance(x1, y1, x2, y2) {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\src\utils\Quadtree.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\src\utils\Quadtree.js 
 ======================================== 
  
 /**
@@ -6597,7 +6062,7 @@ if (typeof module !== 'undefined' && module.exports) {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\server\index.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\server\index.js 
 ======================================== 
  
 const express = require('express');
@@ -7853,7 +7318,7 @@ server.listen(PORT, () => {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\server\server.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\server\server.js 
 ======================================== 
  
 const http = require('http');
@@ -7889,7 +7354,7 @@ gameServer.define('game_room', GameRoom);
 app.use('/colyseus', monitor());
 
 // Define port to run server on
-const port = process.env.PORT || 2567;
+const port = process.env.PORT || 3000;
 
 // Listen on specified port
 gameServer.listen(port);
@@ -7900,7 +7365,7 @@ module.exports = { app, server, gameServer };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\server\rooms\GameRoom.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\server\rooms\GameRoom.js 
 ======================================== 
  
 const { Room } = require("colyseus");
@@ -7915,16 +7380,22 @@ class GameRoom extends Room {
   }
 
   onCreate(options) {
-    console.log("GameRoom created!");
+    console.log("\n=== Creating Game Room ===");
+    console.log("GameRoom created with options:", options);
     
     // Set max clients based on options or default to 100
     this.maxClients = options.maxPlayers || 100;
+    console.log("Max clients set to:", this.maxClients);
     
     // Create and set the game state
     this.setState(new GameState());
+    console.log("Game state initialized");
     
     // Generate map size based on player count (10 tiles per expected player)
     const mapSize = Math.max(20, Math.min(100, this.maxClients * 10));
+    console.log("Calculated map size:", mapSize);
+    
+    // Generate the map
     this.generateMap(mapSize);
     
     // Set up human and AI bases
@@ -7952,16 +7423,81 @@ class GameRoom extends Room {
     // Set up message handlers
     this.setupMessageHandlers();
     
-    console.log("GameRoom initialized with map size:", mapSize);
+    // Log the initial state
+    console.log("\nInitial Game State:");
+    console.log("Map size:", mapSize);
+    console.log("Map array length:", this.state.map.length);
+    console.log("Sample map data:", this.state.map.slice(0, 3));
+    console.log("Buildings:", this.state.buildings.size);
+    console.log("=== Game Room Creation Complete ===\n");
   }
   
   generateMap(mapSize) {
-    // Simple map generation - 0 represents empty tile
-    for (let i = 0; i < mapSize * mapSize; i++) {
-      this.state.map.push(0);
+    console.log('\n=== Generating Map ===');
+    console.log(`Generating map with size: ${mapSize}x${mapSize}`);
+    
+    // Clear existing map data
+    while (this.state.map.length > 0) {
+      this.state.map.pop();
     }
     
-    // TODO: Add more complex map generation with terrain, resources, etc.
+    // Create 2D array for map data
+    const mapData = [];
+    
+    // Generate map with terrain types
+    for (let y = 0; y < mapSize; y++) {
+      const row = [];
+      for (let x = 0; x < mapSize; x++) {
+        // Create tile data
+        const tile = {
+          terrainType: 'grass', // Default terrain
+          type: 'grass', // For backward compatibility
+          passable: true,
+          walkable: true,
+          elevation: 1,
+          x: x,
+          y: y
+        };
+        
+        // Add some variety with different terrain types
+        const rand = Math.random();
+        if (rand < 0.1) {
+          tile.terrainType = 'water';
+          tile.type = 'water';
+          tile.passable = false;
+          tile.walkable = false;
+          tile.elevation = 0;
+        } else if (rand < 0.2) {
+          tile.terrainType = 'forest';
+          tile.type = 'forest';
+          tile.elevation = 2;
+        } else if (rand < 0.25) {
+          tile.terrainType = 'mountain';
+          tile.type = 'mountain';
+          tile.passable = false;
+          tile.walkable = false;
+          tile.elevation = 3;
+        }
+        
+        row.push(tile);
+      }
+      mapData.push(row);
+    }
+    
+    // Store the map data in state
+    this.state.map = mapData;
+    
+    console.log(`Generated map dimensions: ${mapSize}x${mapSize}`);
+    console.log('Map structure:', {
+      rows: mapData.length,
+      columns: mapData[0].length,
+      totalTiles: mapData.length * mapData[0].length
+    });
+    console.log('Sample tiles:');
+    console.log('Top-left:', mapData[0][0]);
+    console.log('Center:', mapData[Math.floor(mapSize/2)][Math.floor(mapSize/2)]);
+    console.log('Bottom-right:', mapData[mapSize-1][mapSize-1]);
+    console.log('=== Map Generation Complete ===\n');
   }
   
   setupBases(mapSize) {
@@ -8091,7 +7627,9 @@ class GameRoom extends Room {
   }
   
   onJoin(client, options) {
-    console.log(client.sessionId, "joined!");
+    console.log('\n=== Player Joining ===');
+    console.log('Client ID:', client.sessionId);
+    console.log('Join options:', options);
     
     // Create player data
     const playerData = new PlayerData();
@@ -8112,8 +7650,37 @@ class GameRoom extends Room {
     playerData.hero = hero;
     this.state.players.set(client.sessionId, playerData);
     
+    // Send initial game state to the joining client
+    const gameState = {
+      playerId: client.sessionId,
+      gameState: {
+        map: this.state.map,
+        mapDimensions: {
+          width: this.state.map.length,
+          height: this.state.map[0].length,
+          zoomFactor: 1.0
+        },
+        players: this.state.players,
+        buildings: this.state.buildings,
+        units: this.state.units,
+        serverStartTime: this.state.serverStartTime,
+        gameTime: this.state.gameTime
+      }
+    };
+    
+    console.log('Sending initial game state:');
+    console.log('- Map dimensions:', `${gameState.gameState.mapDimensions.width}x${gameState.gameState.mapDimensions.height}`);
+    console.log('- Players:', this.state.players.size);
+    console.log('- Buildings:', this.state.buildings.size);
+    console.log('- Units:', this.state.units.size);
+    
+    // Send the game state to the client
+    client.send("gameState", gameState);
+    
     // Broadcast player join event
     this.broadcast("player_joined", { id: client.sessionId });
+    
+    console.log('=== Player Join Complete ===\n');
   }
   
   onLeave(client, consented) {
@@ -8327,7 +7894,7 @@ module.exports = { GameRoom };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\server\schema\GameState.js 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\server\schema\GameState.js 
 ======================================== 
  
 const { Schema, MapSchema, ArraySchema, type } = require('@colyseus/schema');
@@ -8473,7 +8040,7 @@ module.exports = {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\public\index.html 
 ======================================== 
  
 <!DOCTYPE html>
@@ -8513,7 +8080,7 @@ FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\massive-rts\public\styles.css 
+FILE: C:\Users\Garrett\Documents\feature2-worktree\public\styles.css 
 ======================================== 
  
 * {
@@ -8736,7 +8303,7 @@ FILE: package.json
     "build:client": "webpack --config webpack.client.config.js",
     "build": "npm run build:server && npm run build:client",
     "client": "http-server -c-1 -p 8080",
-    "postinstall": "npm run build",
+    "postinstall": "echo 'Dependencies installed'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
