@@ -5,9 +5,29 @@ echo ===== Starting Massive RTS Game =====
 if not exist "dist" mkdir "dist"
 if not exist "public\js" mkdir "public\js"
 
-:: Build server and client
+:: Install dependencies if node_modules doesn't exist
+if not exist "node_modules" (
+    echo Installing dependencies...
+    call npm install
+    if %ERRORLEVEL% neq 0 (
+        echo Error installing dependencies
+        pause
+        exit /b %ERRORLEVEL%
+    )
+) else (
+    :: If dependencies exist, just check if any are missing
+    echo Checking dependencies...
+    call npm install --no-audit --no-fund --loglevel=error
+    if %ERRORLEVEL% neq 0 (
+        echo Error checking dependencies
+        pause
+        exit /b %ERRORLEVEL%
+    )
+)
+
+:: Build server and client using locally installed webpack
 echo Building server...
-call npm run build:server
+call node_modules\.bin\webpack --config webpack.server.config.js
 if %ERRORLEVEL% neq 0 (
     echo Error building server bundle
     pause
@@ -15,7 +35,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo Building client...
-call npm run build:client
+call node_modules\.bin\webpack --config webpack.client.config.js
 if %ERRORLEVEL% neq 0 (
     echo Error building client bundle
     pause

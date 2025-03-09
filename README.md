@@ -10,16 +10,22 @@ This is a simplified, browser-based RTS game prototype with the following featur
 - Massively multiplayer with drop-in/drop-out capability
 - Cooperative gameplay: Humans vs. AI-controlled opponents
 - Adaptive difficulty based on human team performance
-- AI-generated variation (maps, NPCs, units) via external APIs
+- Isometric tile-based map with varying sizes based on player count
+- Building construction and unit management
+- AI-controlled enemies that become stronger over time
 
-## Current Development Phase (Phase 2)
+## Current Features
 
-- Basic, Warcraft-like top-down map
-- Procedurally generated terrain on HTML5 Canvas
-- Single controllable unit with camera panning
-- **Multiplayer functionality with real-time synchronization**
+- Isometric map with dynamic size based on player count
+- Hero units for each player
+- Building construction and unit hiring
+- Resource management
+- AI opponents with scaling difficulty
+- 1-hour match time limit with victory conditions
 
 ## Setup and Installation
+
+The game is designed to be self-contained with all dependencies installed locally.
 
 1. Clone the repository:
    ```
@@ -32,7 +38,8 @@ This is a simplified, browser-based RTS game prototype with the following featur
    start.bat
    ```
    This will:
-   - Check for and install any required dependencies
+   - Check for and install any required dependencies locally
+   - Build the server and client bundles using the locally installed webpack
    - Start the Node.js multiplayer server
    - Automatically open your browser to the game
 
@@ -41,86 +48,80 @@ This is a simplified, browser-based RTS game prototype with the following featur
    stop.bat
    ```
 
-## Multiplayer Setup
+## Dependencies
 
-The game now supports multiplayer functionality using Node.js and Socket.IO:
+All dependencies are installed locally in the project's node_modules folder. The game does not require any globally installed packages. The start.bat script will handle installing all necessary dependencies.
 
-1. The server runs on port 3000 by default
+Key dependencies include:
+- Colyseus (multiplayer game server framework)
+- Webpack (for bundling the application)
+- Babel (for transpiling modern JavaScript)
+- Express (web server)
+
+## Multiplayer System
+
+The game uses Colyseus for multiplayer functionality:
+
+1. The server runs on port 2567 by default
 2. Players connect by opening their browser to the server URL
-3. Each player gets a unique ID and can control their own units
+3. Each player gets a unique ID and controls their own hero unit
 4. Game state is synchronized in real-time between all connected players
-5. Players can see each other's units and interact in the same game world
+5. Players can see each other's units and buildings in the shared game world
 
 ## Controls
 
 - **Mouse Movement**: Move the camera by moving the mouse to the screen edges
 - **Arrow Keys/WASD**: Move the camera
-- **Left Click**: Select units
-- **Right Click**: Command selected units to move
+- **Left Click**: Select units/buildings
+- **Right Click**: Command selected units to move or attack
 - **Click and Drag**: Select multiple units
 
 ## Project Structure
 
 ```
 massive-rts/
+├── dist/                   # Compiled server bundle
 ├── public/
-│   ├── index.html           # HTML canvas container
-│   ├── styles.css           # Global styles
-│   └── assets/              # Images/sprites (if any)
-├── src/
-│   ├── game/
-│   │   ├── Game.js          # Main game loop & initialization
-│   │   ├── Renderer.js      # Canvas rendering logic
-│   │   ├── InputHandler.js  # User inputs (keyboard, mouse)
-│   │   ├── Camera.js        # Camera panning logic
-│   │   ├── Config.js        # Game constants/configurations
-│   │   └── Multiplayer.js   # Client-side multiplayer integration
-│   │
-│   ├── entities/
-│   │   ├── Entity.js        # Base class for all units/buildings
-│   │   ├── Unit.js          # Player/AI controlled units
-│   │   ├── Building.js      # Structures (future expansions)
-│   │   └── NPC.js           # AI controlled units (future expansions)
-│   │
-│   ├── map/
-│   │   ├── Map.js           # Map generation & management logic
-│   │   └── Tile.js          # Individual map tiles
-│   │
-│   └── utils/
-│       └── helpers.js       # Utility functions
-│
+│   ├── index.html          # HTML canvas container
+│   ├── styles.css          # Global styles
+│   └── js/                 # Compiled client bundle
 ├── server/
-│   └── index.js             # Node.js server for multiplayer
-│
-├── tests/                   # Unit tests (future)
-├── package.json             # Dependencies & project info
-├── start.bat                # Script to start the game server
-├── stop.bat                 # Script to stop the game server
-└── README.md                # This file
+│   ├── server.js           # Main server entry point
+│   ├── rooms/              # Colyseus room handlers
+│   └── schema/             # State schemas for synchronization
+├── src/
+│   ├── game/               # Client-side game components
+│   ├── entities/           # Game entity definitions
+│   └── index.js            # Main client entry point
+├── webpack.client.config.js # Client webpack config
+├── webpack.server.config.js # Server webpack config
+├── package.json            # Dependencies & project info
+├── start.bat               # Script to start the game server
+├── stop.bat                # Script to stop the game server
+└── README.md               # This file
 ```
 
-## Multiplayer Architecture
+## Architecture
 
-The multiplayer system uses a client-server architecture:
+The game uses a client-server architecture:
 
-- **Server**: Node.js with Express and Socket.IO
+- **Server**: Node.js with Colyseus
   - Maintains the authoritative game state
   - Processes player commands
-  - Broadcasts state updates to all clients
-  - Handles player connections/disconnections
+  - Handles AI logic and game rules
+  - Synchronizes state to all clients
 
-- **Client**: Browser with Socket.IO client
-  - Sends player commands to the server
-  - Receives and renders game state updates
-  - Interpolates entity positions between updates
-  - Handles local input and camera controls
+- **Client**: Browser with Colyseus.js client
+  - Renders the game world and entities
+  - Captures user input
+  - Sends commands to the server
+  - Displays game UI and notifications
 
 ## Future Development
 
-- Resource gathering and base building
-- Unit production and tech trees
-- AI opponents with varying difficulty levels
 - Enhanced graphics and animations
+- More building and unit types
+- Advanced AI behaviors
 - Chat system for player communication
 - Team-based gameplay
 

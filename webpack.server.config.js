@@ -24,7 +24,9 @@ module.exports = {
             presets: ['@babel/preset-env'],
             plugins: [
               ['@babel/plugin-proposal-decorators', { legacy: true }],
-              ['@babel/plugin-proposal-class-properties', { loose: true }]
+              ['@babel/plugin-proposal-class-properties', { loose: true }],
+              ['@babel/plugin-transform-private-methods', { loose: true }],
+              ['@babel/plugin-transform-private-property-in-object', { loose: true }]
             ]
           }
         }
@@ -36,5 +38,10 @@ module.exports = {
   },
   resolve: {
     extensions: ['.js']
+  },
+  performance: {
+    hints: false,
+    maxEntrypointSize: 1024000,
+    maxAssetSize: 1024000
   }
 }; 

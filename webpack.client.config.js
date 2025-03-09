@@ -16,7 +16,13 @@ module.exports = {
         use: {
           loader: 'babel-loader',
           options: {
-            presets: ['@babel/preset-env']
+            presets: ['@babel/preset-env'],
+            plugins: [
+              ['@babel/plugin-proposal-decorators', { legacy: true }],
+              ['@babel/plugin-proposal-class-properties', { loose: true }],
+              ['@babel/plugin-transform-private-methods', { loose: true }],
+              ['@babel/plugin-transform-private-property-in-object', { loose: true }]
+            ]
           }
         }
       },
@@ -39,7 +45,20 @@ module.exports = {
     ]
   },
   resolve: {
-    extensions: ['.js']
+    extensions: ['.js'],
+    fallback: {
+      "buffer": false,
+      "crypto": false,
+      "fs": false,
+      "path": false,
+      "stream": false,
+      "zlib": false
+    }
   },
-  devtool: 'source-map'
+  devtool: 'source-map',
+  performance: {
+    hints: false,
+    maxEntrypointSize: 1024000,
+    maxAssetSize: 1024000
+  }
 }; 
