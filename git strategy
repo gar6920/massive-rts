@@ -1,0 +1,26 @@
+# Merge impl into master
+cd C:\Users\Garrett\Documents\massive-rts
+git checkout master
+git merge impl3
+
+# Reset existing worktrees to new master
+cd ../impl1-worktree
+git reset --hard master
+cd ../impl2-worktree
+git reset --hard master
+cd ../impl3-worktree
+git reset --hard master
+
+# Clean up old worktrees (optional)
+cd C:\Users\Garrett\Documents\massive-rts
+git worktree remove ../impl1-worktree
+git worktree remove ../impl2-worktree
+git worktree remove ../impl3-worktree
+
+# Create new branches and worktrees for the next feature
+git branch feature-impl1
+git branch feature-impl2
+git branch feature-impl3
+git worktree add ../feature1-worktree feature-impl1
+git worktree add ../feature2-worktree feature-impl2
+git worktree add ../feature3-worktree feature-impl3
