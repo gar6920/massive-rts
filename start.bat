@@ -1,43 +1,35 @@
 @echo off
-echo Starting Massive RTS Game Server...
-echo.
+echo ===== Starting Massive RTS Game =====
 
-:: Check if npm is installed
-where npm >nul 2>nul
+:: Create dist and public/js directories if they don't exist
+if not exist "dist" mkdir "dist"
+if not exist "public\js" mkdir "public\js"
+
+:: Build server and client
+echo Building server...
+call npm run build:server
 if %ERRORLEVEL% neq 0 (
-    echo Error: npm is not installed or not in the PATH.
-    echo Please install Node.js from https://nodejs.org/
+    echo Error building server bundle
     pause
-    exit /b 1
+    exit /b %ERRORLEVEL%
 )
 
-:: Check for package.json
-if not exist package.json (
-    echo Error: package.json not found.
-    echo Please run this script from the project root directory.
-    pause
-    exit /b 1
-)
-
-:: Install dependencies if needed
-echo Checking dependencies...
-call npm install --no-audit --no-fund --loglevel=error
+echo Building client...
+call npm run build:client
 if %ERRORLEVEL% neq 0 (
-    echo Error installing dependencies.
+    echo Error building client bundle
     pause
-    exit /b 1
+    exit /b %ERRORLEVEL%
 )
 
-:: Start the server
-echo.
+:: Run the server
 echo Starting server...
-echo Server will be available at: http://localhost:3000
-echo.
-echo Press Ctrl+C to stop the server when done.
-echo.
+start /B node dist/server.bundle.js
 
 :: Open the browser
-start http://localhost:3000
+echo Opening browser...
+timeout /t 2 >nul
+start http://localhost:2567
 
-:: Start the Node.js server
-node server/index.js 
+echo ===== Game started =====
+echo Use stop.bat to stop the server when done. 

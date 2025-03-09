@@ -5,45 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Massive RTS Game</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- Socket.IO client library -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <div class="game-container">
-        <canvas id="gameCanvas"></canvas>
-        <div class="ui-overlay">
-            <div id="resourcesPanel" class="panel">
+        <canvas id="game-canvas"></canvas>
+        <div id="ui-overlay" class="ui-overlay">
+            <div id="resources-container" class="ui-panel">
                 <!-- Resources will be displayed here -->
             </div>
-            <div id="minimap" class="panel">
-                <!-- Minimap will be displayed here -->
+            <div id="selection-info" class="ui-panel">
+                <!-- Selection info will be displayed here -->
             </div>
-            <div id="controlPanel" class="panel">
-                <!-- Control buttons will be displayed here -->
+            <div id="notification" class="ui-notification">
+                <!-- Notifications will be displayed here -->
+            </div>
+            <div id="game-time" class="ui-game-time">
+                <!-- Game time will be displayed here -->
+            </div>
+            <div id="game-over" class="ui-game-over">
+                <!-- Game over screen will be displayed here -->
             </div>
         </div>
     </div>
 
-    <!-- Game scripts -->
-    <script src="/src/utils/helpers.js"></script>
-    <script src="/src/utils/Quadtree.js"></script>
-    <script src="/src/map/Tile.js"></script>
-    <script src="/src/map/Map.js"></script>
-    <script src="/src/entities/Entity.js"></script>
-    <script src="/src/entities/Unit.js"></script>
-    <script src="/src/entities/Building.js"></script>
-    <script src="/src/game/Config.js"></script>
-    <script src="/src/game/Camera.js"></script>
-    <script src="/src/game/InputHandler.js"></script>
-    <script src="/src/game/Renderer.js"></script>
-    <script src="/src/game/Multiplayer.js"></script>
-    <script src="/src/game/Game.js"></script>
-    <script>
-        // Initialize the game when the window loads
-        window.onload = function() {
-            const game = new Game();
-            game.start();
-        };
-    </script>
+    <!-- Game script (bundled) -->
+    <script src="/js/client.bundle.js"></script>
 </body>
 </html> 

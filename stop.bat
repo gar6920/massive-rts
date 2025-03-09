@@ -1,20 +1,18 @@
 @echo off
-echo Stopping Massive RTS Game Server...
-echo.
+echo ===== Stopping Massive RTS Game =====
 
-:: Find and kill the Node.js process running on port 3000
-for /f "tokens=5" %%a in ('netstat -ano ^| findstr :3000') do (
-    echo Found server process with PID: %%a
+:: Find and kill the Node.js process running the server
+echo Finding server process...
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr "LISTENING" ^| findstr ":2567"') do (
+    echo Found process: %%a
+    echo Terminating process...
     taskkill /F /PID %%a
-    if %ERRORLEVEL% equ 0 (
-        echo Server stopped successfully.
+    if %ERRORLEVEL% neq 0 (
+        echo Warning: Unable to terminate process. It may have already been stopped.
     ) else (
-        echo Failed to stop server. You may need to end the process manually.
+        echo Process terminated successfully.
     )
-    goto end
 )
 
-echo No server running on port 3000.
-
-:end
-timeout /t 3 >nul 
+echo ===== Game server stopped =====
+timeout /t 2 >nul 

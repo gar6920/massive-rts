@@ -1,246 +1,321 @@
 /**
- * Handles user input (keyboard, mouse) for game interaction
+ * Handles all user input (mouse, keyboard) for the game
  */
 class InputHandler {
     /**
-     * Initialize input handler and set up event listeners
+     * Initialize the input handler
+     * @param {Game} game - The main game instance
      */
     constructor(game) {
         this.game = game;
-        this.camera = game.camera;
-        this.canvas = game.canvas;
         
-        this.keys = {}; // Track pressed keys
-        this.mouseX = 0;
-        this.mouseY = 0;
-        this.mouseDown = false;
-        this.rightMouseDown = false;
-        this.middleMouseDown = false;
-        this.lastMouseX = 0;
-        this.lastMouseY = 0;
-        this.selectionStartX = 0;
-        this.selectionStartY = 0;
-        this.selectionEndX = 0;
-        this.selectionEndY = 0;
-        this.isSelecting = false;
-        this.clickStartTime = 0;
-        this.inputEnabled = true; // Flag to control input
+        // Keyboard state
+        this.keys = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            shift: false
+        };
         
-        // Minimap element
-        this.minimapElement = document.getElementById('minimap');
+        // Mouse state
+        this.mouse = {
+            x: 0,
+            y: 0,
+            leftDown: false,
+            rightDown: false,
+            dragStart: null,
+            dragging: false
+        };
         
-        // Bind event handlers
+        // Selection box
+        this.selectionBox = null;
+        
+        // Camera movement speed
+        this.cameraSpeed = 10;
+        
+        // Input enabled flag
+        this.inputEnabled = true;
+        
+        // Setup event listeners
         this.setupEventListeners();
     }
     
     /**
-     * Set up all event listeners
+     * Set up event listeners for user input
      */
     setupEventListeners() {
         // Keyboard events
-        window.addEventListener('keydown', this.handleKeyDown.bind(this));
-        window.addEventListener('keyup', this.handleKeyUp.bind(this));
+        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        window.addEventListener('keyup', (e) => this.handleKeyUp(e));
         
         // Mouse events
-        this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
-        this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        this.canvas.addEventListener('contextmenu', this.handleRightClick.bind(this));
-        this.canvas.addEventListener('wheel', this.handleMouseWheel.bind(this));
+        const canvas = this.game.renderer.canvas;
+        canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+        canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        canvas.addEventListener('wheel', (e) => this.handleMouseWheel(e));
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.handleRightClick(e);
+        });
         
-        // Prevent context menu from appearing on right-click
-        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-        
-        // Minimap events
-        this.minimapElement.addEventListener('mousedown', this.handleMinimapClick.bind(this));
-        this.minimapElement.addEventListener('contextmenu', (e) => e.preventDefault());
-        
-        // Window resize event
-        window.addEventListener('resize', this.handleResize.bind(this));
+        // Window resize
+        window.addEventListener('resize', () => this.handleResize());
     }
     
     /**
-     * Handle key down events
+     * Handle keydown events
+     * @param {KeyboardEvent} e - Keyboard event
      */
     handleKeyDown(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        this.keys[e.key] = true;
-        
-        // Handle specific key presses
         switch (e.key) {
-            case 'Escape':
-                // Deselect all units
-                this.game.deselectAll();
+            case 'ArrowUp':
+            case 'w':
+                this.keys.up = true;
                 break;
-            case 'c':
-                // Center the camera on the map
-                this.camera.centerOnMap();
+            case 'ArrowDown':
+            case 's':
+                this.keys.down = true;
+                break;
+            case 'ArrowLeft':
+            case 'a':
+                this.keys.left = true;
+                break;
+            case 'ArrowRight':
+            case 'd':
+                this.keys.right = true;
+                break;
+            case 'Shift':
+                this.keys.shift = true;
                 break;
         }
-        
-        // Handle camera movement with arrow keys
-        this.updateCameraFromKeys();
     }
     
     /**
-     * Handle key up events
+     * Handle keyup events
+     * @param {KeyboardEvent} e - Keyboard event
      */
     handleKeyUp(e) {
-        this.keys[e.code] = false;
+        switch (e.key) {
+            case 'ArrowUp':
+            case 'w':
+                this.keys.up = false;
+                break;
+            case 'ArrowDown':
+            case 's':
+                this.keys.down = false;
+                break;
+            case 'ArrowLeft':
+            case 'a':
+                this.keys.left = false;
+                break;
+            case 'ArrowRight':
+            case 'd':
+                this.keys.right = false;
+                break;
+            case 'Shift':
+                this.keys.shift = false;
+                break;
+        }
     }
     
     /**
-     * Handle mouse down events
+     * Handle mousedown events
+     * @param {MouseEvent} e - Mouse event
      */
     handleMouseDown(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        this.mouseX = e.clientX;
-        this.mouseY = e.clientY;
-        this.lastMouseX = e.clientX;
-        this.lastMouseY = e.clientY;
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        // Left mouse button
-        if (e.button === 0) {
-            this.mouseDown = true;
-            this.selectionStartX = e.clientX;
-            this.selectionStartY = e.clientY;
-            this.selectionEndX = e.clientX;
-            this.selectionEndY = e.clientY;
-            this.isSelecting = false; // Start false, will become true if mouse moves
-            this.clickStartTime = Date.now();
-        }
-        // Right mouse button
-        else if (e.button === 2) {
-            this.rightMouseDown = true;
-        }
-        // Middle mouse button (rollerball)
-        else if (e.button === 1) {
-            this.middleMouseDown = true;
-            e.preventDefault(); // Prevent default middle-click behavior
+        // Store mouse state
+        this.mouse.x = x;
+        this.mouse.y = y;
+        
+        // Handle different mouse buttons
+        if (e.button === 0) { // Left click
+            this.mouse.leftDown = true;
+            this.mouse.dragStart = { x, y };
+            
+            // If not holding shift, clear selection for new selection
+            if (!this.keys.shift) {
+                this.game.selectEntity(null);
+            }
+        } else if (e.button === 2) { // Right click
+            this.mouse.rightDown = true;
+            
+            // Right click is handled in context menu event to prevent the default menu
         }
     }
     
     /**
-     * Handle mouse up events
+     * Handle mouseup events
+     * @param {MouseEvent} e - Mouse event
      */
     handleMouseUp(e) {
-        // Only update mouse state if input is disabled
-        if (!this.inputEnabled) {
-            if (e.button === 0) this.mouseDown = false;
-            else if (e.button === 2) this.rightMouseDown = false;
-            else if (e.button === 1) this.middleMouseDown = false;
-            return;
-        }
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        if (e.button === 0) {
-            this.mouseDown = false;
-
-            // Get world coordinates for both start and end points
-            const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
-            const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
+        // Handle different mouse buttons
+        if (e.button === 0) { // Left click
+            this.mouse.leftDown = false;
             
-            // Calculate the size of the selection box in screen pixels
-            const selectionWidth = Math.abs(this.selectionEndX - this.selectionStartX);
-            const selectionHeight = Math.abs(this.selectionEndY - this.selectionStartY);
-            
-            // If the selection box is very small, treat it as a click
-            if (selectionWidth < 5 && selectionHeight < 5) {
-                const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-                this.game.handleEntitySelection(worldPos.x, worldPos.y);
+            // If dragging, handle selection box
+            if (this.mouse.dragging) {
+                this.handleSelectionBox();
             } else {
-                // Otherwise use box selection
-                this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
+                // Single click selection
+                const gridPos = this.game.renderer.screenToGrid(x, y);
+                this.handleSelectionClick(gridPos);
             }
             
-            this.isSelecting = false;
-        } else if (e.button === 2) {
-            this.rightMouseDown = false;
-        } else if (e.button === 1) {
-            this.middleMouseDown = false;
+            // Reset dragging state
+            this.mouse.dragging = false;
+            this.mouse.dragStart = null;
+            this.selectionBox = null;
+        } else if (e.button === 2) { // Right click
+            this.mouse.rightDown = false;
         }
     }
     
     /**
-     * Handle mouse movement
+     * Handle selection box selection
+     */
+    handleSelectionBox() {
+        if (!this.selectionBox) return;
+        
+        // Convert selection box to grid coordinates
+        const topLeft = this.game.renderer.screenToGrid(this.selectionBox.x, this.selectionBox.y);
+        const bottomRight = this.game.renderer.screenToGrid(
+            this.selectionBox.x + this.selectionBox.width,
+            this.selectionBox.y + this.selectionBox.height
+        );
+        
+        // Find entities in selection box
+        const selectedEntities = [];
+        
+        // Check units
+        this.game.units.forEach(unit => {
+            if (unit.owner === this.game.playerId) {
+                const pos = unit.position;
+                if (pos.x >= topLeft.x && pos.x <= bottomRight.x &&
+                    pos.y >= topLeft.y && pos.y <= bottomRight.y) {
+                    selectedEntities.push(unit);
+                }
+            }
+        });
+        
+        // If entities are found, select them
+        if (selectedEntities.length > 0) {
+            this.game.selectMultipleEntities(selectedEntities);
+        }
+    }
+    
+    /**
+     * Handle mousemove events
+     * @param {MouseEvent} e - Mouse event
      */
     handleMouseMove(e) {
-        this.mouseX = e.clientX;
-        this.mouseY = e.clientY;
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        // Skip selection and panning if input is disabled
-        if (!this.inputEnabled) {
-            this.lastMouseX = e.clientX;
-            this.lastMouseY = e.clientY;
-            return;
-        }
+        // Update mouse position
+        this.mouse.x = x;
+        this.mouse.y = y;
         
-        // Start selection if mouse has moved enough while button is down
-        if (this.mouseDown && !this.isSelecting) {
-            const mouseMoved = 
-                Math.abs(e.clientX - this.selectionStartX) > 5 || 
-                Math.abs(e.clientY - this.selectionStartY) > 5;
+        // Check if dragging with left mouse button
+        if (this.mouse.leftDown && this.mouse.dragStart) {
+            // Set dragging flag
+            this.mouse.dragging = true;
             
-            if (mouseMoved) {
-                this.isSelecting = true;
-            }
+            // Calculate selection box
+            this.selectionBox = {
+                x: Math.min(this.mouse.dragStart.x, x),
+                y: Math.min(this.mouse.dragStart.y, y),
+                width: Math.abs(x - this.mouse.dragStart.x),
+                height: Math.abs(y - this.mouse.dragStart.y)
+            };
         }
         
-        // Update selection box if selecting
-        if (this.isSelecting) {
-            this.selectionEndX = e.clientX;
-            this.selectionEndY = e.clientY;
+        // Screen edge camera panning
+        const edgeSize = 50;
+        if (x < edgeSize) {
+            this.game.renderer.panCamera(-this.cameraSpeed, 0);
+        } else if (x > this.game.renderer.canvas.width - edgeSize) {
+            this.game.renderer.panCamera(this.cameraSpeed, 0);
         }
         
-        // Handle middle mouse panning
-        if (this.middleMouseDown) {
-            const deltaX = this.lastMouseX - e.clientX;
-            const deltaY = this.lastMouseY - e.clientY;
-            
-            // Move camera based on mouse movement
-            this.camera.move(deltaX / this.camera.zoom, deltaY / this.camera.zoom);
+        if (y < edgeSize) {
+            this.game.renderer.panCamera(0, -this.cameraSpeed);
+        } else if (y > this.game.renderer.canvas.height - edgeSize) {
+            this.game.renderer.panCamera(0, this.cameraSpeed);
         }
-        
-        this.lastMouseX = e.clientX;
-        this.lastMouseY = e.clientY;
-        
-        // Handle camera movement when mouse is near screen edges
-        this.updateCameraFromMouse();
     }
     
     /**
-     * Handle mouse wheel events for zooming
+     * Handle mousewheel events
+     * @param {WheelEvent} e - Wheel event
      */
     handleMouseWheel(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
+        // Prevent default scrolling
         e.preventDefault();
         
-        // Determine zoom direction
-        const deltaZoom = e.deltaY < 0 ? Config.ZOOM_SPEED : -Config.ZOOM_SPEED;
-        
-        // Zoom at the mouse position
-        this.camera.zoomAt(deltaZoom, e.clientX, e.clientY);
+        // Adjust zoom level
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        this.game.renderer.adjustZoom(delta);
     }
     
     /**
-     * Handle right click events
+     * Handle right-click events
+     * @param {MouseEvent} e - Mouse event
      */
     handleRightClick(e) {
-        e.preventDefault(); // Prevent context menu
-        
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        // If we have selected entities, issue a command
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Convert screen position to grid position
+        const gridPos = this.game.renderer.screenToGrid(x, y);
+        
+        // Check for selected entities
         if (this.game.selectedEntities.length > 0) {
-            const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-            console.log(`Right click at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
-            this.game.handleCommand(worldPos.x, worldPos.y);
+            // Check if clicking on an enemy entity (for attack)
+            const targetEntity = this.findEntityAtPosition(gridPos);
+            
+            if (targetEntity && targetEntity.owner !== this.game.playerId) {
+                // Attack the target
+                this.game.selectedEntities.forEach(entity => {
+                    if (entity.id !== this.game.players.get(this.game.playerId).hero.id) {
+                        this.game.attack(entity.id, targetEntity.id);
+                    }
+                });
+            } else {
+                // Move to position
+                this.game.selectedEntities.forEach(entity => {
+                    if (entity.id === this.game.players.get(this.game.playerId).hero.id) {
+                        // Move hero
+                        this.game.moveHero(gridPos.x, gridPos.y);
+                    } else {
+                        // Move unit
+                        this.game.moveUnit(entity.id, gridPos.x, gridPos.y);
+                    }
+                });
+            }
         }
     }
     
@@ -248,133 +323,109 @@ class InputHandler {
      * Handle window resize
      */
     handleResize() {
-        Config.updateDimensions();
-        this.camera.updateDimensions();
-        this.game.handleResize();
+        // Update canvas size in renderer
+        this.game.renderer.handleResize();
     }
     
     /**
      * Update camera position based on keyboard input
      */
     updateCameraFromKeys() {
-        let dx = 0;
-        let dy = 0;
-        
-        if (this.keys['ArrowUp'] || this.keys['w']) dy -= Config.CAMERA_SPEED;
-        if (this.keys['ArrowDown'] || this.keys['s']) dy += Config.CAMERA_SPEED;
-        if (this.keys['ArrowLeft'] || this.keys['a']) dx -= Config.CAMERA_SPEED;
-        if (this.keys['ArrowRight'] || this.keys['d']) dx += Config.CAMERA_SPEED;
-        
-        if (dx !== 0 || dy !== 0) {
-            this.camera.move(dx, dy);
-        }
-    }
-    
-    /**
-     * Update camera position when mouse is near screen edges
-     */
-    updateCameraFromMouse() {
-        let dx = 0;
-        let dy = 0;
-        const threshold = Config.CAMERA_EDGE_THRESHOLD;
-        
-        // Move camera if mouse is near the edges
-        if (this.mouseX < threshold) dx -= Config.CAMERA_SPEED;
-        if (this.mouseX > Config.CANVAS_WIDTH - threshold) dx += Config.CAMERA_SPEED;
-        if (this.mouseY < threshold) dy -= Config.CAMERA_SPEED;
-        if (this.mouseY > Config.CANVAS_HEIGHT - threshold) dy += Config.CAMERA_SPEED;
-        
-        if (dx !== 0 || dy !== 0) {
-            this.camera.move(dx, dy);
-        }
-    }
-    
-    /**
-     * Update method called each frame
-     */
-    update() {
-        // Only update camera from keyboard and mouse if input is enabled
-        if (this.inputEnabled) {
-            this.updateCameraFromKeys();
-            this.updateCameraFromMouse();
-        }
-    }
-    
-    /**
-     * Get the current selection box in screen coordinates
-     */
-    getSelectionBox() {
-        if (!this.isSelecting) return null;
-        
-        return {
-            x: Math.min(this.selectionStartX, this.selectionEndX),
-            y: Math.min(this.selectionStartY, this.selectionEndY),
-            width: Math.abs(this.selectionEndX - this.selectionStartX),
-            height: Math.abs(this.selectionEndY - this.selectionStartY)
-        };
-    }
-    
-    /**
-     * Handle minimap clicks
-     */
-    handleMinimapClick(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        e.stopPropagation(); // Prevent event from bubbling to canvas
+        let dx = 0;
+        let dy = 0;
         
-        // Get minimap dimensions
-        const minimapRect = this.minimapElement.getBoundingClientRect();
+        if (this.keys.up) dy -= this.cameraSpeed;
+        if (this.keys.down) dy += this.cameraSpeed;
+        if (this.keys.left) dx -= this.cameraSpeed;
+        if (this.keys.right) dx += this.cameraSpeed;
         
-        // Calculate relative position within minimap (0-1)
-        const relativeX = (e.clientX - minimapRect.left) / minimapRect.width;
-        const relativeY = (e.clientY - minimapRect.top) / minimapRect.height;
-        
-        // For isometric view, we need to convert differently
-        // First, adjust for the minimap's isometric representation
-        const adjustedX = (relativeX - 0.5) * 2; // Convert from 0-1 to -1 to 1 (centered)
-        const adjustedY = (relativeY - 0.25) * 4; // Adjust for the 1/4 offset in the minimap
-        
-        // Convert to grid coordinates
-        const gridX = Math.floor((adjustedX + adjustedY) / 2 * Config.MAP_WIDTH);
-        const gridY = Math.floor((adjustedY - adjustedX) / 2 * Config.MAP_HEIGHT);
-        
-        // Clamp to valid grid coordinates
-        const clampedGridX = Math.max(0, Math.min(gridX, Config.MAP_WIDTH - 1));
-        const clampedGridY = Math.max(0, Math.min(gridY, Config.MAP_HEIGHT - 1));
-        
-        // Convert to isometric world coordinates
-        const isoPos = this.game.map.gridToIso(clampedGridX, clampedGridY);
-        
-        console.log(`Minimap click: screen(${relativeX.toFixed(2)}, ${relativeY.toFixed(2)}) -> grid(${clampedGridX}, ${clampedGridY}) -> iso(${isoPos.x.toFixed(2)}, ${isoPos.y.toFixed(2)})`);
-        
-        // Left click - move camera to this position
-        if (e.button === 0) {
-            // Center camera on clicked position
-            this.camera.centerOn(isoPos.x, isoPos.y);
+        if (dx !== 0 || dy !== 0) {
+            this.game.renderer.panCamera(dx, dy);
         }
-        // Right click - move selected units to this position
-        else if (e.button === 2) {
-            if (this.game.selectedEntities.length > 0) {
-                this.game.handleCommand(isoPos.x, isoPos.y);
+    }
+    
+    /**
+     * Handle selection click
+     * @param {Object} gridPos - Grid position {x, y}
+     */
+    handleSelectionClick(gridPos) {
+        // Find entity at clicked position
+        const entity = this.findEntityAtPosition(gridPos);
+        
+        if (entity) {
+            // If entity belongs to player or is a building that can be selected
+            if (entity.owner === this.game.playerId || entity.type === 'building') {
+                this.game.selectEntity(entity);
             }
         }
     }
     
     /**
-     * Disable user input (for game end screen)
+     * Find entity at a grid position
+     * @param {Object} gridPos - Grid position {x, y}
+     * @returns {Object|null} Entity found at position or null
      */
-    disableInput() {
-        console.log('Disabling game input');
-        this.inputEnabled = false;
-        this.game.deselectAll(); // Clear selection when game ends
+    findEntityAtPosition(gridPos) {
+        // Check for the player's hero
+        const playerData = this.game.players.get(this.game.playerId);
+        if (playerData && playerData.hero) {
+            const heroPos = playerData.hero.position;
+            if (Math.abs(heroPos.x - gridPos.x) < 0.5 && Math.abs(heroPos.y - gridPos.y) < 0.5) {
+                return playerData.hero;
+            }
+        }
+        
+        // Check for units
+        for (const [id, unit] of this.game.units) {
+            const unitPos = unit.position;
+            if (Math.abs(unitPos.x - gridPos.x) < 0.5 && Math.abs(unitPos.y - gridPos.y) < 0.5) {
+                return unit;
+            }
+        }
+        
+        // Check for buildings
+        for (const [id, building] of this.game.buildings) {
+            const buildingPos = building.position;
+            // Buildings are larger, so check a wider area
+            if (Math.abs(buildingPos.x - gridPos.x) < 1.5 && Math.abs(buildingPos.y - gridPos.y) < 1.5) {
+                return building;
+            }
+        }
+        
+        return null;
     }
     
     /**
-     * Enable user input (when a new game starts)
+     * Update input state
+     */
+    update() {
+        // Update camera based on keys
+        this.updateCameraFromKeys();
+    }
+    
+    /**
+     * Get current selection box
+     * @returns {Object|null} Selection box or null if not dragging
+     */
+    getSelectionBox() {
+        return this.selectionBox;
+    }
+    
+    /**
+     * Disable input handling
+     */
+    disableInput() {
+        this.inputEnabled = false;
+    }
+    
+    /**
+     * Enable input handling
      */
     enableInput() {
-        console.log('Enabling game input');
         this.inputEnabled = true;
     }
-} 
+}
+
+export { InputHandler }; 

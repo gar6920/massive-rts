@@ -1,6 +1,257 @@
 Massive RTS Game - Code Compilation 
-Created: Sun 03/09/2025 11:41:59.89 
+Created: Sun 03/09/2025 12:58:11.29 
 ======================================== 
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\index.js 
+======================================== 
+ 
+import { Client } from "colyseus.js";
+import { Renderer } from "./game/RendererColyseus";
+import { InputHandler } from "./game/InputHandler";
+import { UIManager } from "./game/UIManager";
+
+// Create a global game instance
+window.gameInstance = null;
+
+// Initialize the game when DOM is fully loaded
+document.addEventListener("DOMContentLoaded", () => {
+  // Create game instance
+  window.gameInstance = new Game();
+  
+  // Start the game
+  window.gameInstance.start();
+});
+
+// Game class
+class Game {
+  constructor() {
+    console.log("Initializing game...");
+    
+    // Colyseus client
+    this.client = new Client("ws://localhost:2567");
+    this.room = null;
+    
+    // Game components
+    this.renderer = null;
+    this.inputHandler = null;
+    this.uiManager = null;
+    
+    // Game state
+    this.playerId = null;
+    this.players = new Map();
+    this.buildings = new Map();
+    this.units = new Map();
+    this.map = [];
+    this.humanBaseHealth = 1000;
+    this.aiBaseHealth = 1000;
+    this.gameTime = 0;
+    
+    // Selected entities
+    this.selectedEntities = [];
+  }
+  
+  async start() {
+    console.log("Starting game...");
+    
+    try {
+      // Initialize game components
+      this.renderer = new Renderer(document.getElementById("game-canvas"));
+      this.inputHandler = new InputHandler(this);
+      this.uiManager = new UIManager(this);
+      
+      // Connect to Colyseus server
+      await this.connectToServer();
+      
+      // Start game loop
+      this.gameLoop();
+    } catch (error) {
+      console.error("Error starting game:", error);
+    }
+  }
+  
+  async connectToServer() {
+    try {
+      console.log("Connecting to server...");
+      
+      // Join or create a game room
+      this.room = await this.client.joinOrCreate("game_room");
+      
+      // Store player ID
+      this.playerId = this.room.sessionId;
+      console.log("Connected to server with ID:", this.playerId);
+      
+      // Set up state change listeners
+      this.setupStateListeners();
+      
+      // Set up other room listeners
+      this.setupRoomListeners();
+      
+      return true;
+    } catch (error) {
+      console.error("Failed to connect to server:", error);
+      return false;
+    }
+  }
+  
+  setupStateListeners() {
+    // Listen for game state changes
+    this.room.onStateChange((state) => {
+      // Update local game state from server state
+      this.updateGameState(state);
+    });
+  }
+  
+  setupRoomListeners() {
+    // Player joined
+    this.room.onMessage("player_joined", (message) => {
+      console.log("Player joined:", message.id);
+      // Update UI accordingly
+      this.uiManager.showNotification(`Player ${message.id} joined the game.`);
+    });
+    
+    // Player left
+    this.room.onMessage("player_left", (message) => {
+      console.log("Player left:", message.id);
+      // Update UI accordingly
+      this.uiManager.showNotification(`Player ${message.id} left the game.`);
+    });
+    
+    // Game over
+    this.room.onMessage("game_over", (message) => {
+      console.log("Game over!", message);
+      // Show game over screen
+      this.uiManager.showGameOver(message);
+    });
+  }
+  
+  updateGameState(state) {
+    // Update players
+    this.players.clear();
+    state.players.forEach((playerData, id) => {
+      this.players.set(id, playerData);
+    });
+    
+    // Update buildings
+    this.buildings.clear();
+    state.buildings.forEach((building, id) => {
+      this.buildings.set(id, building);
+    });
+    
+    // Update units
+    this.units.clear();
+    state.units.forEach((unit, id) => {
+      this.units.set(id, unit);
+    });
+    
+    // Update map if it has changed
+    if (state.map.length !== this.map.length) {
+      this.map = Array.from(state.map);
+    }
+    
+    // Update base health
+    this.humanBaseHealth = state.humanBaseHealth;
+    this.aiBaseHealth = state.aiBaseHealth;
+    
+    // Update game time
+    this.gameTime = state.gameTime;
+  }
+  
+  gameLoop() {
+    // Render the game
+    this.render();
+    
+    // Update UI
+    this.uiManager.update();
+    
+    // Request next frame
+    requestAnimationFrame(() => this.gameLoop());
+  }
+  
+  render() {
+    // Clear canvas
+    this.renderer.clear();
+    
+    // Render map
+    this.renderer.renderMap(this.map);
+    
+    // Render buildings
+    this.buildings.forEach(building => {
+      this.renderer.renderBuilding(building);
+    });
+    
+    // Render units
+    this.units.forEach(unit => {
+      this.renderer.renderUnit(unit);
+    });
+    
+    // Render heroes
+    this.players.forEach(playerData => {
+      if (playerData.hero) {
+        this.renderer.renderHero(playerData.hero, playerData.id === this.playerId);
+      }
+    });
+    
+    // Render selection highlight
+    this.selectedEntities.forEach(entity => {
+      this.renderer.renderSelection(entity);
+    });
+  }
+  
+  // Game actions
+  
+  moveHero(x, y) {
+    // Send move hero message to server
+    this.room.send("move_hero", { x, y });
+  }
+  
+  moveUnit(unitId, x, y) {
+    // Send move unit message to server
+    this.room.send("move_unit", { unitId, x, y });
+  }
+  
+  attack(unitId, targetId) {
+    // Send attack message to server
+    this.room.send("attack", { unitId, targetId });
+  }
+  
+  buildStructure(buildingType, x, y) {
+    // Send build message to server
+    this.room.send("build", { buildingType, x, y });
+  }
+  
+  hireUnit(unitType, buildingId) {
+    // Send hire unit message to server
+    this.room.send("hire_unit", { unitType, buildingId });
+  }
+  
+  selectEntity(entity) {
+    // Clear previous selection
+    this.selectedEntities = [];
+    
+    // Add new selection
+    if (entity) {
+      this.selectedEntities.push(entity);
+    }
+    
+    // Update UI with selected entity info
+    this.uiManager.updateSelectionInfo(this.selectedEntities);
+  }
+  
+  selectMultipleEntities(entities) {
+    // Clear previous selection
+    this.selectedEntities = [];
+    
+    // Add new selections
+    this.selectedEntities = [...entities];
+    
+    // Update UI with selected entities info
+    this.uiManager.updateSelectionInfo(this.selectedEntities);
+  }
+}
+
+export { Game };  
  
  
 ======================================== 
@@ -1211,600 +1462,13 @@ class Config {
 FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Game.js 
 ======================================== 
  
-/**
- * Main game class that coordinates all game components
- */
-class Game {
-    /**
-     * Initialize the game
-     */
-    constructor() {
-        // Get canvas and context
-        this.canvas = document.getElementById('gameCanvas');
-        this.ctx = this.canvas.getContext('2d');
-        
-        // Set canvas dimensions
-        this.canvas.width = Config.CANVAS_WIDTH;
-        this.canvas.height = Config.CANVAS_HEIGHT;
-        
-        // Initialize game components
-        this.camera = new Camera();
-        this.map = new Map();
-        this.renderer = new Renderer(this);
-        this.inputHandler = new InputHandler(this);
-        this.multiplayer = new Multiplayer(this);
-        
-        // Game state
-        this.entities = [];
-        this.selectedEntities = [];
-        this.running = false;
-        this.lastFrameTime = 0;
-        this.fps = 0;
-        
-        // Multiplayer state
-        this.playerId = null;
+// This file is now replaced by the Game class in src/index.js
+// Keeping this file for backward compatibility but it forwards to the new Game class
 
-        // Initialize quadtree for efficient spatial partitioning
-        this.initQuadtree();
-    }
-    
-    /**
-     * Initialize the quadtree for spatial partitioning
-     */
-    initQuadtree() {
-        // Calculate bounds to cover the entire isometric map
-        const mapWidth = Config.MAP_WIDTH * Config.TILE_SIZE;
-        const mapHeight = Config.MAP_HEIGHT * Config.TILE_SIZE;
-        
-        // In isometric projection, the world is effectively rotated 45 degrees
-        // Calculate the isometric map width and height
-        const isoMapWidth = (mapWidth + mapHeight);
-        const isoMapHeight = (mapWidth + mapHeight) / 2;
-        
-        // Create the quadtree with bounds that encompass the entire isometric map
-        // Use a very generous boundary to ensure all entities are covered
-        this.quadtree = new Quadtree({
-            x: -isoMapWidth,  
-            y: -isoMapHeight,
-            width: isoMapWidth * 3,  
-            height: isoMapHeight * 3
-        }, 15, 6);  // Allow more objects per node and deeper subdivision
-        
-        console.log(`Initialized quadtree with bounds: x=${-isoMapWidth}, y=${-isoMapHeight}, width=${isoMapWidth * 3}, height=${isoMapHeight * 3}`);
-    }
-    
-    /**
-     * Start the game
-     */
-    start() {
-        this.multiplayer.connect();
+import { Game as NewGame } from '../index';
 
-        const checkResourcesLoaded = () => {
-            if (this.renderer.imagesLoaded && this.map.tiles.length > 0) {
-                console.log("All resources loaded, starting game loop");
-                this.running = true;
-                // Center camera on map when game first loads
-                this.camera.centerOnMap();
-                requestAnimationFrame(this.gameLoop.bind(this));
-            } else {
-                console.log("Waiting for resources...");
-                setTimeout(checkResourcesLoaded, 100);
-            }
-        };
-
-        checkResourcesLoaded();
-    }
-    
-    /**
-     * Main game loop
-     */
-    gameLoop(timestamp) {
-        // Calculate delta time and FPS
-        const deltaTime = timestamp - this.lastFrameTime;
-        this.lastFrameTime = timestamp;
-        this.fps = 1000 / deltaTime;
-        
-        // Update game state
-        this.update(deltaTime);
-        
-        // Render the game
-        this.renderer.render();
-        
-        // Continue the game loop
-        if (this.running) {
-            requestAnimationFrame(this.gameLoop.bind(this));
-        }
-    }
-    
-    /**
-     * Update game state
-     */
-    update(deltaTime) {
-        this.inputHandler.update();
-        this.multiplayer.update(deltaTime);
-        this.updateEntities(deltaTime);
-    }
-    
-    /**
-     * Update all entities in the game
-     */
-    updateEntities(deltaTime) {
-        // Clear and rebuild the quadtree each frame
-        this.quadtree.clear();
-
-        // Update each entity
-        for (let i = this.entities.length - 1; i >= 0; i--) {
-            const entity = this.entities[i];
-            
-            // Check if entity should be removed - either if markForRemoval is set or if it's been destroyed for 3+ seconds
-            if (entity.markForRemoval || 
-                (entity.isDestroyed && entity.deathAnimationTime && Date.now() - entity.deathAnimationTime >= 3000)) {
-                this.removeEntity(entity.id);
-                continue;
-            }
-            
-            entity.update(deltaTime, this);
-
-            // Add to quadtree for spatial partitioning (if not destroyed)
-            if (!entity.isDestroyed) {
-                // Convert entity Cartesian coordinates to isometric coordinates for the quadtree
-                const isoX = (entity.x - entity.y) / 2;
-                const isoY = (entity.x + entity.y) / 4;
-                
-                // Use larger bounds to ensure entities are properly visible
-                const boundingWidth = Math.max(entity.width, entity.height) * 2;
-                const boundingHeight = Math.max(entity.width, entity.height) * 2;
-                
-                // Insert with isometric coordinates but preserve the original entity
-                this.quadtree.insert({
-                    x: isoX - boundingWidth/2,  // Use isometric coordinates for the quadtree
-                    y: isoY - boundingHeight/2,
-                    width: boundingWidth,
-                    height: boundingHeight,
-                    entity: entity  // Store reference to the original entity
-                });
-            }
-        }
-    }
-    
-    /**
-     * Process entities received from the server
-     */
-    processServerEntities(serverEntities) {
-        if (!serverEntities) return;
-        
-        console.log('Processing server entities:', Object.keys(serverEntities).length);
-        console.log('Entity types:', Object.values(serverEntities).map(e => e.type).join(', '));
-        
-        // Process each entity from the server
-        Object.values(serverEntities).forEach(serverEntity => {
-            let entity = this.entities.find(e => e.id === serverEntity.id);
-
-            if (entity && entity.isDestroyed) {
-                return;  // STOP UPDATING DEAD UNITS FROM SERVER
-            }
-
-            // Check if this entity already exists
-            if (!entity) {
-                // Create a new entity based on its type
-                if (serverEntity.type === 'unit') {
-                    console.log(`Creating new unit: ${serverEntity.id}, playerId: ${serverEntity.playerId}`);
-                    entity = new Unit(
-                        serverEntity.x,
-                        serverEntity.y,
-                        serverEntity.width,
-                        serverEntity.height,
-                        serverEntity.playerId === this.multiplayer.playerId,
-                        serverEntity.unitType,
-                        serverEntity.playerColor
-                    );
-                    
-                    // Set all unit properties from server
-                    entity.id = serverEntity.id;
-                    entity.playerId = serverEntity.playerId;
-                    entity.health = serverEntity.health;
-                    entity.maxHealth = serverEntity.maxHealth;
-                    entity.attackDamage = serverEntity.attackDamage;
-                    entity.attackRange = serverEntity.attackRange;
-                    entity.attackCooldown = serverEntity.attackCooldown;
-                    entity.speed = serverEntity.speed;
-                    entity.level = serverEntity.level;
-                    entity.experience = serverEntity.experience;
-                    entity.targetX = serverEntity.targetX;
-                    entity.targetY = serverEntity.targetY;
-                    entity.isMoving = serverEntity.isMoving;
-                    
-                    // Initialize interpolation properties
-                    entity.prevX = serverEntity.x;
-                    entity.prevY = serverEntity.y;
-                    entity.serverX = serverEntity.x;
-                    entity.serverY = serverEntity.y;
-                    entity.interpolationStartTime = Date.now();
-                    
-                    // Add to entities array
-                    this.entities.push(entity);
-                    console.log(`Added new unit to game:`, entity);
-                    
-                } else if (serverEntity.type === 'building') {
-                    console.log(`Creating building: ${serverEntity.buildingType} at (${serverEntity.x}, ${serverEntity.y}) with color ${serverEntity.playerColor}`);
-                    entity = new Building(
-                        serverEntity.x,
-                        serverEntity.y,
-                        serverEntity.width,
-                        serverEntity.height,
-                        serverEntity.playerId === this.multiplayer.playerId,
-                        serverEntity.buildingType,
-                        serverEntity.playerColor
-                    );
-                    
-                    // Set building properties
-                    entity.id = serverEntity.id;
-                    entity.playerId = serverEntity.playerId;
-                    entity.health = serverEntity.health;
-                    entity.maxHealth = serverEntity.maxHealth;
-                    
-                    // Add to entities array
-                    this.entities.push(entity);
-                    console.log(`Added new building to game:`, entity);
-                }
-            } else {
-                // Update existing entity
-                if (serverEntity.type === 'unit') {
-                    // For units, store server position for interpolation
-                    entity.prevX = entity.x;
-                    entity.prevY = entity.y;
-                    entity.serverX = serverEntity.x;
-                    entity.serverY = serverEntity.y;
-                    entity.interpolationStartTime = Date.now();
-                    entity.targetX = serverEntity.targetX;
-                    entity.targetY = serverEntity.targetY;
-                    entity.isMoving = serverEntity.isMoving;
-                    entity.health = serverEntity.health;
-                    entity.maxHealth = serverEntity.maxHealth;
-                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
-                } else {
-                    // For non-moving entities like buildings, update position directly
-                    entity.x = serverEntity.x;
-                    entity.y = serverEntity.y;
-                    entity.health = serverEntity.health;
-                    entity.maxHealth = serverEntity.maxHealth;
-                    entity.isPlayerControlled = serverEntity.playerId === this.multiplayer.playerId;
-                }
-            }
-        });
-        
-        console.log(`Total entities after processing: ${this.entities.length}`);
-    }
-    
-    /**
-     * Handle single-click entity selection at a world coordinate
-     */
-    handleEntitySelection(worldX, worldY) {
-        // Convert isometric world coordinates to grid coordinates
-        const gridPos = this.map.isoToGrid(worldX, worldY);
-        const gridX = Math.floor(gridPos.x);
-        const gridY = Math.floor(gridPos.y);
-
-        // Deselect all entities first
-        this.deselectAll();
-
-        // Iterate to find the entity at clicked location
-        for (const entity of this.entities) {
-            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
-            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
-
-            if (gridX === entityGridX && gridY === entityGridY) {
-                // Allow selecting any entity (for viewing info), but only add player's units to selectedEntities
-                entity.isSelected = true;
-                if (entity instanceof Unit && entity.playerId === this.multiplayer.playerId) {
-                    this.selectedEntities.push(entity);
-                }
-                console.log(`Selected entity: ${entity.constructor.name}, ID: ${entity.id}`);
-                break; // Select only the first found entity
-            }
-        }
-    }
-    
-    /**
-     * Select entities within a box
-     */
-    selectEntitiesInBox(startX, startY, endX, endY) {
-        // Convert isometric world coordinates to grid coordinates
-        const startGridPos = this.map.isoToGrid(startX, startY);
-        const endGridPos = this.map.isoToGrid(endX, endY);
-        
-        // Calculate selection rectangle in grid coordinates
-        const selectionRect = {
-            left: Math.min(startGridPos.x, endGridPos.x),
-            right: Math.max(startGridPos.x, endGridPos.x),
-            top: Math.min(startGridPos.y, endGridPos.y),
-            bottom: Math.max(startGridPos.y, endGridPos.y)
-        };
-
-        // Deselect first
-        this.deselectAll();
-
-        // Find all client-owned units in the selection box
-        const clientUnits = this.entities.filter(entity => {
-            // First check if it's a client-owned unit
-            if (!(entity instanceof Unit) || entity.playerId !== this.multiplayer.playerId) {
-                return false;
-            }
-
-            // Then check if it's in the selection box
-            const entityGridX = Math.floor(entity.x / Config.TILE_SIZE);
-            const entityGridY = Math.floor(entity.y / Config.TILE_SIZE);
-            
-            return (
-                entityGridX >= selectionRect.left &&
-                entityGridX <= selectionRect.right &&
-                entityGridY >= selectionRect.top &&
-                entityGridY <= selectionRect.bottom
-            );
-        });
-
-        // If we found any client units in the box, select them all
-        if (clientUnits.length > 0) {
-            clientUnits.forEach(unit => {
-                unit.isSelected = true;
-                this.selectedEntities.push(unit);
-            });
-        }
-
-        console.log(`Selected ${this.selectedEntities.length} client-owned units in box.`);
-    }
-    
-    /**
-     * Deselect all entities
-     */
-    deselectAll() {
-        for (const entity of this.entities) {
-            entity.isSelected = false;
-        }
-        this.selectedEntities = [];
-    }
-    
-    /**
-     * Handle area selection
-     */
-    handleAreaSelection(startPos, endPos) {
-        // Deselect all entities first
-        for (const entity of this.entities) {
-            entity.isSelected = false;
-        }
-        this.selectedEntities = [];
-        
-        // Calculate selection rectangle
-        const selectionRect = {
-            x: Math.min(startPos.x, endPos.x),
-            y: Math.min(startPos.y, endPos.y),
-            width: Math.abs(endPos.x - startPos.x),
-            height: Math.abs(endPos.y - startPos.y)
-        };
-        
-        // Select all entities within the selection rectangle
-        let entitiesSelected = 0;
-        for (const entity of this.entities) {
-            if (
-                entity.x + entity.width >= selectionRect.x &&
-                entity.x <= selectionRect.x + selectionRect.width &&
-                entity.y + entity.height >= selectionRect.y &&
-                entity.y <= selectionRect.y + selectionRect.height &&
-                entity.isPlayerControlled // Only select player-controlled units
-            ) {
-                // Only select entities that belong to the player
-                if (entity.playerId !== this.multiplayer.playerId) {
-                    continue;
-                }
-                
-                entity.isSelected = true;
-                this.selectedEntities.push(entity);
-                entitiesSelected++;
-                
-                // For debugging
-                console.log(`Selected entity in area: ${entity.constructor.name}, ID: ${entity.id}`);
-            }
-        }
-        
-        console.log(`Selected ${entitiesSelected} entities in area selection`);
-    }
-    
-    /**
-     * Handle command (right-click)
-     */
-    handleCommand(worldX, worldY) {
-        if (this.selectedEntities.length === 0) return;
-
-        console.log(`Command at isometric world coordinates: (${worldX.toFixed(2)}, ${worldY.toFixed(2)})`);
-        console.log(`My player ID from Game object: ${this.playerId}`);
-        console.log(`My player ID from Multiplayer object: ${this.multiplayer.playerId}`);
-        
-        // Get IDs of selected units
-        const selectedUnitIds = this.selectedEntities
-            .filter(entity => entity instanceof Unit)
-            .map(entity => entity.id);
-        
-        if (selectedUnitIds.length === 0) return;
-        
-        // First, check if user clicked on an entity
-        const clickedEntity = this.getEntityAtPosition(worldX, worldY);
-        
-        // If clicked on an enemy entity, issue attack command
-        if (clickedEntity && clickedEntity.playerId !== this.playerId && clickedEntity.id) {
-            console.log(`Attempting to attack entity: ${clickedEntity.id}, type: ${clickedEntity instanceof Unit ? 'Unit' : 'Building'}`);
-            console.log(`Selected units: ${selectedUnitIds.join(', ')}`);
-            console.log(`My player ID: ${this.playerId}, target entity owner: ${clickedEntity.playerId}`);
-            
-            // Issue attack command to server
-            this.multiplayer.attackTarget(selectedUnitIds, clickedEntity.id);
-            
-            // Visual feedback
-            this.renderer.addEffect('attackCommand', worldX, worldY);
-            
-            console.log('Attack command sent to server');
-            return;
-        }
-        
-        // Otherwise, it's a movement command
-        // Convert from isometric world coordinates to grid coordinates
-        const gridPos = this.map.isoToGrid(worldX, worldY);
-        const tileX = Math.floor(gridPos.x);
-        const tileY = Math.floor(gridPos.y);
-        
-        console.log(`Converted to grid coordinates: (${tileX}, ${tileY})`);
-        
-        // Validate grid coordinates are within map bounds
-        if (tileX < 0 || tileX >= Config.MAP_WIDTH || tileY < 0 || tileY >= Config.MAP_HEIGHT) {
-            console.log('Target position is outside map bounds');
-            return;
-        }
-        
-        // Convert grid coordinates to cartesian coordinates for server
-        const cartesianX = tileX * Config.TILE_SIZE;
-        const cartesianY = tileY * Config.TILE_SIZE;
-        
-        console.log(`Units moving to cartesian coordinates: (${cartesianX}, ${cartesianY})`);
-        
-        // Send movement command to server with cartesian coordinates
-        this.multiplayer.moveUnits(selectedUnitIds, cartesianX, cartesianY);
-        
-        // Visual feedback
-        this.renderer.addEffect('moveCommand', worldX, worldY);
-    }
-    
-    /**
-     * Get entity at a specific position
-     */
-    getEntityAtPosition(x, y) {
-        console.log(`Looking for entity at isometric position: (${x.toFixed(2)}, ${y.toFixed(2)})`);
-        
-        // Check all entities to see if the point is within their bounds
-        for (const entity of this.entities) {
-            // Skip if entity is not rendered or doesn't have position data
-            if (!entity.x || !entity.y || !entity.width || !entity.height) continue;
-            
-            // Need to convert the cartesian entity position to isometric for comparison
-            const entityIsoX = (entity.x - entity.y) / 2;
-            const entityIsoY = (entity.x + entity.y) / 4;
-            
-            // Calculate entity bounds in isometric coordinates
-            // We need to adjust the bounds as the isometric shape is different
-            const margin = 30; // Give some margin for click precision
-            const entityLeft = entityIsoX - margin;
-            const entityRight = entityIsoX + entity.width + margin;
-            const entityTop = entityIsoY - margin;
-            const entityBottom = entityIsoY + entity.height + margin;
-            
-            // Check if the point is within the entity bounds
-            if (x >= entityLeft && x <= entityRight && y >= entityTop && y <= entityBottom) {
-                console.log(`Found entity: ${entity.id}, type: ${entity instanceof Unit ? 'Unit' : 'Building'}, owner: ${entity.playerId}`);
-                return entity;
-            }
-        }
-        
-        console.log('No entity found at this position');
-        return null;
-    }
-    
-    /**
-     * Handle window resize
-     */
-    handleResize() {
-        this.canvas.width = Config.CANVAS_WIDTH;
-        this.canvas.height = Config.CANVAS_HEIGHT;
-        this.renderer.handleResize();
-    }
-    
-    /**
-     * Create a test player unit
-     */
-    createTestUnit() {
-        // In multiplayer mode, units are created by the server
-        if (this.multiplayer && this.multiplayer.connected) {
-            // Find the player's base
-            const playerBase = this.entities.find(entity => 
-                entity.buildingType === 'BASE' && 
-                entity.playerId === this.playerId
-            );
-            
-            if (playerBase) {
-                // Create unit near the player's base
-                const spawnX = playerBase.x + playerBase.width + 10;
-                const spawnY = playerBase.y + playerBase.height / 2;
-                
-                console.log(`Creating unit near player base at (${spawnX}, ${spawnY})`);
-                this.multiplayer.createUnit(spawnX, spawnY, true, 'SOLDIER');
-            } else {
-                // Fallback to center of map if no base found
-                const centerX = Config.MAP_WIDTH * Config.TILE_SIZE / 2;
-                const centerY = Config.MAP_HEIGHT * Config.TILE_SIZE / 2;
-                
-                console.log(`No player base found, creating unit at center (${centerX}, ${centerY})`);
-                this.multiplayer.createUnit(centerX, centerY, true, 'SOLDIER');
-            }
-            return;
-        }
-        
-        // For single player testing only
-        const unit = new Unit(
-            Config.MAP_WIDTH * Config.TILE_SIZE / 2,
-            Config.MAP_HEIGHT * Config.TILE_SIZE / 2,
-            Config.UNIT_SIZE,
-            Config.UNIT_SIZE,
-            true,
-            'SOLDIER',
-            'red'
-        );
-        this.entities.push(unit);
-    }
-    
-    /**
-     * Create a unit at the specified position
-     */
-    createUnitAt(x, y) {
-        if (this.multiplayer && this.multiplayer.connected) {
-            this.multiplayer.createUnit(x, y, true, 'SOLDIER');
-        } else {
-            const unit = new Unit(
-                x,
-                y,
-                Config.UNIT_SIZE,
-                Config.UNIT_SIZE,
-                true,
-                'SOLDIER',
-                'blue'
-            );
-            this.entities.push(unit);
-        }
-    }
-
-    /**
-     * Get entity by ID
-     */
-    getEntityById(entityId) {
-        return this.entities.find(entity => entity.id === entityId);
-    }
-
-    /**
-     * Remove entity from game
-     */
-    removeEntity(entityId) {
-        const index = this.entities.findIndex(entity => entity.id === entityId);
-        if (index !== -1) {
-            // Remove from selection if selected
-            const selectedIndex = this.selectedEntities.findIndex(entity => entity.id === entityId);
-            if (selectedIndex !== -1) {
-                this.selectedEntities.splice(selectedIndex, 1);
-            }
-            
-            // Remove from entities array
-            this.entities.splice(index, 1);
-            console.log(`Removed entity ${entityId} from game`);
-            return true;
-        }
-        return false;
-    }
-}  
+// Export the same Game class from index.js
+export const Game = NewGame;  
  
  
 ======================================== 
@@ -1812,248 +1476,323 @@ FILE: C:\Users\Garrett\Documents\massive-rts\src\game\InputHandler.js
 ======================================== 
  
 /**
- * Handles user input (keyboard, mouse) for game interaction
+ * Handles all user input (mouse, keyboard) for the game
  */
 class InputHandler {
     /**
-     * Initialize input handler and set up event listeners
+     * Initialize the input handler
+     * @param {Game} game - The main game instance
      */
     constructor(game) {
         this.game = game;
-        this.camera = game.camera;
-        this.canvas = game.canvas;
         
-        this.keys = {}; // Track pressed keys
-        this.mouseX = 0;
-        this.mouseY = 0;
-        this.mouseDown = false;
-        this.rightMouseDown = false;
-        this.middleMouseDown = false;
-        this.lastMouseX = 0;
-        this.lastMouseY = 0;
-        this.selectionStartX = 0;
-        this.selectionStartY = 0;
-        this.selectionEndX = 0;
-        this.selectionEndY = 0;
-        this.isSelecting = false;
-        this.clickStartTime = 0;
-        this.inputEnabled = true; // Flag to control input
+        // Keyboard state
+        this.keys = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            shift: false
+        };
         
-        // Minimap element
-        this.minimapElement = document.getElementById('minimap');
+        // Mouse state
+        this.mouse = {
+            x: 0,
+            y: 0,
+            leftDown: false,
+            rightDown: false,
+            dragStart: null,
+            dragging: false
+        };
         
-        // Bind event handlers
+        // Selection box
+        this.selectionBox = null;
+        
+        // Camera movement speed
+        this.cameraSpeed = 10;
+        
+        // Input enabled flag
+        this.inputEnabled = true;
+        
+        // Setup event listeners
         this.setupEventListeners();
     }
     
     /**
-     * Set up all event listeners
+     * Set up event listeners for user input
      */
     setupEventListeners() {
         // Keyboard events
-        window.addEventListener('keydown', this.handleKeyDown.bind(this));
-        window.addEventListener('keyup', this.handleKeyUp.bind(this));
+        window.addEventListener('keydown', (e) => this.handleKeyDown(e));
+        window.addEventListener('keyup', (e) => this.handleKeyUp(e));
         
         // Mouse events
-        this.canvas.addEventListener('mousedown', this.handleMouseDown.bind(this));
-        this.canvas.addEventListener('mouseup', this.handleMouseUp.bind(this));
-        this.canvas.addEventListener('mousemove', this.handleMouseMove.bind(this));
-        this.canvas.addEventListener('contextmenu', this.handleRightClick.bind(this));
-        this.canvas.addEventListener('wheel', this.handleMouseWheel.bind(this));
+        const canvas = this.game.renderer.canvas;
+        canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
+        canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+        canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
+        canvas.addEventListener('wheel', (e) => this.handleMouseWheel(e));
+        canvas.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            this.handleRightClick(e);
+        });
         
-        // Prevent context menu from appearing on right-click
-        this.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-        
-        // Minimap events
-        this.minimapElement.addEventListener('mousedown', this.handleMinimapClick.bind(this));
-        this.minimapElement.addEventListener('contextmenu', (e) => e.preventDefault());
-        
-        // Window resize event
-        window.addEventListener('resize', this.handleResize.bind(this));
+        // Window resize
+        window.addEventListener('resize', () => this.handleResize());
     }
     
     /**
-     * Handle key down events
+     * Handle keydown events
+     * @param {KeyboardEvent} e - Keyboard event
      */
     handleKeyDown(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        this.keys[e.key] = true;
-        
-        // Handle specific key presses
         switch (e.key) {
-            case 'Escape':
-                // Deselect all units
-                this.game.deselectAll();
+            case 'ArrowUp':
+            case 'w':
+                this.keys.up = true;
                 break;
-            case 'c':
-                // Center the camera on the map
-                this.camera.centerOnMap();
+            case 'ArrowDown':
+            case 's':
+                this.keys.down = true;
+                break;
+            case 'ArrowLeft':
+            case 'a':
+                this.keys.left = true;
+                break;
+            case 'ArrowRight':
+            case 'd':
+                this.keys.right = true;
+                break;
+            case 'Shift':
+                this.keys.shift = true;
                 break;
         }
-        
-        // Handle camera movement with arrow keys
-        this.updateCameraFromKeys();
     }
     
     /**
-     * Handle key up events
+     * Handle keyup events
+     * @param {KeyboardEvent} e - Keyboard event
      */
     handleKeyUp(e) {
-        this.keys[e.code] = false;
+        switch (e.key) {
+            case 'ArrowUp':
+            case 'w':
+                this.keys.up = false;
+                break;
+            case 'ArrowDown':
+            case 's':
+                this.keys.down = false;
+                break;
+            case 'ArrowLeft':
+            case 'a':
+                this.keys.left = false;
+                break;
+            case 'ArrowRight':
+            case 'd':
+                this.keys.right = false;
+                break;
+            case 'Shift':
+                this.keys.shift = false;
+                break;
+        }
     }
     
     /**
-     * Handle mouse down events
+     * Handle mousedown events
+     * @param {MouseEvent} e - Mouse event
      */
     handleMouseDown(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        this.mouseX = e.clientX;
-        this.mouseY = e.clientY;
-        this.lastMouseX = e.clientX;
-        this.lastMouseY = e.clientY;
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        // Left mouse button
-        if (e.button === 0) {
-            this.mouseDown = true;
-            this.selectionStartX = e.clientX;
-            this.selectionStartY = e.clientY;
-            this.selectionEndX = e.clientX;
-            this.selectionEndY = e.clientY;
-            this.isSelecting = false; // Start false, will become true if mouse moves
-            this.clickStartTime = Date.now();
-        }
-        // Right mouse button
-        else if (e.button === 2) {
-            this.rightMouseDown = true;
-        }
-        // Middle mouse button (rollerball)
-        else if (e.button === 1) {
-            this.middleMouseDown = true;
-            e.preventDefault(); // Prevent default middle-click behavior
+        // Store mouse state
+        this.mouse.x = x;
+        this.mouse.y = y;
+        
+        // Handle different mouse buttons
+        if (e.button === 0) { // Left click
+            this.mouse.leftDown = true;
+            this.mouse.dragStart = { x, y };
+            
+            // If not holding shift, clear selection for new selection
+            if (!this.keys.shift) {
+                this.game.selectEntity(null);
+            }
+        } else if (e.button === 2) { // Right click
+            this.mouse.rightDown = true;
+            
+            // Right click is handled in context menu event to prevent the default menu
         }
     }
     
     /**
-     * Handle mouse up events
+     * Handle mouseup events
+     * @param {MouseEvent} e - Mouse event
      */
     handleMouseUp(e) {
-        // Only update mouse state if input is disabled
-        if (!this.inputEnabled) {
-            if (e.button === 0) this.mouseDown = false;
-            else if (e.button === 2) this.rightMouseDown = false;
-            else if (e.button === 1) this.middleMouseDown = false;
-            return;
-        }
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        if (e.button === 0) {
-            this.mouseDown = false;
-
-            // Get world coordinates for both start and end points
-            const startWorld = this.camera.screenToWorld(this.selectionStartX, this.selectionStartY);
-            const endWorld = this.camera.screenToWorld(this.selectionEndX, this.selectionEndY);
+        // Handle different mouse buttons
+        if (e.button === 0) { // Left click
+            this.mouse.leftDown = false;
             
-            // Calculate the size of the selection box in screen pixels
-            const selectionWidth = Math.abs(this.selectionEndX - this.selectionStartX);
-            const selectionHeight = Math.abs(this.selectionEndY - this.selectionStartY);
-            
-            // If the selection box is very small, treat it as a click
-            if (selectionWidth < 5 && selectionHeight < 5) {
-                const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-                this.game.handleEntitySelection(worldPos.x, worldPos.y);
+            // If dragging, handle selection box
+            if (this.mouse.dragging) {
+                this.handleSelectionBox();
             } else {
-                // Otherwise use box selection
-                this.game.selectEntitiesInBox(startWorld.x, startWorld.y, endWorld.x, endWorld.y);
+                // Single click selection
+                const gridPos = this.game.renderer.screenToGrid(x, y);
+                this.handleSelectionClick(gridPos);
             }
             
-            this.isSelecting = false;
-        } else if (e.button === 2) {
-            this.rightMouseDown = false;
-        } else if (e.button === 1) {
-            this.middleMouseDown = false;
+            // Reset dragging state
+            this.mouse.dragging = false;
+            this.mouse.dragStart = null;
+            this.selectionBox = null;
+        } else if (e.button === 2) { // Right click
+            this.mouse.rightDown = false;
         }
     }
     
     /**
-     * Handle mouse movement
+     * Handle selection box selection
+     */
+    handleSelectionBox() {
+        if (!this.selectionBox) return;
+        
+        // Convert selection box to grid coordinates
+        const topLeft = this.game.renderer.screenToGrid(this.selectionBox.x, this.selectionBox.y);
+        const bottomRight = this.game.renderer.screenToGrid(
+            this.selectionBox.x + this.selectionBox.width,
+            this.selectionBox.y + this.selectionBox.height
+        );
+        
+        // Find entities in selection box
+        const selectedEntities = [];
+        
+        // Check units
+        this.game.units.forEach(unit => {
+            if (unit.owner === this.game.playerId) {
+                const pos = unit.position;
+                if (pos.x >= topLeft.x && pos.x <= bottomRight.x &&
+                    pos.y >= topLeft.y && pos.y <= bottomRight.y) {
+                    selectedEntities.push(unit);
+                }
+            }
+        });
+        
+        // If entities are found, select them
+        if (selectedEntities.length > 0) {
+            this.game.selectMultipleEntities(selectedEntities);
+        }
+    }
+    
+    /**
+     * Handle mousemove events
+     * @param {MouseEvent} e - Mouse event
      */
     handleMouseMove(e) {
-        this.mouseX = e.clientX;
-        this.mouseY = e.clientY;
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
         
-        // Skip selection and panning if input is disabled
-        if (!this.inputEnabled) {
-            this.lastMouseX = e.clientX;
-            this.lastMouseY = e.clientY;
-            return;
-        }
+        // Update mouse position
+        this.mouse.x = x;
+        this.mouse.y = y;
         
-        // Start selection if mouse has moved enough while button is down
-        if (this.mouseDown && !this.isSelecting) {
-            const mouseMoved = 
-                Math.abs(e.clientX - this.selectionStartX) > 5 || 
-                Math.abs(e.clientY - this.selectionStartY) > 5;
+        // Check if dragging with left mouse button
+        if (this.mouse.leftDown && this.mouse.dragStart) {
+            // Set dragging flag
+            this.mouse.dragging = true;
             
-            if (mouseMoved) {
-                this.isSelecting = true;
-            }
+            // Calculate selection box
+            this.selectionBox = {
+                x: Math.min(this.mouse.dragStart.x, x),
+                y: Math.min(this.mouse.dragStart.y, y),
+                width: Math.abs(x - this.mouse.dragStart.x),
+                height: Math.abs(y - this.mouse.dragStart.y)
+            };
         }
         
-        // Update selection box if selecting
-        if (this.isSelecting) {
-            this.selectionEndX = e.clientX;
-            this.selectionEndY = e.clientY;
+        // Screen edge camera panning
+        const edgeSize = 50;
+        if (x < edgeSize) {
+            this.game.renderer.panCamera(-this.cameraSpeed, 0);
+        } else if (x > this.game.renderer.canvas.width - edgeSize) {
+            this.game.renderer.panCamera(this.cameraSpeed, 0);
         }
         
-        // Handle middle mouse panning
-        if (this.middleMouseDown) {
-            const deltaX = this.lastMouseX - e.clientX;
-            const deltaY = this.lastMouseY - e.clientY;
-            
-            // Move camera based on mouse movement
-            this.camera.move(deltaX / this.camera.zoom, deltaY / this.camera.zoom);
+        if (y < edgeSize) {
+            this.game.renderer.panCamera(0, -this.cameraSpeed);
+        } else if (y > this.game.renderer.canvas.height - edgeSize) {
+            this.game.renderer.panCamera(0, this.cameraSpeed);
         }
-        
-        this.lastMouseX = e.clientX;
-        this.lastMouseY = e.clientY;
-        
-        // Handle camera movement when mouse is near screen edges
-        this.updateCameraFromMouse();
     }
     
     /**
-     * Handle mouse wheel events for zooming
+     * Handle mousewheel events
+     * @param {WheelEvent} e - Wheel event
      */
     handleMouseWheel(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
+        // Prevent default scrolling
         e.preventDefault();
         
-        // Determine zoom direction
-        const deltaZoom = e.deltaY < 0 ? Config.ZOOM_SPEED : -Config.ZOOM_SPEED;
-        
-        // Zoom at the mouse position
-        this.camera.zoomAt(deltaZoom, e.clientX, e.clientY);
+        // Adjust zoom level
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        this.game.renderer.adjustZoom(delta);
     }
     
     /**
-     * Handle right click events
+     * Handle right-click events
+     * @param {MouseEvent} e - Mouse event
      */
     handleRightClick(e) {
-        e.preventDefault(); // Prevent context menu
-        
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        // If we have selected entities, issue a command
+        // Get mouse position relative to canvas
+        const rect = e.target.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Convert screen position to grid position
+        const gridPos = this.game.renderer.screenToGrid(x, y);
+        
+        // Check for selected entities
         if (this.game.selectedEntities.length > 0) {
-            const worldPos = this.camera.screenToWorld(e.clientX, e.clientY);
-            console.log(`Right click at screen (${e.clientX}, ${e.clientY}), world (${worldPos.x.toFixed(2)}, ${worldPos.y.toFixed(2)})`);
-            this.game.handleCommand(worldPos.x, worldPos.y);
+            // Check if clicking on an enemy entity (for attack)
+            const targetEntity = this.findEntityAtPosition(gridPos);
+            
+            if (targetEntity && targetEntity.owner !== this.game.playerId) {
+                // Attack the target
+                this.game.selectedEntities.forEach(entity => {
+                    if (entity.id !== this.game.players.get(this.game.playerId).hero.id) {
+                        this.game.attack(entity.id, targetEntity.id);
+                    }
+                });
+            } else {
+                // Move to position
+                this.game.selectedEntities.forEach(entity => {
+                    if (entity.id === this.game.players.get(this.game.playerId).hero.id) {
+                        // Move hero
+                        this.game.moveHero(gridPos.x, gridPos.y);
+                    } else {
+                        // Move unit
+                        this.game.moveUnit(entity.id, gridPos.x, gridPos.y);
+                    }
+                });
+            }
         }
     }
     
@@ -2061,136 +1800,112 @@ class InputHandler {
      * Handle window resize
      */
     handleResize() {
-        Config.updateDimensions();
-        this.camera.updateDimensions();
-        this.game.handleResize();
+        // Update canvas size in renderer
+        this.game.renderer.handleResize();
     }
     
     /**
      * Update camera position based on keyboard input
      */
     updateCameraFromKeys() {
-        let dx = 0;
-        let dy = 0;
-        
-        if (this.keys['ArrowUp'] || this.keys['w']) dy -= Config.CAMERA_SPEED;
-        if (this.keys['ArrowDown'] || this.keys['s']) dy += Config.CAMERA_SPEED;
-        if (this.keys['ArrowLeft'] || this.keys['a']) dx -= Config.CAMERA_SPEED;
-        if (this.keys['ArrowRight'] || this.keys['d']) dx += Config.CAMERA_SPEED;
-        
-        if (dx !== 0 || dy !== 0) {
-            this.camera.move(dx, dy);
-        }
-    }
-    
-    /**
-     * Update camera position when mouse is near screen edges
-     */
-    updateCameraFromMouse() {
-        let dx = 0;
-        let dy = 0;
-        const threshold = Config.CAMERA_EDGE_THRESHOLD;
-        
-        // Move camera if mouse is near the edges
-        if (this.mouseX < threshold) dx -= Config.CAMERA_SPEED;
-        if (this.mouseX > Config.CANVAS_WIDTH - threshold) dx += Config.CAMERA_SPEED;
-        if (this.mouseY < threshold) dy -= Config.CAMERA_SPEED;
-        if (this.mouseY > Config.CANVAS_HEIGHT - threshold) dy += Config.CAMERA_SPEED;
-        
-        if (dx !== 0 || dy !== 0) {
-            this.camera.move(dx, dy);
-        }
-    }
-    
-    /**
-     * Update method called each frame
-     */
-    update() {
-        // Only update camera from keyboard and mouse if input is enabled
-        if (this.inputEnabled) {
-            this.updateCameraFromKeys();
-            this.updateCameraFromMouse();
-        }
-    }
-    
-    /**
-     * Get the current selection box in screen coordinates
-     */
-    getSelectionBox() {
-        if (!this.isSelecting) return null;
-        
-        return {
-            x: Math.min(this.selectionStartX, this.selectionEndX),
-            y: Math.min(this.selectionStartY, this.selectionEndY),
-            width: Math.abs(this.selectionEndX - this.selectionStartX),
-            height: Math.abs(this.selectionEndY - this.selectionStartY)
-        };
-    }
-    
-    /**
-     * Handle minimap clicks
-     */
-    handleMinimapClick(e) {
-        // Skip if input is disabled
         if (!this.inputEnabled) return;
         
-        e.stopPropagation(); // Prevent event from bubbling to canvas
+        let dx = 0;
+        let dy = 0;
         
-        // Get minimap dimensions
-        const minimapRect = this.minimapElement.getBoundingClientRect();
+        if (this.keys.up) dy -= this.cameraSpeed;
+        if (this.keys.down) dy += this.cameraSpeed;
+        if (this.keys.left) dx -= this.cameraSpeed;
+        if (this.keys.right) dx += this.cameraSpeed;
         
-        // Calculate relative position within minimap (0-1)
-        const relativeX = (e.clientX - minimapRect.left) / minimapRect.width;
-        const relativeY = (e.clientY - minimapRect.top) / minimapRect.height;
-        
-        // For isometric view, we need to convert differently
-        // First, adjust for the minimap's isometric representation
-        const adjustedX = (relativeX - 0.5) * 2; // Convert from 0-1 to -1 to 1 (centered)
-        const adjustedY = (relativeY - 0.25) * 4; // Adjust for the 1/4 offset in the minimap
-        
-        // Convert to grid coordinates
-        const gridX = Math.floor((adjustedX + adjustedY) / 2 * Config.MAP_WIDTH);
-        const gridY = Math.floor((adjustedY - adjustedX) / 2 * Config.MAP_HEIGHT);
-        
-        // Clamp to valid grid coordinates
-        const clampedGridX = Math.max(0, Math.min(gridX, Config.MAP_WIDTH - 1));
-        const clampedGridY = Math.max(0, Math.min(gridY, Config.MAP_HEIGHT - 1));
-        
-        // Convert to isometric world coordinates
-        const isoPos = this.game.map.gridToIso(clampedGridX, clampedGridY);
-        
-        console.log(`Minimap click: screen(${relativeX.toFixed(2)}, ${relativeY.toFixed(2)}) -> grid(${clampedGridX}, ${clampedGridY}) -> iso(${isoPos.x.toFixed(2)}, ${isoPos.y.toFixed(2)})`);
-        
-        // Left click - move camera to this position
-        if (e.button === 0) {
-            // Center camera on clicked position
-            this.camera.centerOn(isoPos.x, isoPos.y);
+        if (dx !== 0 || dy !== 0) {
+            this.game.renderer.panCamera(dx, dy);
         }
-        // Right click - move selected units to this position
-        else if (e.button === 2) {
-            if (this.game.selectedEntities.length > 0) {
-                this.game.handleCommand(isoPos.x, isoPos.y);
+    }
+    
+    /**
+     * Handle selection click
+     * @param {Object} gridPos - Grid position {x, y}
+     */
+    handleSelectionClick(gridPos) {
+        // Find entity at clicked position
+        const entity = this.findEntityAtPosition(gridPos);
+        
+        if (entity) {
+            // If entity belongs to player or is a building that can be selected
+            if (entity.owner === this.game.playerId || entity.type === 'building') {
+                this.game.selectEntity(entity);
             }
         }
     }
     
     /**
-     * Disable user input (for game end screen)
+     * Find entity at a grid position
+     * @param {Object} gridPos - Grid position {x, y}
+     * @returns {Object|null} Entity found at position or null
      */
-    disableInput() {
-        console.log('Disabling game input');
-        this.inputEnabled = false;
-        this.game.deselectAll(); // Clear selection when game ends
+    findEntityAtPosition(gridPos) {
+        // Check for the player's hero
+        const playerData = this.game.players.get(this.game.playerId);
+        if (playerData && playerData.hero) {
+            const heroPos = playerData.hero.position;
+            if (Math.abs(heroPos.x - gridPos.x) < 0.5 && Math.abs(heroPos.y - gridPos.y) < 0.5) {
+                return playerData.hero;
+            }
+        }
+        
+        // Check for units
+        for (const [id, unit] of this.game.units) {
+            const unitPos = unit.position;
+            if (Math.abs(unitPos.x - gridPos.x) < 0.5 && Math.abs(unitPos.y - gridPos.y) < 0.5) {
+                return unit;
+            }
+        }
+        
+        // Check for buildings
+        for (const [id, building] of this.game.buildings) {
+            const buildingPos = building.position;
+            // Buildings are larger, so check a wider area
+            if (Math.abs(buildingPos.x - gridPos.x) < 1.5 && Math.abs(buildingPos.y - gridPos.y) < 1.5) {
+                return building;
+            }
+        }
+        
+        return null;
     }
     
     /**
-     * Enable user input (when a new game starts)
+     * Update input state
+     */
+    update() {
+        // Update camera based on keys
+        this.updateCameraFromKeys();
+    }
+    
+    /**
+     * Get current selection box
+     * @returns {Object|null} Selection box or null if not dragging
+     */
+    getSelectionBox() {
+        return this.selectionBox;
+    }
+    
+    /**
+     * Disable input handling
+     */
+    disableInput() {
+        this.inputEnabled = false;
+    }
+    
+    /**
+     * Enable input handling
      */
     enableInput() {
-        console.log('Enabling game input');
         this.inputEnabled = true;
     }
-}  
+}
+
+export { InputHandler };  
  
  
 ======================================== 
@@ -4141,6 +3856,777 @@ class Renderer {
         ctx.globalAlpha = 1;
     }
 }  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\RendererColyseus.js 
+======================================== 
+ 
+/**
+ * Handles all rendering operations for the game with Colyseus integration
+ */
+class Renderer {
+  /**
+   * Initialize the renderer
+   * @param {HTMLCanvasElement} canvas - The canvas element to render on
+   */
+  constructor(canvas) {
+    this.canvas = canvas;
+    this.ctx = canvas.getContext('2d');
+    
+    // Isometric tile dimensions
+    this.tileWidth = 64;
+    this.tileHeight = 32;
+    
+    // Camera position and zoom
+    this.cameraX = 0;
+    this.cameraY = 0;
+    this.zoom = 1;
+    
+    // Colors
+    this.colors = {
+      // Tile colors
+      tile: '#8fbc8f',
+      tileOutline: '#2e8b57',
+      
+      // Entity colors
+      humanHero: '#0000ff',
+      humanUnit: '#4169e1',
+      humanBuilding: '#4682b4',
+      
+      aiHero: '#ff0000',
+      aiUnit: '#ff4500',
+      aiBuilding: '#8b0000',
+      
+      // Selection color
+      selection: '#ffff00'
+    };
+    
+    // Set canvas size
+    this.handleResize();
+    
+    // Listen for window resize
+    window.addEventListener('resize', () => this.handleResize());
+  }
+  
+  /**
+   * Clear the canvas
+   */
+  clear() {
+    this.ctx.fillStyle = '#000000';
+    this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+  }
+  
+  /**
+   * Handle window resize
+   */
+  handleResize() {
+    this.canvas.width = window.innerWidth;
+    this.canvas.height = window.innerHeight;
+  }
+  
+  /**
+   * Convert grid coordinates to screen coordinates
+   * @param {number} x - Grid x coordinate
+   * @param {number} y - Grid y coordinate
+   * @returns {Object} Screen coordinates {x, y}
+   */
+  gridToScreen(x, y) {
+    // Isometric projection
+    const screenX = (x - y) * this.tileWidth / 2;
+    const screenY = (x + y) * this.tileHeight / 2;
+    
+    // Apply camera position and zoom
+    return {
+      x: (screenX - this.cameraX) * this.zoom + this.canvas.width / 2,
+      y: (screenY - this.cameraY) * this.zoom + this.canvas.height / 2
+    };
+  }
+  
+  /**
+   * Convert screen coordinates to grid coordinates
+   * @param {number} screenX - Screen x coordinate
+   * @param {number} screenY - Screen y coordinate
+   * @returns {Object} Grid coordinates {x, y}
+   */
+  screenToGrid(screenX, screenY) {
+    // Adjust for camera and zoom
+    const adjustedX = (screenX - this.canvas.width / 2) / this.zoom + this.cameraX;
+    const adjustedY = (screenY - this.canvas.height / 2) / this.zoom + this.cameraY;
+    
+    // Inverse isometric projection
+    return {
+      x: (adjustedX / (this.tileWidth / 2) + adjustedY / (this.tileHeight / 2)) / 2,
+      y: (adjustedY / (this.tileHeight / 2) - adjustedX / (this.tileWidth / 2)) / 2
+    };
+  }
+  
+  /**
+   * Render the map
+   * @param {Array} map - Array of tile values
+   */
+  renderMap(map) {
+    if (!map || !map.length) return;
+    
+    // Calculate map size (assuming square map)
+    const mapSize = Math.sqrt(map.length);
+    
+    // Render tiles
+    for (let y = 0; y < mapSize; y++) {
+      for (let x = 0; x < mapSize; x++) {
+        const index = y * mapSize + x;
+        const tileType = map[index];
+        
+        this.renderTile(x, y, tileType);
+      }
+    }
+  }
+  
+  /**
+   * Render a single tile
+   * @param {number} x - Grid x coordinate
+   * @param {number} y - Grid y coordinate
+   * @param {number} tileType - Type of tile
+   */
+  renderTile(x, y, tileType) {
+    const screenPos = this.gridToScreen(x, y);
+    
+    // Draw tile
+    this.drawIsometricTile(
+      screenPos.x,
+      screenPos.y,
+      this.tileWidth * this.zoom,
+      this.tileHeight * this.zoom,
+      this.colors.tile
+    );
+    
+    // Draw tile outline
+    this.drawIsometricTileOutline(
+      screenPos.x,
+      screenPos.y,
+      this.tileWidth * this.zoom,
+      this.tileHeight * this.zoom,
+      this.colors.tileOutline
+    );
+  }
+  
+  /**
+   * Draw an isometric tile
+   * @param {number} x - Screen x coordinate of tile center
+   * @param {number} y - Screen y coordinate of tile center
+   * @param {number} width - Tile width
+   * @param {number} height - Tile height
+   * @param {string} color - Tile color
+   */
+  drawIsometricTile(x, y, width, height, color) {
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    
+    this.ctx.fillStyle = color;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, y - halfHeight); // Top
+    this.ctx.lineTo(x + halfWidth, y); // Right
+    this.ctx.lineTo(x, y + halfHeight); // Bottom
+    this.ctx.lineTo(x - halfWidth, y); // Left
+    this.ctx.closePath();
+    this.ctx.fill();
+  }
+  
+  /**
+   * Draw an isometric tile outline
+   * @param {number} x - Screen x coordinate of tile center
+   * @param {number} y - Screen y coordinate of tile center
+   * @param {number} width - Tile width
+   * @param {number} height - Tile height
+   * @param {string} color - Outline color
+   */
+  drawIsometricTileOutline(x, y, width, height, color) {
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    
+    this.ctx.strokeStyle = color;
+    this.ctx.lineWidth = 1;
+    this.ctx.beginPath();
+    this.ctx.moveTo(x, y - halfHeight); // Top
+    this.ctx.lineTo(x + halfWidth, y); // Right
+    this.ctx.lineTo(x, y + halfHeight); // Bottom
+    this.ctx.lineTo(x - halfWidth, y); // Left
+    this.ctx.closePath();
+    this.ctx.stroke();
+  }
+  
+  /**
+   * Render a hero
+   * @param {Object} hero - Hero object
+   * @param {boolean} isCurrentPlayer - Whether this hero belongs to the current player
+   */
+  renderHero(hero, isCurrentPlayer) {
+    if (!hero || !hero.position) return;
+    
+    const screenPos = this.gridToScreen(hero.position.x, hero.position.y);
+    const color = hero.owner === 'ai' ? this.colors.aiHero : this.colors.humanHero;
+    
+    // Draw hero as a circle
+    this.ctx.fillStyle = color;
+    this.ctx.beginPath();
+    this.ctx.arc(
+      screenPos.x,
+      screenPos.y,
+      this.tileWidth * 0.3 * this.zoom,
+      0,
+      Math.PI * 2
+    );
+    this.ctx.fill();
+    
+    // Draw outline for current player's hero
+    if (isCurrentPlayer) {
+      this.ctx.strokeStyle = this.colors.selection;
+      this.ctx.lineWidth = 2;
+      this.ctx.beginPath();
+      this.ctx.arc(
+        screenPos.x,
+        screenPos.y,
+        this.tileWidth * 0.35 * this.zoom,
+        0,
+        Math.PI * 2
+      );
+      this.ctx.stroke();
+    }
+    
+    // Draw health bar
+    this.renderHealthBar(
+      screenPos.x,
+      screenPos.y - this.tileHeight * 0.5 * this.zoom,
+      this.tileWidth * 0.6 * this.zoom,
+      this.tileHeight * 0.1 * this.zoom,
+      hero.health / 100
+    );
+  }
+  
+  /**
+   * Render a unit
+   * @param {Object} unit - Unit object
+   */
+  renderUnit(unit) {
+    if (!unit || !unit.position) return;
+    
+    const screenPos = this.gridToScreen(unit.position.x, unit.position.y);
+    const color = unit.owner === 'ai' ? this.colors.aiUnit : this.colors.humanUnit;
+    
+    // Draw unit as a small square
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(
+      screenPos.x - this.tileWidth * 0.2 * this.zoom,
+      screenPos.y - this.tileHeight * 0.2 * this.zoom,
+      this.tileWidth * 0.4 * this.zoom,
+      this.tileHeight * 0.4 * this.zoom
+    );
+    
+    // Draw health bar
+    this.renderHealthBar(
+      screenPos.x,
+      screenPos.y - this.tileHeight * 0.3 * this.zoom,
+      this.tileWidth * 0.4 * this.zoom,
+      this.tileHeight * 0.1 * this.zoom,
+      unit.health / 50
+    );
+  }
+  
+  /**
+   * Render a building
+   * @param {Object} building - Building object
+   */
+  renderBuilding(building) {
+    if (!building || !building.position) return;
+    
+    const screenPos = this.gridToScreen(building.position.x, building.position.y);
+    const color = building.owner === 'ai' ? this.colors.aiBuilding : this.colors.humanBuilding;
+    
+    // Draw building as a larger diamond
+    this.drawIsometricTile(
+      screenPos.x,
+      screenPos.y,
+      this.tileWidth * 1.5 * this.zoom,
+      this.tileHeight * 1.5 * this.zoom,
+      color
+    );
+    
+    // Draw building outline
+    this.drawIsometricTileOutline(
+      screenPos.x,
+      screenPos.y,
+      this.tileWidth * 1.5 * this.zoom,
+      this.tileHeight * 1.5 * this.zoom,
+      this.darkenColor(color, 0.5)
+    );
+    
+    // Draw health bar
+    this.renderHealthBar(
+      screenPos.x,
+      screenPos.y - this.tileHeight * 0.8 * this.zoom,
+      this.tileWidth * 0.8 * this.zoom,
+      this.tileHeight * 0.1 * this.zoom,
+      building.health / 200
+    );
+    
+    // Draw build progress if not complete
+    if (!building.isComplete) {
+      this.renderBuildProgress(
+        screenPos.x,
+        screenPos.y - this.tileHeight * 0.6 * this.zoom,
+        this.tileWidth * 0.8 * this.zoom,
+        this.tileHeight * 0.1 * this.zoom,
+        building.buildProgress / 100
+      );
+    }
+  }
+  
+  /**
+   * Render a health bar
+   * @param {number} x - Screen x coordinate
+   * @param {number} y - Screen y coordinate
+   * @param {number} width - Bar width
+   * @param {number} height - Bar height
+   * @param {number} percentage - Health percentage (0-1)
+   */
+  renderHealthBar(x, y, width, height, percentage) {
+    // Clamp percentage to 0-1
+    percentage = Math.max(0, Math.min(1, percentage));
+    
+    // Bar background
+    this.ctx.fillStyle = '#333333';
+    this.ctx.fillRect(x - width / 2, y - height / 2, width, height);
+    
+    // Health bar color based on percentage
+    let color;
+    if (percentage > 0.6) {
+      color = '#00ff00'; // Green
+    } else if (percentage > 0.3) {
+      color = '#ffff00'; // Yellow
+    } else {
+      color = '#ff0000'; // Red
+    }
+    
+    // Health bar
+    this.ctx.fillStyle = color;
+    this.ctx.fillRect(
+      x - width / 2,
+      y - height / 2,
+      width * percentage,
+      height
+    );
+    
+    // Outline
+    this.ctx.strokeStyle = '#000000';
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+  }
+  
+  /**
+   * Render a build progress bar
+   * @param {number} x - Screen x coordinate
+   * @param {number} y - Screen y coordinate
+   * @param {number} width - Bar width
+   * @param {number} height - Bar height
+   * @param {number} percentage - Progress percentage (0-1)
+   */
+  renderBuildProgress(x, y, width, height, percentage) {
+    // Clamp percentage to 0-1
+    percentage = Math.max(0, Math.min(1, percentage));
+    
+    // Bar background
+    this.ctx.fillStyle = '#333333';
+    this.ctx.fillRect(x - width / 2, y - height / 2, width, height);
+    
+    // Progress bar
+    this.ctx.fillStyle = '#0088ff';
+    this.ctx.fillRect(
+      x - width / 2,
+      y - height / 2,
+      width * percentage,
+      height
+    );
+    
+    // Outline
+    this.ctx.strokeStyle = '#000000';
+    this.ctx.lineWidth = 1;
+    this.ctx.strokeRect(x - width / 2, y - height / 2, width, height);
+  }
+  
+  /**
+   * Render a selection highlight
+   * @param {Object} entity - The selected entity
+   */
+  renderSelection(entity) {
+    if (!entity || !entity.position) return;
+    
+    const screenPos = this.gridToScreen(entity.position.x, entity.position.y);
+    
+    this.ctx.strokeStyle = this.colors.selection;
+    this.ctx.lineWidth = 2;
+    
+    if (entity.type === 'hero') {
+      // Highlight hero with a circle
+      this.ctx.beginPath();
+      this.ctx.arc(
+        screenPos.x,
+        screenPos.y,
+        this.tileWidth * 0.35 * this.zoom,
+        0,
+        Math.PI * 2
+      );
+      this.ctx.stroke();
+    } else if (entity.type === 'unit') {
+      // Highlight unit with a square
+      this.ctx.strokeRect(
+        screenPos.x - this.tileWidth * 0.25 * this.zoom,
+        screenPos.y - this.tileHeight * 0.25 * this.zoom,
+        this.tileWidth * 0.5 * this.zoom,
+        this.tileHeight * 0.5 * this.zoom
+      );
+    } else {
+      // Highlight building with a diamond
+      const halfWidth = this.tileWidth * 0.75 * this.zoom;
+      const halfHeight = this.tileHeight * 0.75 * this.zoom;
+      
+      this.ctx.beginPath();
+      this.ctx.moveTo(screenPos.x, screenPos.y - halfHeight);
+      this.ctx.lineTo(screenPos.x + halfWidth, screenPos.y);
+      this.ctx.lineTo(screenPos.x, screenPos.y + halfHeight);
+      this.ctx.lineTo(screenPos.x - halfWidth, screenPos.y);
+      this.ctx.closePath();
+      this.ctx.stroke();
+    }
+  }
+  
+  /**
+   * Darken a color by a factor
+   * @param {string} color - CSS color string
+   * @param {number} factor - Darken factor (0-1)
+   * @returns {string} Darkened color
+   */
+  darkenColor(color, factor) {
+    // Simple darkening for hex colors
+    if (color.startsWith('#')) {
+      let r = parseInt(color.substr(1, 2), 16);
+      let g = parseInt(color.substr(3, 2), 16);
+      let b = parseInt(color.substr(5, 2), 16);
+      
+      r = Math.floor(r * (1 - factor));
+      g = Math.floor(g * (1 - factor));
+      b = Math.floor(b * (1 - factor));
+      
+      return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+    }
+    
+    return color;
+  }
+  
+  /**
+   * Move the camera
+   * @param {number} x - New x position
+   * @param {number} y - New y position
+   */
+  moveCamera(x, y) {
+    this.cameraX = x;
+    this.cameraY = y;
+  }
+  
+  /**
+   * Pan the camera
+   * @param {number} dx - Change in x
+   * @param {number} dy - Change in y
+   */
+  panCamera(dx, dy) {
+    this.cameraX += dx / this.zoom;
+    this.cameraY += dy / this.zoom;
+  }
+  
+  /**
+   * Set camera zoom
+   * @param {number} zoom - New zoom level
+   */
+  setZoom(zoom) {
+    this.zoom = Math.max(0.5, Math.min(2, zoom));
+  }
+  
+  /**
+   * Adjust camera zoom
+   * @param {number} delta - Change in zoom
+   */
+  adjustZoom(delta) {
+    this.zoom = Math.max(0.5, Math.min(2, this.zoom + delta));
+  }
+}
+
+export { Renderer };  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\UIManager.js 
+======================================== 
+ 
+/**
+ * Manages all UI elements and interactions
+ */
+class UIManager {
+  /**
+   * Initialize the UI manager
+   * @param {Game} game - The main game instance
+   */
+  constructor(game) {
+    this.game = game;
+    
+    // UI elements
+    this.notification = null;
+    this.notificationTimeout = null;
+    
+    // UI containers
+    this.resourcesElement = document.getElementById('resources-container');
+    this.selectionInfoElement = document.getElementById('selection-info');
+    this.notificationElement = document.getElementById('notification');
+    this.gameOverElement = document.getElementById('game-over');
+    
+    // Create UI containers if they don't exist
+    this.createUIContainers();
+    
+    // Hide game over screen initially
+    if (this.gameOverElement) {
+      this.gameOverElement.style.display = 'none';
+    }
+  }
+  
+  /**
+   * Create UI containers if they don't exist
+   */
+  createUIContainers() {
+    // Create resources container
+    if (!this.resourcesElement) {
+      this.resourcesElement = document.createElement('div');
+      this.resourcesElement.id = 'resources-container';
+      this.resourcesElement.className = 'ui-container';
+      document.body.appendChild(this.resourcesElement);
+    }
+    
+    // Create selection info container
+    if (!this.selectionInfoElement) {
+      this.selectionInfoElement = document.createElement('div');
+      this.selectionInfoElement.id = 'selection-info';
+      this.selectionInfoElement.className = 'ui-container';
+      document.body.appendChild(this.selectionInfoElement);
+    }
+    
+    // Create notification container
+    if (!this.notificationElement) {
+      this.notificationElement = document.createElement('div');
+      this.notificationElement.id = 'notification';
+      this.notificationElement.className = 'ui-notification';
+      document.body.appendChild(this.notificationElement);
+    }
+    
+    // Create game over container
+    if (!this.gameOverElement) {
+      this.gameOverElement = document.createElement('div');
+      this.gameOverElement.id = 'game-over';
+      this.gameOverElement.className = 'ui-game-over';
+      document.body.appendChild(this.gameOverElement);
+    }
+  }
+  
+  /**
+   * Update UI elements based on game state
+   */
+  update() {
+    // Update resources display
+    this.updateResourcesDisplay();
+    
+    // Update selection info
+    this.updateSelectionInfo(this.game.selectedEntities);
+    
+    // Update game time
+    this.updateGameTime();
+  }
+  
+  /**
+   * Update resources display
+   */
+  updateResourcesDisplay() {
+    if (!this.resourcesElement) return;
+    
+    // Get current player's resources
+    const playerData = this.game.players.get(this.game.playerId);
+    if (!playerData || !playerData.resources) return;
+    
+    // Update resources display
+    this.resourcesElement.innerHTML = `
+      <div class="resource-item">Wood: ${playerData.resources.wood}</div>
+      <div class="resource-item">Stone: ${playerData.resources.stone}</div>
+      <div class="resource-item">Food: ${playerData.resources.food}</div>
+    `;
+  }
+  
+  /**
+   * Update selection info display
+   * @param {Array} selectedEntities - Array of selected entities
+   */
+  updateSelectionInfo(selectedEntities) {
+    if (!this.selectionInfoElement) return;
+    
+    // Clear selection info
+    this.selectionInfoElement.innerHTML = '';
+    
+    // If no entities selected, show message
+    if (!selectedEntities || selectedEntities.length === 0) {
+      this.selectionInfoElement.innerHTML = '<div class="selection-empty">No selection</div>';
+      return;
+    }
+    
+    // Show info for each selected entity
+    selectedEntities.forEach(entity => {
+      let infoHTML = '';
+      
+      if (entity.type === 'hero') {
+        infoHTML = `
+          <div class="selection-header">Hero</div>
+          <div class="selection-stats">Health: ${entity.health}/100</div>
+        `;
+      } else if (entity.type === 'unit') {
+        infoHTML = `
+          <div class="selection-header">Unit: ${entity.type}</div>
+          <div class="selection-stats">Health: ${entity.health}/50</div>
+        `;
+      } else if (entity.type) {
+        infoHTML = `
+          <div class="selection-header">Building: ${entity.type}</div>
+          <div class="selection-stats">Health: ${entity.health}/200</div>
+          <div class="selection-stats">Build Progress: ${entity.isComplete ? 'Complete' : Math.floor(entity.buildProgress) + '%'}</div>
+        `;
+      }
+      
+      // Add actions based on entity type
+      if (entity.type === 'barracks' && entity.isComplete) {
+        infoHTML += `
+          <div class="selection-actions">
+            <button onclick="window.gameInstance.hireUnit('grunt', '${entity.id}')">Hire Grunt</button>
+            <button onclick="window.gameInstance.hireUnit('scout', '${entity.id}')">Hire Scout</button>
+          </div>
+        `;
+      } else if (entity.type === 'factory' && entity.isComplete) {
+        infoHTML += `
+          <div class="selection-actions">
+            <button onclick="window.gameInstance.hireUnit('tank', '${entity.id}')">Hire Tank</button>
+          </div>
+        `;
+      }
+      
+      // Create and append selection info element
+      const selectionElement = document.createElement('div');
+      selectionElement.className = 'selection-entity';
+      selectionElement.innerHTML = infoHTML;
+      this.selectionInfoElement.appendChild(selectionElement);
+    });
+  }
+  
+  /**
+   * Update game time display
+   */
+  updateGameTime() {
+    // Get time element or create it
+    let timeElement = document.getElementById('game-time');
+    if (!timeElement) {
+      timeElement = document.createElement('div');
+      timeElement.id = 'game-time';
+      timeElement.className = 'ui-game-time';
+      document.body.appendChild(timeElement);
+    }
+    
+    // Convert seconds to minutes and seconds
+    const minutes = Math.floor(this.game.gameTime / 60);
+    const seconds = this.game.gameTime % 60;
+    
+    // Format time as MM:SS
+    const formattedTime = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    
+    // Update time display
+    timeElement.textContent = formattedTime;
+  }
+  
+  /**
+   * Show a notification message
+   * @param {string} message - The message to show
+   * @param {number} duration - Duration in milliseconds to show the notification
+   */
+  showNotification(message, duration = 3000) {
+    if (!this.notificationElement) return;
+    
+    // Clear any existing timeout
+    if (this.notificationTimeout) {
+      clearTimeout(this.notificationTimeout);
+    }
+    
+    // Show notification
+    this.notificationElement.textContent = message;
+    this.notificationElement.style.display = 'block';
+    
+    // Hide notification after duration
+    this.notificationTimeout = setTimeout(() => {
+      this.notificationElement.style.display = 'none';
+    }, duration);
+  }
+  
+  /**
+   * Show game over screen
+   * @param {Object} data - Game over data including winner and stats
+   */
+  showGameOver(data) {
+    if (!this.gameOverElement) return;
+    
+    // Create game over content
+    let content = '';
+    
+    if (data.winner === 'human') {
+      content = `
+        <h2>Victory!</h2>
+        <p>Humans have defeated the AI!</p>
+      `;
+    } else if (data.winner === 'ai') {
+      content = `
+        <h2>Defeat!</h2>
+        <p>The AI has overwhelmed the humans!</p>
+      `;
+    } else {
+      content = `
+        <h2>Draw!</h2>
+        <p>Time has run out with no clear winner.</p>
+      `;
+    }
+    
+    // Add stats
+    content += `
+      <div class="game-stats">
+        <div>Game Time: ${Math.floor(data.gameTime / 60)}:${(data.gameTime % 60).toString().padStart(2, '0')}</div>
+        <div>Human Base Health: ${data.humanBaseHealth}/1000</div>
+        <div>AI Base Health: ${data.aiBaseHealth}/1000</div>
+      </div>
+      <button id="play-again">Play Again</button>
+    `;
+    
+    // Set content and show game over screen
+    this.gameOverElement.innerHTML = content;
+    this.gameOverElement.style.display = 'flex';
+    
+    // Add play again button listener
+    const playAgainButton = document.getElementById('play-again');
+    if (playAgainButton) {
+      playAgainButton.addEventListener('click', () => {
+        // Reload the page to start a new game
+        window.location.reload();
+      });
+    }
+  }
+}
+
+export { UIManager };  
  
  
 ======================================== 
@@ -7367,6 +7853,626 @@ server.listen(PORT, () => {
  
  
 ======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\server.js 
+======================================== 
+ 
+const http = require('http');
+const express = require('express');
+const cors = require('cors');
+const { Server } = require('colyseus');
+const { monitor } = require('@colyseus/monitor');
+const { WebSocketTransport } = require('@colyseus/ws-transport');
+const { GameRoom } = require('./rooms/GameRoom');
+
+const app = express();
+
+// Enable CORS
+app.use(cors());
+
+// Serve static files from the public directory
+app.use(express.static('public'));
+
+// Create HTTP server
+const server = http.createServer(app);
+
+// Create Colyseus server
+const gameServer = new Server({
+  transport: new WebSocketTransport({
+    server
+  })
+});
+
+// Register room handlers
+gameServer.define('game_room', GameRoom);
+
+// Register Colyseus monitor (accessible at /colyseus)
+app.use('/colyseus', monitor());
+
+// Define port to run server on
+const port = process.env.PORT || 2567;
+
+// Listen on specified port
+gameServer.listen(port);
+console.log(`Game server running on http://localhost:${port}`);
+
+// Export for testing
+module.exports = { app, server, gameServer };  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\rooms\GameRoom.js 
+======================================== 
+ 
+const { Room } = require("colyseus");
+const { GameState, PlayerData, Hero, Building, Unit, Position } = require("../schema/GameState");
+const { v4: uuidv4 } = require("uuid");
+
+class GameRoom extends Room {
+  constructor() {
+    super();
+    this.autoDispose = false; // Don't automatically dispose the room when empty
+    this.maxClients = 100; // Default max clients (will be adjusted based on options)
+  }
+
+  onCreate(options) {
+    console.log("GameRoom created!");
+    
+    // Set max clients based on options or default to 100
+    this.maxClients = options.maxPlayers || 100;
+    
+    // Create and set the game state
+    this.setState(new GameState());
+    
+    // Generate map size based on player count (10 tiles per expected player)
+    const mapSize = Math.max(20, Math.min(100, this.maxClients * 10));
+    this.generateMap(mapSize);
+    
+    // Set up human and AI bases
+    this.setupBases(mapSize);
+    
+    // Set up game timer (3600 seconds = 1 hour)
+    this.setMetadata({ gameTime: 0, maxTime: 3600 });
+    
+    // Create a timer that ticks every second
+    this.clock.setInterval(() => {
+      // Update game time
+      this.state.gameTime++;
+      
+      // Run AI logic every 5 seconds
+      if (this.state.gameTime % 5 === 0) {
+        this.runAILogic();
+      }
+      
+      // End game after 60 minutes
+      if (this.state.gameTime >= 3600) {
+        this.endGame();
+      }
+    }, 1000);
+    
+    // Set up message handlers
+    this.setupMessageHandlers();
+    
+    console.log("GameRoom initialized with map size:", mapSize);
+  }
+  
+  generateMap(mapSize) {
+    // Simple map generation - 0 represents empty tile
+    for (let i = 0; i < mapSize * mapSize; i++) {
+      this.state.map.push(0);
+    }
+    
+    // TODO: Add more complex map generation with terrain, resources, etc.
+  }
+  
+  setupBases(mapSize) {
+    // Place human base near bottom-left
+    const humanBaseX = Math.floor(mapSize * 0.2);
+    const humanBaseY = Math.floor(mapSize * 0.8);
+    
+    // Create human base building
+    const humanBase = new Building(
+      "human_base",
+      "headquarters",
+      "human",
+      humanBaseX,
+      humanBaseY,
+      1000
+    );
+    humanBase.isComplete = true;
+    this.state.buildings.set(humanBase.id, humanBase);
+    
+    // Place AI base near top-right
+    const aiBaseX = Math.floor(mapSize * 0.8);
+    const aiBaseY = Math.floor(mapSize * 0.2);
+    
+    // Create AI base building
+    const aiBase = new Building(
+      "ai_base",
+      "headquarters",
+      "ai",
+      aiBaseX,
+      aiBaseY,
+      1000
+    );
+    aiBase.isComplete = true;
+    this.state.buildings.set(aiBase.id, aiBase);
+  }
+  
+  setupMessageHandlers() {
+    // Handle hero movement
+    this.onMessage("move_hero", (client, message) => {
+      const playerData = this.state.players.get(client.sessionId);
+      if (playerData && playerData.hero) {
+        playerData.hero.position.x = message.x;
+        playerData.hero.position.y = message.y;
+      }
+    });
+    
+    // Handle building construction
+    this.onMessage("build", (client, message) => {
+      const { buildingType, x, y } = message;
+      const playerData = this.state.players.get(client.sessionId);
+      
+      if (!playerData) return;
+      
+      // Check if player has enough resources
+      // TODO: Add resource cost checks
+      
+      // Create new building
+      const buildingId = `building_${uuidv4()}`;
+      const building = new Building(
+        buildingId,
+        buildingType,
+        client.sessionId,
+        x,
+        y,
+        200 // Default health
+      );
+      
+      // Add building to state
+      this.state.buildings.set(buildingId, building);
+      
+      // TODO: Deduct resources
+    });
+    
+    // Handle unit hiring
+    this.onMessage("hire_unit", (client, message) => {
+      const { unitType, buildingId } = message;
+      const playerData = this.state.players.get(client.sessionId);
+      const building = this.state.buildings.get(buildingId);
+      
+      if (!playerData || !building || building.owner !== client.sessionId) return;
+      
+      // Check if building is complete
+      if (!building.isComplete) return;
+      
+      // Check if player has enough resources
+      // TODO: Add resource cost checks
+      
+      // Create new unit
+      const unitId = `unit_${uuidv4()}`;
+      const unit = new Unit(
+        unitId,
+        unitType,
+        client.sessionId,
+        building.position.x + 1, // Spawn next to building
+        building.position.y + 1,
+        50 // Default health
+      );
+      
+      // Add unit to state
+      this.state.units.set(unitId, unit);
+      
+      // TODO: Deduct resources
+    });
+    
+    // Handle unit movement
+    this.onMessage("move_unit", (client, message) => {
+      const { unitId, x, y } = message;
+      const unit = this.state.units.get(unitId);
+      
+      if (!unit || unit.owner !== client.sessionId) return;
+      
+      unit.position.x = x;
+      unit.position.y = y;
+      unit.targetId = null; // Clear any attack target
+    });
+    
+    // Handle unit attack
+    this.onMessage("attack", (client, message) => {
+      const { unitId, targetId } = message;
+      const unit = this.state.units.get(unitId);
+      
+      if (!unit || unit.owner !== client.sessionId) return;
+      
+      // Set attack target
+      unit.targetId = targetId;
+    });
+  }
+  
+  onJoin(client, options) {
+    console.log(client.sessionId, "joined!");
+    
+    // Create player data
+    const playerData = new PlayerData();
+    
+    // Create hero for the player
+    const hero = new Hero(
+      `hero_${client.sessionId}`,
+      client.sessionId,
+      50 + Math.floor(Math.random() * 20), // Random position near human base
+      50 + Math.floor(Math.random() * 20),
+      100
+    );
+    
+    // Add some basic abilities to the hero
+    hero.abilities.push({ name: "heal", cooldown: 30, currentCooldown: 0 });
+    
+    // Set the hero and add player to game state
+    playerData.hero = hero;
+    this.state.players.set(client.sessionId, playerData);
+    
+    // Broadcast player join event
+    this.broadcast("player_joined", { id: client.sessionId });
+  }
+  
+  onLeave(client, consented) {
+    console.log(client.sessionId, "left!");
+    
+    // Mark player as disconnected but keep their data
+    const playerData = this.state.players.get(client.sessionId);
+    if (playerData) {
+      playerData.isConnected = false;
+      
+      // Allow a grace period for reconnection
+      this.clock.setTimeout(() => {
+        if (playerData.isConnected === false) {
+          // If player hasn't reconnected after 30 seconds, remove them
+          this.state.players.delete(client.sessionId);
+          
+          // Remove player's buildings and units
+          this.removePlayerEntities(client.sessionId);
+        }
+      }, 30000);
+    }
+    
+    // Broadcast player leave event
+    this.broadcast("player_left", { id: client.sessionId });
+  }
+  
+  removePlayerEntities(playerId) {
+    // Remove all buildings owned by this player
+    this.state.buildings.forEach((building, id) => {
+      if (building.owner === playerId) {
+        this.state.buildings.delete(id);
+      }
+    });
+    
+    // Remove all units owned by this player
+    this.state.units.forEach((unit, id) => {
+      if (unit.owner === playerId) {
+        this.state.units.delete(id);
+      }
+    });
+  }
+  
+  runAILogic() {
+    // Simple AI logic to attack human base and players
+    
+    // Count existing AI units
+    let aiUnitCount = 0;
+    this.state.units.forEach(unit => {
+      if (unit.owner === "ai") {
+        aiUnitCount++;
+      }
+    });
+    
+    // Spawn new units if below threshold
+    const maxAiUnits = 10 + Math.floor(this.state.gameTime / 300) * 5; // Scale up over time
+    
+    if (aiUnitCount < maxAiUnits) {
+      this.spawnAIUnits(maxAiUnits - aiUnitCount);
+    }
+    
+    // Direct existing AI units
+    this.state.units.forEach(unit => {
+      if (unit.owner === "ai" && !unit.targetId) {
+        // Find a target for this AI unit
+        const target = this.findAITarget(unit);
+        if (target) {
+          unit.targetId = target.id;
+        }
+      }
+    });
+  }
+  
+  spawnAIUnits(count) {
+    // Find AI buildings to spawn from
+    const aiBuildings = [];
+    this.state.buildings.forEach(building => {
+      if (building.owner === "ai" && building.isComplete) {
+        aiBuildings.push(building);
+      }
+    });
+    
+    if (aiBuildings.length === 0) return;
+    
+    // Spawn units from random AI buildings
+    for (let i = 0; i < count; i++) {
+      const building = aiBuildings[Math.floor(Math.random() * aiBuildings.length)];
+      
+      // Select unit type based on game time
+      let unitType = "grunt";
+      if (this.state.gameTime > 1800) { // After 30 minutes, spawn powerful units
+        unitType = Math.random() > 0.7 ? "tank" : "grunt";
+      } else if (this.state.gameTime > 900) { // After 15 minutes, mix in some better units
+        unitType = Math.random() > 0.5 ? "scout" : "grunt";
+      }
+      
+      const unitId = `ai_unit_${uuidv4()}`;
+      const unit = new Unit(
+        unitId,
+        unitType,
+        "ai",
+        building.position.x + Math.floor(Math.random() * 3) - 1,
+        building.position.y + Math.floor(Math.random() * 3) - 1,
+        50
+      );
+      
+      this.state.units.set(unitId, unit);
+    }
+  }
+  
+  findAITarget(aiUnit) {
+    // Target priority: Heroes > Units > Buildings
+    
+    // Try to find a hero to attack
+    let closestDistance = Infinity;
+    let closestTarget = null;
+    
+    // Check for player heroes
+    this.state.players.forEach(playerData => {
+      if (playerData.isConnected && playerData.hero) {
+        const distance = this.calculateDistance(
+          aiUnit.position.x, aiUnit.position.y,
+          playerData.hero.position.x, playerData.hero.position.y
+        );
+        
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestTarget = { id: playerData.hero.id, type: "hero" };
+        }
+      }
+    });
+    
+    // Check for player units
+    this.state.units.forEach(unit => {
+      if (unit.owner !== "ai") {
+        const distance = this.calculateDistance(
+          aiUnit.position.x, aiUnit.position.y,
+          unit.position.x, unit.position.y
+        );
+        
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestTarget = { id: unit.id, type: "unit" };
+        }
+      }
+    });
+    
+    // If no units or heroes nearby, target human base
+    if (!closestTarget || closestDistance > 20) {
+      // Find human base
+      const humanBase = this.findHumanBase();
+      if (humanBase) {
+        closestTarget = { id: humanBase.id, type: "building" };
+      }
+    }
+    
+    return closestTarget;
+  }
+  
+  findHumanBase() {
+    // Find the human headquarters
+    let humanBase = null;
+    
+    this.state.buildings.forEach(building => {
+      if (building.owner === "human" && building.type === "headquarters") {
+        humanBase = building;
+      }
+    });
+    
+    return humanBase;
+  }
+  
+  calculateDistance(x1, y1, x2, y2) {
+    return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+  }
+  
+  endGame() {
+    // Determine winner based on base health
+    let winner = null;
+    
+    if (this.state.humanBaseHealth <= 0) {
+      winner = "ai";
+    } else if (this.state.aiBaseHealth <= 0) {
+      winner = "human";
+    } else {
+      // Time ran out, compare base health
+      if (this.state.humanBaseHealth > this.state.aiBaseHealth) {
+        winner = "human";
+      } else if (this.state.aiBaseHealth > this.state.humanBaseHealth) {
+        winner = "ai";
+      } else {
+        winner = "draw";
+      }
+    }
+    
+    // Broadcast game end event
+    this.broadcast("game_over", { 
+      winner,
+      humanBaseHealth: this.state.humanBaseHealth,
+      aiBaseHealth: this.state.aiBaseHealth,
+      gameTime: this.state.gameTime
+    });
+    
+    // Keep the room open for a while so clients can see the results
+    this.clock.setTimeout(() => {
+      this.disconnect();
+    }, 10000);
+  }
+}
+
+module.exports = { GameRoom };  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\schema\GameState.js 
+======================================== 
+ 
+const { Schema, MapSchema, ArraySchema, type } = require('@colyseus/schema');
+
+class Position extends Schema {
+  constructor(x = 0, y = 0) {
+    super();
+    this.x = x;
+    this.y = y;
+  }
+
+  @type("number") x = 0;
+  @type("number") y = 0;
+}
+
+class Ability extends Schema {
+  constructor(name = "", cooldown = 0) {
+    super();
+    this.name = name;
+    this.cooldown = cooldown;
+    this.currentCooldown = 0;
+  }
+
+  @type("string") name = "";
+  @type("number") cooldown = 0;
+  @type("number") currentCooldown = 0;
+}
+
+class Hero extends Schema {
+  constructor(id = "", owner = "", x = 0, y = 0, health = 100) {
+    super();
+    this.id = id;
+    this.owner = owner;
+    this.position = new Position(x, y);
+    this.health = health;
+    this.abilities = new ArraySchema();
+  }
+
+  @type("string") id = "";
+  @type("string") owner = "";
+  @type(Position) position = new Position();
+  @type("number") health = 100;
+  @type([Ability]) abilities = new ArraySchema();
+}
+
+class Building extends Schema {
+  constructor(id = "", type = "", owner = "", x = 0, y = 0, health = 200) {
+    super();
+    this.id = id;
+    this.type = type;
+    this.owner = owner;
+    this.position = new Position(x, y);
+    this.health = health;
+    this.isComplete = false;
+    this.buildProgress = 0;
+  }
+
+  @type("string") id = "";
+  @type("string") type = "";
+  @type("string") owner = "";
+  @type(Position) position = new Position();
+  @type("number") health = 200;
+  @type("boolean") isComplete = false;
+  @type("number") buildProgress = 0;
+}
+
+class Unit extends Schema {
+  constructor(id = "", type = "", owner = "", x = 0, y = 0, health = 50) {
+    super();
+    this.id = id;
+    this.type = type;
+    this.owner = owner;
+    this.position = new Position(x, y);
+    this.health = health;
+    this.targetId = null;
+  }
+
+  @type("string") id = "";
+  @type("string") type = "";
+  @type("string") owner = "";
+  @type(Position) position = new Position();
+  @type("number") health = 50;
+  @type("string") targetId = null;
+}
+
+class Resources extends Schema {
+  constructor(wood = 100, stone = 50, food = 200) {
+    super();
+    this.wood = wood;
+    this.stone = stone;
+    this.food = food;
+  }
+
+  @type("number") wood = 100;
+  @type("number") stone = 50;
+  @type("number") food = 200;
+}
+
+class PlayerData extends Schema {
+  constructor() {
+    super();
+    this.hero = new Hero();
+    this.resources = new Resources();
+    this.isConnected = true;
+  }
+
+  @type(Hero) hero = new Hero();
+  @type(Resources) resources = new Resources();
+  @type("boolean") isConnected = true;
+}
+
+class GameState extends Schema {
+  constructor() {
+    super();
+    this.players = new MapSchema();
+    this.buildings = new MapSchema();
+    this.units = new MapSchema();
+    this.humanBaseHealth = 1000;
+    this.aiBaseHealth = 1000;
+    this.gameTime = 0;
+    this.map = new ArraySchema();
+  }
+
+  @type({ map: PlayerData }) players = new MapSchema();
+  @type({ map: Building }) buildings = new MapSchema();
+  @type({ map: Unit }) units = new MapSchema();
+  @type("number") humanBaseHealth = 1000;
+  @type("number") aiBaseHealth = 1000;
+  @type("number") gameTime = 0; // in seconds
+  @type(["number"]) map = new ArraySchema(); // tile data
+}
+
+module.exports = { 
+  GameState, 
+  PlayerData, 
+  Hero, 
+  Building, 
+  Unit, 
+  Position, 
+  Ability, 
+  Resources 
+};  
+ 
+ 
+======================================== 
 FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html 
 ======================================== 
  
@@ -7377,46 +8483,31 @@ FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Massive RTS Game</title>
     <link rel="stylesheet" href="styles.css">
-    <!-- Socket.IO client library -->
-    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 </head>
 <body>
     <div class="game-container">
-        <canvas id="gameCanvas"></canvas>
-        <div class="ui-overlay">
-            <div id="resourcesPanel" class="panel">
+        <canvas id="game-canvas"></canvas>
+        <div id="ui-overlay" class="ui-overlay">
+            <div id="resources-container" class="ui-panel">
                 <!-- Resources will be displayed here -->
             </div>
-            <div id="minimap" class="panel">
-                <!-- Minimap will be displayed here -->
+            <div id="selection-info" class="ui-panel">
+                <!-- Selection info will be displayed here -->
             </div>
-            <div id="controlPanel" class="panel">
-                <!-- Control buttons will be displayed here -->
+            <div id="notification" class="ui-notification">
+                <!-- Notifications will be displayed here -->
+            </div>
+            <div id="game-time" class="ui-game-time">
+                <!-- Game time will be displayed here -->
+            </div>
+            <div id="game-over" class="ui-game-over">
+                <!-- Game over screen will be displayed here -->
             </div>
         </div>
     </div>
 
-    <!-- Game scripts -->
-    <script src="/src/utils/helpers.js"></script>
-    <script src="/src/utils/Quadtree.js"></script>
-    <script src="/src/map/Tile.js"></script>
-    <script src="/src/map/Map.js"></script>
-    <script src="/src/entities/Entity.js"></script>
-    <script src="/src/entities/Unit.js"></script>
-    <script src="/src/entities/Building.js"></script>
-    <script src="/src/game/Config.js"></script>
-    <script src="/src/game/Camera.js"></script>
-    <script src="/src/game/InputHandler.js"></script>
-    <script src="/src/game/Renderer.js"></script>
-    <script src="/src/game/Multiplayer.js"></script>
-    <script src="/src/game/Game.js"></script>
-    <script>
-        // Initialize the game when the window loads
-        window.onload = function() {
-            const game = new Game();
-            game.start();
-        };
-    </script>
+    <!-- Game script (bundled) -->
+    <script src="/js/client.bundle.js"></script>
 </body>
 </html>  
  
@@ -7460,57 +8551,172 @@ canvas {
     pointer-events: none; /* Allow clicks to pass through to canvas */
 }
 
-.panel {
+.ui-panel {
     pointer-events: auto; /* Make panels clickable */
     background-color: rgba(0, 0, 0, 0.7);
     border: 1px solid #444;
     border-radius: 4px;
     padding: 10px;
+    color: #fff;
 }
 
-#resourcesPanel {
+#resources-container {
     position: absolute;
     top: 10px;
-    left: 220px;
+    right: 10px;
     width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
 }
 
-#minimap {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    width: 200px;
-    height: 200px;
+.resource-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px;
+    border-bottom: 1px solid #333;
 }
 
-#controlPanel {
+#selection-info {
     position: absolute;
     bottom: 10px;
     left: 10px;
-    width: 200px;
+    width: 300px;
+    min-height: 100px;
 }
 
-.control-btn {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    margin-bottom: 8px;
+.selection-empty {
+    font-style: italic;
+    color: #999;
+    text-align: center;
+    padding: 10px;
+}
+
+.selection-header {
+    font-size: 16px;
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: #4a90e2;
+    border-bottom: 1px solid #4a90e2;
+    padding-bottom: 3px;
+}
+
+.selection-stats {
+    margin-bottom: 5px;
+    font-size: 14px;
+}
+
+.selection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.selection-actions button {
     background-color: #2a6496;
     color: white;
     border: none;
     border-radius: 4px;
+    padding: 5px 10px;
     cursor: pointer;
-    font-size: 14px;
-    text-align: center;
+    font-size: 12px;
     transition: background-color 0.2s;
 }
 
-.control-btn:hover {
+.selection-actions button:hover {
     background-color: #3a7db5;
 }
 
-.control-btn:active {
-    background-color: #1a5486;
+.selection-entity {
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #444;
+}
+
+.ui-notification {
+    position: absolute;
+    top: 50px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    padding: 10px 20px;
+    border-radius: 4px;
+    pointer-events: none;
+    display: none;
+    max-width: 80%;
+    text-align: center;
+}
+
+.ui-game-time {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.7);
+    color: #fff;
+    padding: 5px 15px;
+    border-radius: 4px;
+    font-size: 20px;
+    font-weight: bold;
+    font-family: monospace;
+}
+
+.ui-game-over {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: #fff;
+    pointer-events: auto;
+}
+
+.ui-game-over h2 {
+    font-size: 48px;
+    margin-bottom: 20px;
+    color: #4a90e2;
+}
+
+.ui-game-over p {
+    font-size: 24px;
+    margin-bottom: 30px;
+}
+
+.game-stats {
+    margin: 20px 0;
+    font-size: 18px;
+    font-family: monospace;
+    background-color: rgba(0, 0, 0, 0.5);
+    padding: 15px;
+    border-radius: 4px;
+    min-width: 300px;
+}
+
+.game-stats div {
+    margin: 5px 0;
+}
+
+#play-again {
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 10px 20px;
+    font-size: 18px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+#play-again:hover {
+    background-color: #357ab8;
 }  
  
  
@@ -7524,8 +8730,11 @@ FILE: package.json
   "description": "A browser-based RTS game with massively multiplayer capabilities",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "nodemon server/index.js",
+    "start": "node dist/server.bundle.js",
+    "dev": "nodemon dist/server.bundle.js",
+    "build:server": "webpack --config webpack.server.config.js",
+    "build:client": "webpack --config webpack.client.config.js",
+    "build": "npm run build:server && npm run build:client",
     "client": "http-server -c-1 -p 8080",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -7540,14 +8749,30 @@ FILE: package.json
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@colyseus/monitor": "^0.15.0",
+    "@colyseus/schema": "^2.0.25",
     "canvas": "^3.1.0",
+    "colyseus": "^0.15.13",
+    "colyseus.js": "^0.15.14",
+    "cors": "^2.8.5",
     "express": "^4.18.2",
     "socket.io": "^4.7.2",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "webpack": "^5.90.3",
+    "webpack-cli": "^5.1.4",
+    "webpack-node-externals": "^3.0.0"
   },
   "devDependencies": {
+    "@babel/core": "^7.24.0",
+    "@babel/plugin-proposal-class-properties": "^7.18.6",
+    "@babel/plugin-proposal-decorators": "^7.24.0",
+    "@babel/preset-env": "^7.24.0",
+    "babel-loader": "^9.1.3",
+    "css-loader": "^6.10.0",
+    "file-loader": "^6.2.0",
     "http-server": "^14.1.1",
-    "nodemon": "^3.0.1"
+    "nodemon": "^3.0.1",
+    "style-loader": "^3.3.4"
   }
 }
  
@@ -7964,4 +9189,101 @@ renderEntities() {
         // Add any additional rendering (e.g., selection highlights, health bars)
     });
 }  
+ 
+ 
+======================================== 
+FILE: webpack.client.config.js 
+======================================== 
+ 
+const path = require('path');
+
+module.exports = {
+  mode: 'development',
+  entry: './src/index.js', // Main client entry point
+  output: {
+    path: path.resolve(__dirname, 'public/js'),
+    filename: 'client.bundle.js',
+    publicPath: '/js/'
+  },
+  module: {
+    rules: [
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: ['@babel/preset-env']
+          }
+        }
+      },
+      {
+        test: /\.css$/,
+        use: ['style-loader', 'css-loader']
+      },
+      {
+        test: /\.(png|jpg|gif|svg)$/,
+        use: [
+          {
+            loader: 'file-loader',
+            options: {
+              name: '[name].[ext]',
+              outputPath: '../images/'
+            }
+          }
+        ]
+      }
+    ]
+  },
+  resolve: {
+    extensions: ['.js']
+  },
+  devtool: 'source-map'
+};  
+ 
+ 
+======================================== 
+FILE: webpack.server.config.js 
+======================================== 
+ 
+const path = require('path');
+const nodeExternals = require('webpack-node-externals');
+
+module.exports = {
+  target: 'node',
+  mode: 'development',
+  entry: './server/server.js',
+  output: {
+    path: path.resolve(__dirname, 'dist'),
+    filename: 'server.bundle.js'
+  },
+  externals: [nodeExternals({
+    // Include Colyseus and other necessary packages in the bundle
+    allowlist: ['colyseus', '@colyseus/schema', 'express', 'cors', '@colyseus/monitor']
+  })],
+  module: {
+    rules: [
+      {
+        test: /\.js$/,
+        exclude: /node_modules/,
+        use: {
+          loader: 'babel-loader',
+          options: {
+            presets: ['@babel/preset-env'],
+            plugins: [
+              ['@babel/plugin-proposal-decorators', { legacy: true }],
+              ['@babel/plugin-proposal-class-properties', { loose: true }]
+            ]
+          }
+        }
+      }
+    ]
+  },
+  node: {
+    __dirname: false
+  },
+  resolve: {
+    extensions: ['.js']
+  }
+};  
  
