@@ -2,14 +2,15 @@
   "name": "massive-rts",
   "version": "0.1.0",
   "description": "A browser-based RTS game with massively multiplayer capabilities",
-  "main": "dist/server.bundle.js",
+  "main": "server/index.js",
   "scripts": {
-    "start": "node dist/server.bundle.js",
-    "dev": "nodemon dist/server.bundle.js",
-    "build:server": "node ./node_modules/.bin/webpack --config webpack.server.config.js",
-    "build:client": "node ./node_modules/.bin/webpack --config webpack.client.config.js",
+    "start": "node server/index.js",
+    "dev": "nodemon server/index.js",
+    "build:server": "npx webpack --config webpack.server.config.js",
+    "build:client": "webpack --config webpack.client.config.js",
     "build": "npm run build:server && npm run build:client",
-    "postinstall": "npm run build",
+    "client": "http-server -c-1 -p 8080",
+    "postinstall": "echo 'Dependencies installed'",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [

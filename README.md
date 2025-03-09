@@ -62,7 +62,7 @@ Key dependencies include:
 
 The game uses Colyseus for multiplayer functionality:
 
-1. The server runs on port 2567 by default
+1. The server runs on port 3000 by default
 2. Players connect by opening their browser to the server URL
 3. Each player gets a unique ID and controls their own hero unit
 4. Game state is synchronized in real-time between all connected players

@@ -3,7 +3,7 @@ echo ===== Stopping Massive RTS Game =====
 
 :: Find and kill the Node.js process running the server
 echo Finding server process...
-for /f "tokens=5" %%a in ('netstat -aon ^| findstr "LISTENING" ^| findstr ":2567"') do (
+for /f "tokens=5" %%a in ('netstat -aon ^| findstr "LISTENING" ^| findstr ":3000"') do (
     echo Found process: %%a
     echo Terminating process...
     taskkill /F /PID %%a

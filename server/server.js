@@ -31,7 +31,7 @@ gameServer.define('game_room', GameRoom);
 app.use('/colyseus', monitor());
 
 // Define port to run server on
-const port = process.env.PORT || 2567;
+const port = process.env.PORT || 3000;
 
 // Listen on specified port
 gameServer.listen(port);

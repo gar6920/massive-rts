@@ -21,7 +21,7 @@ class Game {
     console.log("Initializing game...");
     
     // Colyseus client
-    this.client = new Client("ws://localhost:2567");
+    this.client = new Client("ws://localhost:3000");
     this.room = null;
     
     // Game components

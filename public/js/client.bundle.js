@@ -6889,7 +6889,7 @@ var Game = /*#__PURE__*/function () {
     console.log("Initializing game...");
 
     // Colyseus client
-    this.client = new colyseus_js__WEBPACK_IMPORTED_MODULE_0__.Client("ws://localhost:2567");
+    this.client = new colyseus_js__WEBPACK_IMPORTED_MODULE_0__.Client("ws://localhost:3000");
     this.room = null;
 
     // Game components

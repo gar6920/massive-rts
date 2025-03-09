@@ -49,7 +49,7 @@ start /B node dist/server.bundle.js
 :: Open the browser
 echo Opening browser...
 timeout /t 2 >nul
-start http://localhost:2567
+start http://localhost:3000
 
 echo ===== Game started =====
 echo Use stop.bat to stop the server when done. 
