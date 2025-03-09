@@ -1,10 +1,10 @@
 Massive RTS Game - Code Compilation 
-Created: Sun 03/09/2025 19:16:49.78 
+Created: Sun 03/09/2025 19:36:10.38 
 ======================================== 
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\index.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\index.js 
 ======================================== 
  
 import { Client } from "colyseus.js";
@@ -140,49 +140,83 @@ class Game {
   
   updateGameState(state) {
     console.log('\n=== Updating Game State ===');
+    console.log('Raw state received:', state);
     
     // Extract the actual game state from the message
-    const gameState = state.gameState;
+    const gameState = state.gameState || state;
+    console.log('Processed gameState:', gameState);
+    
     if (!gameState) {
-      console.error('Invalid game state received:', state);
+      console.error('No game state data received');
       return;
     }
-    
-    // Update players
-    this.players.clear();
-    gameState.players.forEach((playerData, id) => {
-      this.players.set(id, playerData);
-    });
-    console.log('Players updated:', this.players.size);
 
-    // Update buildings
-    this.buildings.clear();
-    gameState.buildings.forEach((building, id) => {
-      this.buildings.set(id, building);
-    });
-    console.log('Buildings updated:', this.buildings.size);
+    try {
+      // Update players
+      this.players.clear();
+      if (gameState.players && typeof gameState.players.forEach === 'function') {
+        gameState.players.forEach((playerData, id) => {
+          this.players.set(id, playerData);
+        });
+        console.log('Players updated:', this.players.size);
+      } else {
+        console.log('No valid players data in gameState:', gameState.players);
+      }
 
-    // Update units
-    this.units.clear();
-    gameState.units.forEach((unit, id) => {
-      this.units.set(id, unit);
-    });
-    console.log('Units updated:', this.units.size);
+      // Update buildings
+      this.buildings.clear();
+      if (gameState.buildings && typeof gameState.buildings.forEach === 'function') {
+        gameState.buildings.forEach((building, id) => {
+          this.buildings.set(id, building);
+        });
+        console.log('Buildings updated:', this.buildings.size);
+      } else {
+        console.log('No valid buildings data in gameState:', gameState.buildings);
+      }
 
-    // Update map if it has changed
-    if (gameState.map && (!this.map || gameState.map.length !== this.map.length)) {
-      console.log('Updating map:', gameState.map.length, 'tiles');
-      this.map = Array.from(gameState.map);
+      // Update units
+      this.units.clear();
+      if (gameState.units && typeof gameState.units.forEach === 'function') {
+        gameState.units.forEach((unit, id) => {
+          this.units.set(id, unit);
+        });
+        console.log('Units updated:', this.units.size);
+      } else {
+        console.log('No valid units data in gameState:', gameState.units);
+      }
+
+      // Update map
+      if (gameState.map && Array.isArray(gameState.map)) {
+        console.log('Updating map data:', gameState.map);
+        this.map = Array.from(gameState.map);
+        console.log('Map updated:', this.map.length, 'tiles');
+        
+        if (this.map.length === 0) {
+          console.warn('Map array is empty');
+        }
+      } else {
+        console.warn('No valid map data in gameState:', gameState.map);
+      }
+
+      // Update base health
+      if (typeof gameState.humanBaseHealth === 'number') {
+        this.humanBaseHealth = gameState.humanBaseHealth;
+      }
+      if (typeof gameState.aiBaseHealth === 'number') {
+        this.aiBaseHealth = gameState.aiBaseHealth;
+      }
+      console.log('Base health - Human:', this.humanBaseHealth, 'AI:', this.aiBaseHealth);
+
+      // Update game time
+      if (typeof gameState.gameTime === 'number') {
+        this.gameTime = gameState.gameTime;
+      }
+      console.log('Game time:', this.gameTime);
+      
+    } catch (error) {
+      console.error('Error updating game state:', error);
+      console.error('State that caused error:', gameState);
     }
-
-    // Update base health
-    this.humanBaseHealth = gameState.humanBaseHealth;
-    this.aiBaseHealth = gameState.aiBaseHealth;
-    console.log('Base health - Human:', this.humanBaseHealth, 'AI:', this.aiBaseHealth);
-
-    // Update game time
-    this.gameTime = gameState.gameTime;
-    console.log('Game time:', this.gameTime);
     
     console.log('=== Game State Update Complete ===\n');
   }
@@ -284,7 +318,7 @@ export { Game };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\entities\Building.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Building.js 
 ======================================== 
  
 /**
@@ -459,7 +493,7 @@ class Building extends Entity {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\entities\Entity.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Entity.js 
 ======================================== 
  
 /**
@@ -589,7 +623,7 @@ class Entity {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\entities\Unit.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\entities\Unit.js 
 ======================================== 
  
 /**
@@ -978,7 +1012,7 @@ class Unit extends Entity {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\BuildingImageLoader.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\BuildingImageLoader.js 
 ======================================== 
  
 /**
@@ -1053,7 +1087,7 @@ class BuildingImageLoader {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Camera.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Camera.js 
 ======================================== 
  
 /**
@@ -1424,7 +1458,7 @@ class Camera {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Config.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Config.js 
 ======================================== 
  
 /**
@@ -1471,7 +1505,503 @@ if (typeof module !== 'undefined' && module.exports) {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Game.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\DebugLogger.js 
+======================================== 
+ 
+/**
+ * Debug logger class for recording and analyzing debug information
+ */
+class DebugLogger {
+    /**
+     * Initialize the debug logger
+     */
+    constructor() {
+        this.interpolationLogs = [];
+        this.cameraLogs = [];
+        this.inputLogs = [];
+        this.maxLogs = 1000; // Maximum number of logs to keep
+        this.enabled = true;
+    }
+
+    /**
+     * Log interpolation data
+     * @param {string} unitId - ID of the unit
+     * @param {number} prevX - Previous X position
+     * @param {number} prevY - Previous Y position
+     * @param {number} serverX - Server X position
+     * @param {number} serverY - Server Y position
+     * @param {number} currentX - Current interpolated X position
+     * @param {number} currentY - Current interpolated Y position
+     * @param {number} t - Interpolation progress (0-1)
+     */
+    logInterpolation(unitId, prevX, prevY, serverX, serverY, currentX, currentY, t) {
+        if (!this.enabled) return;
+
+        // Add log entry with timestamp
+        this.interpolationLogs.push({
+            timestamp: Date.now(),
+            unitId,
+            positions: {
+                prev: { x: prevX, y: prevY },
+                server: { x: serverX, y: serverY },
+                current: { x: currentX, y: currentY }
+            },
+            progress: t
+        });
+
+        // Cap the logs array size
+        if (this.interpolationLogs.length > this.maxLogs) {
+            this.interpolationLogs.shift();
+        }
+
+        // Also log to console for immediate feedback
+        console.log(`[Interpolation] Unit ${unitId}: prev=(${prevX.toFixed(2)},${prevY.toFixed(2)}), server=(${serverX},${serverY}), current=(${currentX.toFixed(2)},${currentY.toFixed(2)}), t=${t.toFixed(2)}`);
+    }
+
+    /**
+     * Log camera data
+     * @param {number} x - Camera X position
+     * @param {number} y - Camera Y position
+     * @param {number} zoom - Camera zoom level
+     * @param {object} viewport - Viewport information
+     */
+    logCamera(x, y, zoom, viewport) {
+        if (!this.enabled) return;
+
+        this.cameraLogs.push({
+            timestamp: Date.now(),
+            position: { x, y },
+            zoom,
+            viewport
+        });
+
+        // Cap the logs array size
+        if (this.cameraLogs.length > this.maxLogs) {
+            this.cameraLogs.shift();
+        }
+    }
+
+    /**
+     * Log input events
+     * @param {string} type - Event type
+     * @param {object} data - Event data
+     */
+    logInput(type, data) {
+        if (!this.enabled) return;
+
+        this.inputLogs.push({
+            timestamp: Date.now(),
+            type,
+            data
+        });
+
+        // Cap the logs array size
+        if (this.inputLogs.length > this.maxLogs) {
+            this.inputLogs.shift();
+        }
+    }
+
+    /**
+     * Get interpolation stats for analysis
+     * @returns {object} Statistics about interpolation
+     */
+    getInterpolationStats() {
+        if (this.interpolationLogs.length === 0) {
+            return { count: 0, message: "No interpolation logs recorded" };
+        }
+
+        // Calculate distances between prev and server positions
+        const distances = this.interpolationLogs.map(log => {
+            const dx = log.positions.server.x - log.positions.prev.x;
+            const dy = log.positions.server.y - log.positions.prev.y;
+            return Math.sqrt(dx * dx + dy * dy);
+        });
+
+        // Calculate average distance
+        const avgDistance = distances.reduce((sum, dist) => sum + dist, 0) / distances.length;
+
+        // Calculate progress jumps (how smooth the interpolation is)
+        const progressJumps = [];
+        for (let i = 1; i < this.interpolationLogs.length; i++) {
+            if (this.interpolationLogs[i].unitId === this.interpolationLogs[i-1].unitId) {
+                const jump = Math.abs(this.interpolationLogs[i].progress - this.interpolationLogs[i-1].progress);
+                progressJumps.push(jump);
+            }
+        }
+
+        const avgProgressJump = progressJumps.length > 0 
+            ? progressJumps.reduce((sum, jump) => sum + jump, 0) / progressJumps.length
+            : 0;
+
+        return {
+            count: this.interpolationLogs.length,
+            averageDistance: avgDistance,
+            averageProgressJump: avgProgressJump,
+            smoothnessRating: avgProgressJump < 0.1 ? "Smooth" : avgProgressJump < 0.3 ? "Acceptable" : "Jerky",
+            largestJump: Math.max(...progressJumps) || 0,
+            message: `Analyzed ${this.interpolationLogs.length} interpolation logs`
+        };
+    }
+
+    /**
+     * Enable or disable the logger
+     * @param {boolean} enabled - Whether the logger should be enabled
+     */
+    setEnabled(enabled) {
+        this.enabled = enabled;
+    }
+
+    /**
+     * Clear all logs
+     */
+    clearLogs() {
+        this.interpolationLogs = [];
+        this.cameraLogs = [];
+        this.inputLogs = [];
+    }
+
+    /**
+     * Output debug information to the console
+     */
+    printDebugInfo() {
+        console.log("=== DEBUG INFORMATION ===");
+        
+        // Print interpolation stats
+        const stats = this.getInterpolationStats();
+        console.log(`Interpolation Stats: ${JSON.stringify(stats, null, 2)}`);
+        
+        // Print camera info summary
+        if (this.cameraLogs.length > 0) {
+            const latest = this.cameraLogs[this.cameraLogs.length - 1];
+            console.log(`Latest Camera Position: (${latest.position.x.toFixed(2)}, ${latest.position.y.toFixed(2)}), Zoom: ${latest.zoom.toFixed(2)}`);
+        }
+        
+        // Print input info summary
+        console.log(`Recorded ${this.inputLogs.length} input events`);
+    }
+}
+
+// Export a singleton instance
+const debugLogger = new DebugLogger();
+export { debugLogger };  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\DebugVisualizer.js 
+======================================== 
+ 
+import { debugLogger } from './DebugLogger.js';
+
+/**
+ * Debug visualizer class for rendering debug information
+ */
+class DebugVisualizer {
+    /**
+     * Initialize the debug visualizer
+     */
+    constructor() {
+        this.enabled = true;
+        this.displayStats = true;
+        this.displayTrails = true;
+        this.displayGrid = true;
+        this.trailLength = 10; // Number of positions to show in the trail
+        this.trailColors = {
+            real: 'rgba(255, 0, 0, 0.5)',  // Red for actual positions
+            interpolated: 'rgba(0, 255, 0, 0.5)' // Green for interpolated positions
+        };
+        
+        this.setupUI();
+    }
+    
+    /**
+     * Set up debug UI
+     */
+    setupUI() {
+        // Create debug UI container if it doesn't exist
+        let debugContainer = document.getElementById('debug-container');
+        if (!debugContainer && this.enabled) {
+            debugContainer = document.createElement('div');
+            debugContainer.id = 'debug-container';
+            debugContainer.style.position = 'absolute';
+            debugContainer.style.top = '10px';
+            debugContainer.style.right = '10px';
+            debugContainer.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+            debugContainer.style.color = 'white';
+            debugContainer.style.padding = '10px';
+            debugContainer.style.borderRadius = '5px';
+            debugContainer.style.zIndex = '1000';
+            debugContainer.style.maxHeight = '300px';
+            debugContainer.style.overflowY = 'auto';
+            debugContainer.style.fontSize = '12px';
+            debugContainer.style.fontFamily = 'monospace';
+            document.body.appendChild(debugContainer);
+            
+            // Add title
+            const title = document.createElement('div');
+            title.textContent = 'DEBUG INFO';
+            title.style.fontWeight = 'bold';
+            title.style.marginBottom = '5px';
+            title.style.borderBottom = '1px solid white';
+            debugContainer.appendChild(title);
+            
+            // Add stats container
+            const statsContainer = document.createElement('div');
+            statsContainer.id = 'debug-stats';
+            debugContainer.appendChild(statsContainer);
+            
+            // Add controls
+            const controls = document.createElement('div');
+            controls.style.marginTop = '10px';
+            controls.style.display = 'flex';
+            controls.style.flexDirection = 'column';
+            controls.style.gap = '5px';
+            
+            // Toggle debug display button
+            const toggleBtn = document.createElement('button');
+            toggleBtn.textContent = 'Toggle Debug Display';
+            toggleBtn.style.padding = '3px';
+            toggleBtn.onclick = () => this.toggleEnabled();
+            controls.appendChild(toggleBtn);
+            
+            // Toggle trails button
+            const toggleTrailsBtn = document.createElement('button');
+            toggleTrailsBtn.textContent = 'Toggle Position Trails';
+            toggleTrailsBtn.style.padding = '3px';
+            toggleTrailsBtn.onclick = () => this.toggleTrails();
+            controls.appendChild(toggleTrailsBtn);
+            
+            // Toggle grid button
+            const toggleGridBtn = document.createElement('button');
+            toggleGridBtn.textContent = 'Toggle Grid';
+            toggleGridBtn.style.padding = '3px';
+            toggleGridBtn.onclick = () => this.toggleGrid();
+            controls.appendChild(toggleGridBtn);
+            
+            // Print debug info button
+            const printDebugBtn = document.createElement('button');
+            printDebugBtn.textContent = 'Print Debug Info to Console';
+            printDebugBtn.style.padding = '3px';
+            printDebugBtn.onclick = () => debugLogger.printDebugInfo();
+            controls.appendChild(printDebugBtn);
+            
+            debugContainer.appendChild(controls);
+        }
+    }
+    
+    /**
+     * Update debug stats display
+     */
+    updateStats() {
+        if (!this.enabled || !this.displayStats) return;
+        
+        const statsEl = document.getElementById('debug-stats');
+        if (!statsEl) return;
+        
+        // Get interpolation stats
+        const stats = debugLogger.getInterpolationStats();
+        
+        // Create HTML content
+        let html = `
+            <div>Interpolation Logs: ${stats.count}</div>
+            ${stats.count > 0 ? `
+                <div>Avg Distance: ${stats.averageDistance.toFixed(2)}</div>
+                <div>Smoothness: ${stats.smoothnessRating} (${stats.averageProgressJump.toFixed(3)})</div>
+                <div>Largest Jump: ${stats.largestJump.toFixed(3)}</div>
+            ` : ''}
+        `;
+        
+        // Add camera info if available
+        if (debugLogger.cameraLogs.length > 0) {
+            const latest = debugLogger.cameraLogs[debugLogger.cameraLogs.length - 1];
+            html += `
+                <div>Camera: (${latest.position.x.toFixed(0)}, ${latest.position.y.toFixed(0)})</div>
+                <div>Zoom: ${latest.zoom.toFixed(2)}</div>
+            `;
+        }
+        
+        // Add input info
+        html += `<div>Input Events: ${debugLogger.inputLogs.length}</div>`;
+        
+        // Show last input if available
+        if (debugLogger.inputLogs.length > 0) {
+            const latest = debugLogger.inputLogs[debugLogger.inputLogs.length - 1];
+            html += `<div>Last Input: ${latest.type}</div>`;
+        }
+        
+        statsEl.innerHTML = html;
+    }
+    
+    /**
+     * Render entity trails based on interpolation logs
+     * @param {CanvasRenderingContext2D} ctx - Canvas rendering context
+     * @param {Camera} camera - Game camera
+     */
+    renderEntityTrails(ctx, camera) {
+        if (!this.enabled || !this.displayTrails || debugLogger.interpolationLogs.length === 0) return;
+        
+        // Get recent logs, grouped by unit ID
+        const unitLogs = {};
+        
+        // Group logs by unit ID
+        debugLogger.interpolationLogs.forEach(log => {
+            if (!unitLogs[log.unitId]) {
+                unitLogs[log.unitId] = [];
+            }
+            unitLogs[log.unitId].push(log);
+        });
+        
+        // Render trails for each unit
+        Object.keys(unitLogs).forEach(unitId => {
+            const logs = unitLogs[unitId];
+            if (logs.length < 2) return;
+            
+            // Only use the most recent logs up to trailLength
+            const recentLogs = logs.slice(-this.trailLength);
+            
+            // Draw server position trail
+            ctx.beginPath();
+            ctx.strokeStyle = this.trailColors.real;
+            ctx.lineWidth = 2;
+            
+            let firstLog = recentLogs[0];
+            let screenPos = camera.worldToScreen(firstLog.positions.server.x, firstLog.positions.server.y);
+            
+            ctx.moveTo(screenPos.x, screenPos.y);
+            
+            for (let i = 1; i < recentLogs.length; i++) {
+                const log = recentLogs[i];
+                screenPos = camera.worldToScreen(log.positions.server.x, log.positions.server.y);
+                ctx.lineTo(screenPos.x, screenPos.y);
+            }
+            
+            ctx.stroke();
+            
+            // Draw interpolated position trail
+            ctx.beginPath();
+            ctx.strokeStyle = this.trailColors.interpolated;
+            ctx.lineWidth = 2;
+            
+            firstLog = recentLogs[0];
+            screenPos = camera.worldToScreen(firstLog.positions.current.x, firstLog.positions.current.y);
+            
+            ctx.moveTo(screenPos.x, screenPos.y);
+            
+            for (let i = 1; i < recentLogs.length; i++) {
+                const log = recentLogs[i];
+                screenPos = camera.worldToScreen(log.positions.current.x, log.positions.current.y);
+                ctx.lineTo(screenPos.x, screenPos.y);
+            }
+            
+            ctx.stroke();
+        });
+    }
+    
+    /**
+     * Render debug grid
+     * @param {CanvasRenderingContext2D} ctx - Canvas rendering context
+     * @param {Camera} camera - Game camera
+     * @param {number} mapWidth - Map width in tiles
+     * @param {number} mapHeight - Map height in tiles
+     */
+    renderGrid(ctx, camera, mapWidth, mapHeight) {
+        if (!this.enabled || !this.displayGrid) return;
+        
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.lineWidth = 1;
+        
+        // Draw horizontal grid lines
+        for (let y = 0; y <= mapHeight; y++) {
+            const start = camera.worldToScreen(0, y);
+            const end = camera.worldToScreen(mapWidth, y);
+            
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            
+            // Add coordinate text
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.font = '10px Arial';
+            ctx.fillText(`y:${y}`, start.x - 25, start.y);
+        }
+        
+        // Draw vertical grid lines
+        for (let x = 0; x <= mapWidth; x++) {
+            const start = camera.worldToScreen(x, 0);
+            const end = camera.worldToScreen(x, mapHeight);
+            
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.stroke();
+            
+            // Add coordinate text
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.font = '10px Arial';
+            ctx.fillText(`x:${x}`, start.x, start.y - 5);
+        }
+    }
+    
+    /**
+     * Toggle whether debug visualization is enabled
+     */
+    toggleEnabled() {
+        this.enabled = !this.enabled;
+        
+        // Update UI visibility
+        const debugContainer = document.getElementById('debug-container');
+        if (debugContainer) {
+            debugContainer.style.display = this.enabled ? 'block' : 'none';
+        }
+        
+        console.log(`Debug visualization ${this.enabled ? 'enabled' : 'disabled'}`);
+    }
+    
+    /**
+     * Toggle whether trails are displayed
+     */
+    toggleTrails() {
+        this.displayTrails = !this.displayTrails;
+        console.log(`Position trails ${this.displayTrails ? 'enabled' : 'disabled'}`);
+    }
+    
+    /**
+     * Toggle whether grid is displayed
+     */
+    toggleGrid() {
+        this.displayGrid = !this.displayGrid;
+        console.log(`Debug grid ${this.displayGrid ? 'enabled' : 'disabled'}`);
+    }
+    
+    /**
+     * Update the visualizer
+     */
+    update() {
+        this.updateStats();
+    }
+    
+    /**
+     * Render debug visualizations
+     * @param {CanvasRenderingContext2D} ctx - Canvas rendering context
+     * @param {Camera} camera - Game camera
+     * @param {number} mapWidth - Map width in tiles
+     * @param {number} mapHeight - Map height in tiles
+     */
+    render(ctx, camera, mapWidth, mapHeight) {
+        if (!this.enabled) return;
+        
+        this.renderGrid(ctx, camera, mapWidth, mapHeight);
+        this.renderEntityTrails(ctx, camera);
+    }
+}
+
+// Export a singleton instance
+const debugVisualizer = new DebugVisualizer();
+export { debugVisualizer };  
+ 
+ 
+======================================== 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Game.js 
 ======================================== 
  
 // This file is now replaced by the Game class in src/index.js
@@ -1721,7 +2251,7 @@ class Game {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\InputHandler.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\InputHandler.js 
 ======================================== 
  
 /**
@@ -2158,7 +2688,7 @@ export { InputHandler };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Multiplayer.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Multiplayer.js 
 ======================================== 
  
 /**
@@ -2325,7 +2855,7 @@ export default Multiplayer;
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\Renderer.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\Renderer.js 
 ======================================== 
  
 /**
@@ -3388,7 +3918,7 @@ class Renderer {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\RendererColyseus.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\RendererColyseus.js 
 ======================================== 
  
 /**
@@ -3490,12 +4020,30 @@ class Renderer {
    * @param {Array} map - Array of tile values
    */
   renderMap(map) {
+    console.log('=== Render Map Called ===');
+    console.log('Map data received:', map);
+    console.log('Map type:', map ? (Array.isArray(map) ? 'Array' : typeof map) : 'undefined');
+    
     if (!map || !map.length) {
       console.warn('No map data to render');
+      console.log('Camera position:', { x: this.cameraX, y: this.cameraY });
+      console.log('Zoom level:', this.zoom);
       return;
     }
     
-    console.log('Rendering map:', map.length, 'tiles');
+    console.log('Map dimensions:', {
+      length: map.length,
+      firstRowLength: map[0]?.length,
+      isValid2DArray: map.every(row => Array.isArray(row))
+    });
+    
+    // Sample some map data
+    if (map.length > 0 && map[0]?.length > 0) {
+      console.log('Sample tile data:');
+      console.log('Top-left:', map[0][0]);
+      console.log('Center:', map[Math.floor(map.length/2)]?.[Math.floor(map[0].length/2)]);
+      console.log('Bottom-right:', map[map.length-1]?.[map[0].length-1]);
+    }
     
     // Iterate through the map grid
     for (let y = 0; y < map.length; y++) {
@@ -3504,6 +4052,8 @@ class Renderer {
         this.renderTile(x, y, tile);
       }
     }
+    
+    console.log('=== Map Render Complete ===\n');
   }
   
   /**
@@ -3710,7 +4260,7 @@ export { Renderer };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\UIManager.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\UIManager.js 
 ======================================== 
  
 /**
@@ -3977,7 +4527,7 @@ export { UIManager };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\game\UnitImageLoader.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\game\UnitImageLoader.js 
 ======================================== 
  
 /**
@@ -4032,7 +4582,7 @@ class UnitImageLoader {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\map\Map.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\map\Map.js 
 ======================================== 
  
 /**
@@ -4372,7 +4922,7 @@ class Map {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\map\Tile.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\map\Tile.js 
 ======================================== 
  
 /**
@@ -4452,7 +5002,7 @@ if (typeof module !== 'undefined' && module.exports) {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\tools\generateDetailedImages.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generateDetailedImages.js 
 ======================================== 
  
 /**
@@ -4973,7 +5523,7 @@ console.log('2. The game will automatically use these images');
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\tools\generateImages.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generateImages.js 
 ======================================== 
  
 const fs = require('fs');
@@ -5488,7 +6038,7 @@ generateAllImages();
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\tools\generatePlaceholderImages.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\tools\generatePlaceholderImages.js 
 ======================================== 
  
 /**
@@ -5698,7 +6248,7 @@ console.log('3. The game will automatically use these images');
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\utils\helpers.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\utils\helpers.js 
 ======================================== 
  
 /**
@@ -5843,7 +6393,7 @@ function manhattanDistance(x1, y1, x2, y2) {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\src\utils\Quadtree.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\src\utils\Quadtree.js 
 ======================================== 
  
 /**
@@ -6062,7 +6612,7 @@ if (typeof module !== 'undefined' && module.exports) {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\server\index.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\index.js 
 ======================================== 
  
 const express = require('express');
@@ -7318,7 +7868,7 @@ server.listen(PORT, () => {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\server\server.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\server.js 
 ======================================== 
  
 const http = require('http');
@@ -7365,7 +7915,7 @@ module.exports = { app, server, gameServer };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\server\rooms\GameRoom.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\rooms\GameRoom.js 
 ======================================== 
  
 const { Room } = require("colyseus");
@@ -7894,7 +8444,7 @@ module.exports = { GameRoom };
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\server\schema\GameState.js 
+FILE: C:\Users\Garrett\Documents\massive-rts\server\schema\GameState.js 
 ======================================== 
  
 const { Schema, MapSchema, ArraySchema, type } = require('@colyseus/schema');
@@ -8040,7 +8590,7 @@ module.exports = {
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\public\index.html 
+FILE: C:\Users\Garrett\Documents\massive-rts\public\index.html 
 ======================================== 
  
 <!DOCTYPE html>
@@ -8080,7 +8630,7 @@ FILE: C:\Users\Garrett\Documents\feature2-worktree\public\index.html
  
  
 ======================================== 
-FILE: C:\Users\Garrett\Documents\feature2-worktree\public\styles.css 
+FILE: C:\Users\Garrett\Documents\massive-rts\public\styles.css 
 ======================================== 
  
 * {
