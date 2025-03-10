@@ -6113,7 +6113,12 @@ var Renderer = /*#__PURE__*/function () {
       forest: '#1b4001',
       plains: '#90b53d',
       desert: '#d4b167',
-      selection: 'rgba(255, 255, 255, 0.3)'
+      selection: 'rgba(255, 255, 255, 0.3)',
+      hero: '#ff4444',
+      heroOutline: '#aa0000',
+      heroSelected: '#ffff00',
+      heroAlly: '#44ff44',
+      heroEnemy: '#ff4444'
     };
 
     // Set canvas size
@@ -6325,19 +6330,49 @@ var Renderer = /*#__PURE__*/function () {
     /**
      * Render a hero
      * @param {Object} hero - Hero object
-     * @param {boolean} isCurrentPlayer - Whether this hero belongs to the current player
+     * @param {boolean} isSelected - Whether this hero is selected
+     * @param {boolean} isOwnHero - Whether this hero belongs to the current player
      */
   }, {
     key: "renderHero",
-    value: function renderHero(hero, isCurrentPlayer) {
-      if (!hero || !hero.position) return;
+    value: function renderHero(hero, isSelected, isOwnHero) {
       var screenPos = this.gridToScreen(hero.position.x, hero.position.y);
+      this.ctx.save();
 
-      // Draw hero (larger than regular units)
+      // Draw hero body
       this.ctx.beginPath();
-      this.ctx.fillStyle = isCurrentPlayer ? "#f1c40f" : "#9b59b6";
-      this.ctx.arc(screenPos.x, screenPos.y, 15 * this.zoom, 0, Math.PI * 2);
+      this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth / 3, 0, Math.PI * 2);
+
+      // Set color based on ownership
+      if (isOwnHero) {
+        this.ctx.fillStyle = this.colors.hero;
+        this.ctx.strokeStyle = this.colors.heroOutline;
+      } else {
+        this.ctx.fillStyle = this.colors.heroAlly;
+        this.ctx.strokeStyle = this.colors.heroOutline;
+      }
       this.ctx.fill();
+      this.ctx.stroke();
+
+      // Draw selection indicator if selected
+      if (isSelected) {
+        this.ctx.beginPath();
+        this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth / 2.5, 0, Math.PI * 2);
+        this.ctx.strokeStyle = this.colors.heroSelected;
+        this.ctx.setLineDash([5, 5]);
+        this.ctx.stroke();
+        this.ctx.setLineDash([]);
+      }
+
+      // Draw health bar
+      var healthBarWidth = this.tileWidth / 2;
+      var healthBarHeight = 4;
+      var healthPercent = hero.health / 100;
+      this.ctx.fillStyle = '#ff0000';
+      this.ctx.fillRect(screenPos.x - healthBarWidth / 2, screenPos.y - this.tileHeight / 2, healthBarWidth, healthBarHeight);
+      this.ctx.fillStyle = '#00ff00';
+      this.ctx.fillRect(screenPos.x - healthBarWidth / 2, screenPos.y - this.tileHeight / 2, healthBarWidth * healthPercent, healthBarHeight);
+      this.ctx.restore();
     }
 
     /**
@@ -6868,37 +6903,55 @@ var Game = /*#__PURE__*/function () {
     key: "connectToServer",
     value: function () {
       var _connectToServer = _asyncToGenerator(/*#__PURE__*/_regeneratorRuntime().mark(function _callee2() {
+        var _this = this;
         return _regeneratorRuntime().wrap(function _callee2$(_context2) {
           while (1) switch (_context2.prev = _context2.next) {
             case 0:
               _context2.prev = 0;
               console.log("Connecting to server...");
+              this.uiManager.showNotification("Connecting to server...");
 
               // Join or create a game room
-              _context2.next = 4;
+              _context2.next = 5;
               return this.client.joinOrCreate("game_room");
-            case 4:
+            case 5:
               this.room = _context2.sent;
               // Store player ID
               this.playerId = this.room.sessionId;
               console.log("Connected to server with ID:", this.playerId);
+              this.uiManager.showNotification("Connected! Your ID: ".concat(this.playerId));
 
               // Set up state change listeners
               this.setupStateListeners();
 
               // Set up other room listeners
               this.setupRoomListeners();
+
+              // Handle disconnection
+              this.room.onLeave(function (code) {
+                console.log("Left room:", code);
+                _this.uiManager.showNotification("Disconnected from server. Attempting to reconnect...");
+                // Try to reconnect after 3 seconds
+                setTimeout(function () {
+                  return _this.connectToServer();
+                }, 3000);
+              });
               return _context2.abrupt("return", true);
-            case 12:
-              _context2.prev = 12;
+            case 15:
+              _context2.prev = 15;
               _context2.t0 = _context2["catch"](0);
               console.error("Failed to connect to server:", _context2.t0);
+              this.uiManager.showNotification("Failed to connect. Retrying in 3 seconds...");
+              // Try to reconnect after 3 seconds
+              setTimeout(function () {
+                return _this.connectToServer();
+              }, 3000);
               return _context2.abrupt("return", false);
-            case 16:
+            case 21:
             case "end":
               return _context2.stop();
           }
-        }, _callee2, this, [[0, 12]]);
+        }, _callee2, this, [[0, 15]]);
       }));
       function connectToServer() {
         return _connectToServer.apply(this, arguments);
@@ -6908,11 +6961,11 @@ var Game = /*#__PURE__*/function () {
   }, {
     key: "setupStateListeners",
     value: function setupStateListeners() {
-      var _this = this;
+      var _this2 = this;
       // Listen for game state changes
       this.room.onMessage("gameState", function (state) {
         console.log('Received gameState message:', state);
-        _this.updateGameState(state);
+        _this2.updateGameState(state);
       });
 
       // Listen for player join events
@@ -6930,112 +6983,116 @@ var Game = /*#__PURE__*/function () {
   }, {
     key: "setupRoomListeners",
     value: function setupRoomListeners() {
-      var _this2 = this;
+      var _this3 = this;
       // Player joined
       this.room.onMessage("player_joined", function (message) {
         console.log("Player joined:", message.id);
         // Update UI accordingly
-        _this2.uiManager.showNotification("Player ".concat(message.id, " joined the game."));
+        _this3.uiManager.showNotification("Player ".concat(message.id, " joined the game."));
       });
 
       // Player left
       this.room.onMessage("player_left", function (message) {
         console.log("Player left:", message.id);
         // Update UI accordingly
-        _this2.uiManager.showNotification("Player ".concat(message.id, " left the game."));
+        _this3.uiManager.showNotification("Player ".concat(message.id, " left the game."));
       });
 
       // Game over
       this.room.onMessage("game_over", function (message) {
         console.log("Game over!", message);
         // Show game over screen
-        _this2.uiManager.showGameOver(message);
+        _this3.uiManager.showGameOver(message);
       });
     }
   }, {
     key: "updateGameState",
     value: function updateGameState(state) {
-      var _this3 = this;
+      var _this4 = this;
       console.log('\n=== Updating Game State ===');
-      console.log('Raw state received:', state);
 
       // Extract the actual game state from the message
       var gameState = state.gameState || state;
-      console.log('Processed gameState:', gameState);
       if (!gameState) {
         console.error('No game state data received');
         return;
       }
       try {
         // Update players
+        var oldPlayerCount = this.players.size;
         this.players.clear();
         if (gameState.players && typeof gameState.players.forEach === 'function') {
           gameState.players.forEach(function (playerData, id) {
-            _this3.players.set(id, playerData);
+            _this4.players.set(id, playerData);
           });
-          console.log('Players updated:', this.players.size);
-        } else {
-          console.log('No valid players data in gameState:', gameState.players);
+
+          // Notify if player count changed
+          if (this.players.size !== oldPlayerCount) {
+            this.uiManager.updatePlayerCount(this.players.size);
+          }
         }
 
         // Update buildings
         this.buildings.clear();
         if (gameState.buildings && typeof gameState.buildings.forEach === 'function') {
           gameState.buildings.forEach(function (building, id) {
-            _this3.buildings.set(id, building);
+            _this4.buildings.set(id, building);
           });
-          console.log('Buildings updated:', this.buildings.size);
-        } else {
-          console.log('No valid buildings data in gameState:', gameState.buildings);
         }
 
         // Update units
         this.units.clear();
         if (gameState.units && typeof gameState.units.forEach === 'function') {
           gameState.units.forEach(function (unit, id) {
-            _this3.units.set(id, unit);
+            _this4.units.set(id, unit);
           });
-          console.log('Units updated:', this.units.size);
-        } else {
-          console.log('No valid units data in gameState:', gameState.units);
         }
 
-        // Update map
+        // Update map if provided
         if (gameState.map && Array.isArray(gameState.map)) {
-          console.log('Updating map data:', gameState.map);
           this.map = Array.from(gameState.map);
-          console.log('Map updated:', this.map.length, 'tiles');
-          if (this.map.length === 0) {
-            console.warn('Map array is empty');
+          // Center camera on map if this is the first time receiving map data
+          if (!this.hasReceivedMap) {
+            this.renderer.centerOnMap();
+            this.hasReceivedMap = true;
           }
-        } else {
-          console.warn('No valid map data in gameState:', gameState.map);
         }
 
-        // Update base health
-        if (typeof gameState.humanBaseHealth === 'number') {
+        // Update base health and show changes
+        if (typeof gameState.humanBaseHealth === 'number' && this.humanBaseHealth !== gameState.humanBaseHealth) {
+          var change = gameState.humanBaseHealth - this.humanBaseHealth;
+          if (change < 0) {
+            this.uiManager.showNotification("Human base took ".concat(-change, " damage!"));
+          }
           this.humanBaseHealth = gameState.humanBaseHealth;
         }
-        if (typeof gameState.aiBaseHealth === 'number') {
+        if (typeof gameState.aiBaseHealth === 'number' && this.aiBaseHealth !== gameState.aiBaseHealth) {
+          var _change = gameState.aiBaseHealth - this.aiBaseHealth;
+          if (_change < 0) {
+            this.uiManager.showNotification("AI base took ".concat(-_change, " damage!"));
+          }
           this.aiBaseHealth = gameState.aiBaseHealth;
         }
-        console.log('Base health - Human:', this.humanBaseHealth, 'AI:', this.aiBaseHealth);
 
         // Update game time
         if (typeof gameState.gameTime === 'number') {
           this.gameTime = gameState.gameTime;
+          this.uiManager.updateGameTime(this.gameTime);
         }
-        console.log('Game time:', this.gameTime);
+
+        // Trigger a render update
+        if (this.renderer) {
+          this.renderer.render();
+        }
       } catch (error) {
         console.error('Error updating game state:', error);
-        console.error('State that caused error:', gameState);
+        this.uiManager.showNotification('Error updating game state');
       }
-      console.log('=== Game State Update Complete ===\n');
     }
   }, {
     key: "gameLoop",
     value: function gameLoop() {
-      var _this4 = this;
+      var _this5 = this;
       // Render the game
       this.render();
 
@@ -7044,13 +7101,13 @@ var Game = /*#__PURE__*/function () {
 
       // Request next frame
       requestAnimationFrame(function () {
-        return _this4.gameLoop();
+        return _this5.gameLoop();
       });
     }
   }, {
     key: "render",
     value: function render() {
-      var _this5 = this;
+      var _this6 = this;
       // Clear canvas
       this.renderer.clear();
 
@@ -7059,24 +7116,24 @@ var Game = /*#__PURE__*/function () {
 
       // Render buildings
       this.buildings.forEach(function (building) {
-        _this5.renderer.renderBuilding(building);
+        _this6.renderer.renderBuilding(building);
       });
 
       // Render units
       this.units.forEach(function (unit) {
-        _this5.renderer.renderUnit(unit);
+        _this6.renderer.renderUnit(unit);
       });
 
       // Render heroes
       this.players.forEach(function (playerData) {
         if (playerData.hero) {
-          _this5.renderer.renderHero(playerData.hero, playerData.id === _this5.playerId);
+          _this6.renderer.renderHero(playerData.hero, playerData.id === _this6.playerId);
         }
       });
 
       // Render selection highlight
       this.selectedEntities.forEach(function (entity) {
-        _this5.renderer.renderSelection(entity);
+        _this6.renderer.renderSelection(entity);
       });
     }
 

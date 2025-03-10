@@ -28,7 +28,12 @@ class Renderer {
       forest: '#1b4001',
       plains: '#90b53d',
       desert: '#d4b167',
-      selection: 'rgba(255, 255, 255, 0.3)'
+      selection: 'rgba(255, 255, 255, 0.3)',
+      hero: '#ff4444',
+      heroOutline: '#aa0000',
+      heroSelected: '#ffff00',
+      heroAlly: '#44ff44',
+      heroEnemy: '#ff4444'
     };
     
     // Set canvas size
@@ -230,18 +235,62 @@ class Renderer {
   /**
    * Render a hero
    * @param {Object} hero - Hero object
-   * @param {boolean} isCurrentPlayer - Whether this hero belongs to the current player
+   * @param {boolean} isSelected - Whether this hero is selected
+   * @param {boolean} isOwnHero - Whether this hero belongs to the current player
    */
-  renderHero(hero, isCurrentPlayer) {
-    if (!hero || !hero.position) return;
-    
+  renderHero(hero, isSelected, isOwnHero) {
     const screenPos = this.gridToScreen(hero.position.x, hero.position.y);
     
-    // Draw hero (larger than regular units)
+    this.ctx.save();
+    
+    // Draw hero body
     this.ctx.beginPath();
-    this.ctx.fillStyle = isCurrentPlayer ? "#f1c40f" : "#9b59b6";
-    this.ctx.arc(screenPos.x, screenPos.y, 15 * this.zoom, 0, Math.PI * 2);
+    this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth / 3, 0, Math.PI * 2);
+    
+    // Set color based on ownership
+    if (isOwnHero) {
+      this.ctx.fillStyle = this.colors.hero;
+      this.ctx.strokeStyle = this.colors.heroOutline;
+    } else {
+      this.ctx.fillStyle = this.colors.heroAlly;
+      this.ctx.strokeStyle = this.colors.heroOutline;
+    }
+    
     this.ctx.fill();
+    this.ctx.stroke();
+    
+    // Draw selection indicator if selected
+    if (isSelected) {
+      this.ctx.beginPath();
+      this.ctx.arc(screenPos.x, screenPos.y, this.tileWidth / 2.5, 0, Math.PI * 2);
+      this.ctx.strokeStyle = this.colors.heroSelected;
+      this.ctx.setLineDash([5, 5]);
+      this.ctx.stroke();
+      this.ctx.setLineDash([]);
+    }
+    
+    // Draw health bar
+    const healthBarWidth = this.tileWidth / 2;
+    const healthBarHeight = 4;
+    const healthPercent = hero.health / 100;
+    
+    this.ctx.fillStyle = '#ff0000';
+    this.ctx.fillRect(
+      screenPos.x - healthBarWidth / 2,
+      screenPos.y - this.tileHeight / 2,
+      healthBarWidth,
+      healthBarHeight
+    );
+    
+    this.ctx.fillStyle = '#00ff00';
+    this.ctx.fillRect(
+      screenPos.x - healthBarWidth / 2,
+      screenPos.y - this.tileHeight / 2,
+      healthBarWidth * healthPercent,
+      healthBarHeight
+    );
+    
+    this.ctx.restore();
   }
   
   /**

@@ -264,17 +264,27 @@ class GameRoom extends Room {
     // Create player data
     const playerData = new PlayerData();
     
-    // Create hero for the player
+    // Find human base position
+    let humanBaseX = 0;
+    let humanBaseY = 0;
+    this.state.buildings.forEach(building => {
+      if (building.owner === "human" && building.type === "headquarters") {
+        humanBaseX = building.position.x;
+        humanBaseY = building.position.y;
+      }
+    });
+    
+    // Create hero for the player near the human base
     const hero = new Hero(
       `hero_${client.sessionId}`,
       client.sessionId,
-      50 + Math.floor(Math.random() * 20), // Random position near human base
-      50 + Math.floor(Math.random() * 20),
+      humanBaseX + Math.floor(Math.random() * 5), // Random position within 5 tiles of base
+      humanBaseY + Math.floor(Math.random() * 5),
       100
     );
     
     // Add some basic abilities to the hero
-    hero.abilities.push({ name: "heal", cooldown: 30, currentCooldown: 0 });
+    hero.abilities.push({ name: "attack", cooldown: 10, currentCooldown: 0 });
     
     // Set the hero and add player to game state
     playerData.hero = hero;
