@@ -6103,6 +6103,9 @@ var Renderer = /*#__PURE__*/function () {
     this.cameraY = 0;
     this.zoom = 1.0;
 
+    // Map data reference
+    this.map = null;
+
     // Colors for different terrain types
     this.colors = {
       tile: '#4a8505',
@@ -6193,92 +6196,100 @@ var Renderer = /*#__PURE__*/function () {
 
     /**
      * Render the map
-     * @param {Array} map - Array of tile values
+     * @param {Array} map - 2D array of map tiles
      */
   }, {
     key: "renderMap",
     value: function renderMap(map) {
-      var _map$, _map$2;
       console.log('=== Render Map Called ===');
-      console.log('Map data received:', map);
-      console.log('Map type:', map ? Array.isArray(map) ? 'Array' : _typeof(map) : 'undefined');
-      if (!map || !map.length) {
-        console.warn('No map data to render');
-        console.log('Camera position:', {
-          x: this.cameraX,
-          y: this.cameraY
-        });
-        console.log('Zoom level:', this.zoom);
+
+      // Store map reference
+      this.map = map;
+      if (!Array.isArray(map)) {
+        console.error('Invalid map data:', map);
         return;
       }
-      console.log('Map dimensions:', {
-        length: map.length,
-        firstRowLength: (_map$ = map[0]) === null || _map$ === void 0 ? void 0 : _map$.length,
-        isValid2DArray: map.every(function (row) {
-          return Array.isArray(row);
-        })
-      });
+      console.log('Map data received:', map);
+      console.log('Map type:', map.constructor.name);
 
-      // Sample some map data
-      if (map.length > 0 && ((_map$2 = map[0]) === null || _map$2 === void 0 ? void 0 : _map$2.length) > 0) {
-        var _map$Math$floor, _map;
-        console.log('Sample tile data:');
+      // Log the map dimensions
+      var dimensions = {
+        length: map.length,
+        firstRowLength: map[0] ? map[0].length : 0,
+        isValid2DArray: map.length > 0 && Array.isArray(map[0])
+      };
+      console.log('Map dimensions:', dimensions);
+
+      // Log some tile data
+      console.log('Sample tile data:');
+      if (map.length > 0 && map[0].length > 0) {
         console.log('Top-left:', map[0][0]);
-        console.log('Center:', (_map$Math$floor = map[Math.floor(map.length / 2)]) === null || _map$Math$floor === void 0 ? void 0 : _map$Math$floor[Math.floor(map[0].length / 2)]);
-        console.log('Bottom-right:', (_map = map[map.length - 1]) === null || _map === void 0 ? void 0 : _map[map[0].length - 1]);
+        var centerX = Math.floor(map.length / 2);
+        var centerY = Math.floor(map[0].length / 2);
+        if (map[centerX] && map[centerX][centerY]) {
+          console.log('Center:', map[centerX][centerY]);
+        }
+        var lastX = map.length - 1;
+        var lastY = map[0].length - 1;
+        if (map[lastX] && map[lastX][lastY]) {
+          console.log('Bottom-right:', map[lastX][lastY]);
+        }
       }
 
-      // Iterate through the map grid
-      for (var y = 0; y < map.length; y++) {
-        for (var x = 0; x < map[y].length; x++) {
-          var tile = map[y][x];
-          this.renderTile(x, y, tile);
+      // Render each tile
+      for (var x = 0; x < map.length; x++) {
+        for (var y = 0; y < map[x].length; y++) {
+          var tile = map[x][y];
+          var tileType = tile.terrainType || tile.type || 'grass';
+          this.renderTile(x, y, tileType);
         }
       }
       console.log('=== Map Render Complete ===\n');
     }
 
     /**
-     * Render a single tile
-     * @param {number} x - Grid x coordinate
-     * @param {number} y - Grid y coordinate
-     * @param {number} tileType - Type of tile
+     * Render a single tile at the specified position
+     * @param {number} x - X coordinate in the grid
+     * @param {number} y - Y coordinate in the grid
+     * @param {string} tileType - Type of tile (grass, water, etc.)
      */
   }, {
     key: "renderTile",
     value: function renderTile(x, y, tileType) {
+      // Convert grid position to screen coordinates
       var screenPos = this.gridToScreen(x, y);
 
-      // Get color based on tile type
-      var color = this.colors.tile;
+      // Determine tile color based on type
+      var fillColor;
+      var strokeColor;
       switch (tileType) {
-        case 1:
-          // Water
-          color = this.colors.water;
+        case 'water':
+          fillColor = this.colors.water;
           break;
-        case 2:
-          // Mountain
-          color = this.colors.mountain;
+        case 'mountain':
+          fillColor = this.colors.mountain;
           break;
-        case 3:
-          // Forest
-          color = this.colors.forest;
+        case 'forest':
+          fillColor = this.colors.forest;
           break;
-        case 4:
-          // Plains
-          color = this.colors.plains;
+        case 'plains':
+          fillColor = this.colors.plains;
           break;
-        case 5:
-          // Desert
-          color = this.colors.desert;
+        case 'desert':
+          fillColor = this.colors.desert;
+          break;
+        case 'grass':
+        default:
+          fillColor = this.colors.tile;
           break;
       }
+      strokeColor = this.colors.tileOutline;
 
-      // Draw tile
-      this.drawIsometricTile(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, color);
+      // Draw isometric tile
+      this.drawIsometricTile(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, fillColor);
 
       // Draw tile outline
-      this.drawIsometricTileOutline(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, this.colors.tileOutline);
+      this.drawIsometricTileOutline(screenPos.x, screenPos.y, this.tileWidth * this.zoom, this.tileHeight * this.zoom, strokeColor);
     }
 
     /**
@@ -6336,6 +6347,11 @@ var Renderer = /*#__PURE__*/function () {
   }, {
     key: "renderHero",
     value: function renderHero(hero, isSelected, isOwnHero) {
+      console.log('Rendering hero:', hero);
+      if (!hero || !hero.position) {
+        console.error('Invalid hero object:', hero);
+        return;
+      }
       var screenPos = this.gridToScreen(hero.position.x, hero.position.y);
       this.ctx.save();
 
@@ -6399,7 +6415,11 @@ var Renderer = /*#__PURE__*/function () {
   }, {
     key: "renderBuilding",
     value: function renderBuilding(building) {
-      if (!building || !building.position) return;
+      console.log('Rendering building:', building);
+      if (!building || !building.position) {
+        console.error('Invalid building object:', building);
+        return;
+      }
       var screenPos = this.gridToScreen(building.position.x, building.position.y);
 
       // Draw building (for now, just a colored rectangle)
@@ -6466,6 +6486,28 @@ var Renderer = /*#__PURE__*/function () {
     key: "adjustZoom",
     value: function adjustZoom(delta) {
       this.zoom = Math.max(0.5, Math.min(2, this.zoom + delta));
+    }
+
+    /**
+     * Center the camera on the center of the map
+     */
+  }, {
+    key: "centerOnMap",
+    value: function centerOnMap() {
+      console.log('Centering camera on map');
+      if (Array.isArray(this.map) && this.map.length > 0) {
+        // Calculate center coordinates
+        var centerX = this.map.length / 2;
+        var centerY = this.map[0].length / 2;
+        console.log("Map dimensions: ".concat(this.map.length, "x").concat(this.map[0].length, ", center at (").concat(centerX, ", ").concat(centerY, ")"));
+
+        // Set camera position
+        this.cameraX = centerX * this.tileWidth / 2;
+        this.cameraY = centerY * this.tileHeight / 2;
+        console.log("Set camera position to (".concat(this.cameraX, ", ").concat(this.cameraY, ")"));
+      } else {
+        console.warn('Cannot center on map: map data not available', this.map);
+      }
     }
   }]);
 }();
@@ -6802,13 +6844,13 @@ __webpack_require__.r(__webpack_exports__);
 /* harmony import */ var _game_RendererColyseus__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ./game/RendererColyseus */ "./src/game/RendererColyseus.js");
 /* harmony import */ var _game_InputHandler__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ./game/InputHandler */ "./src/game/InputHandler.js");
 /* harmony import */ var _game_UIManager__WEBPACK_IMPORTED_MODULE_3__ = __webpack_require__(/*! ./game/UIManager */ "./src/game/UIManager.js");
-function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 function _toConsumableArray(r) { return _arrayWithoutHoles(r) || _iterableToArray(r) || _unsupportedIterableToArray(r) || _nonIterableSpread(); }
 function _nonIterableSpread() { throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
 function _iterableToArray(r) { if ("undefined" != typeof Symbol && null != r[Symbol.iterator] || null != r["@@iterator"]) return Array.from(r); }
 function _arrayWithoutHoles(r) { if (Array.isArray(r)) return _arrayLikeToArray(r); }
 function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
 function _regeneratorRuntime() { "use strict"; /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/facebook/regenerator/blob/main/LICENSE */ _regeneratorRuntime = function _regeneratorRuntime() { return e; }; var t, e = {}, r = Object.prototype, n = r.hasOwnProperty, o = Object.defineProperty || function (t, e, r) { t[e] = r.value; }, i = "function" == typeof Symbol ? Symbol : {}, a = i.iterator || "@@iterator", c = i.asyncIterator || "@@asyncIterator", u = i.toStringTag || "@@toStringTag"; function define(t, e, r) { return Object.defineProperty(t, e, { value: r, enumerable: !0, configurable: !0, writable: !0 }), t[e]; } try { define({}, ""); } catch (t) { define = function define(t, e, r) { return t[e] = r; }; } function wrap(t, e, r, n) { var i = e && e.prototype instanceof Generator ? e : Generator, a = Object.create(i.prototype), c = new Context(n || []); return o(a, "_invoke", { value: makeInvokeMethod(t, r, c) }), a; } function tryCatch(t, e, r) { try { return { type: "normal", arg: t.call(e, r) }; } catch (t) { return { type: "throw", arg: t }; } } e.wrap = wrap; var h = "suspendedStart", l = "suspendedYield", f = "executing", s = "completed", y = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} var p = {}; define(p, a, function () { return this; }); var d = Object.getPrototypeOf, v = d && d(d(values([]))); v && v !== r && n.call(v, a) && (p = v); var g = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(p); function defineIteratorMethods(t) { ["next", "throw", "return"].forEach(function (e) { define(t, e, function (t) { return this._invoke(e, t); }); }); } function AsyncIterator(t, e) { function invoke(r, o, i, a) { var c = tryCatch(t[r], t, o); if ("throw" !== c.type) { var u = c.arg, h = u.value; return h && "object" == _typeof(h) && n.call(h, "__await") ? e.resolve(h.__await).then(function (t) { invoke("next", t, i, a); }, function (t) { invoke("throw", t, i, a); }) : e.resolve(h).then(function (t) { u.value = t, i(u); }, function (t) { return invoke("throw", t, i, a); }); } a(c.arg); } var r; o(this, "_invoke", { value: function value(t, n) { function callInvokeWithMethodAndArg() { return new e(function (e, r) { invoke(t, n, e, r); }); } return r = r ? r.then(callInvokeWithMethodAndArg, callInvokeWithMethodAndArg) : callInvokeWithMethodAndArg(); } }); } function makeInvokeMethod(e, r, n) { var o = h; return function (i, a) { if (o === f) throw Error("Generator is already running"); if (o === s) { if ("throw" === i) throw a; return { value: t, done: !0 }; } for (n.method = i, n.arg = a;;) { var c = n.delegate; if (c) { var u = maybeInvokeDelegate(c, n); if (u) { if (u === y) continue; return u; } } if ("next" === n.method) n.sent = n._sent = n.arg;else if ("throw" === n.method) { if (o === h) throw o = s, n.arg; n.dispatchException(n.arg); } else "return" === n.method && n.abrupt("return", n.arg); o = f; var p = tryCatch(e, r, n); if ("normal" === p.type) { if (o = n.done ? s : l, p.arg === y) continue; return { value: p.arg, done: n.done }; } "throw" === p.type && (o = s, n.method = "throw", n.arg = p.arg); } }; } function maybeInvokeDelegate(e, r) { var n = r.method, o = e.iterator[n]; if (o === t) return r.delegate = null, "throw" === n && e.iterator["return"] && (r.method = "return", r.arg = t, maybeInvokeDelegate(e, r), "throw" === r.method) || "return" !== n && (r.method = "throw", r.arg = new TypeError("The iterator does not provide a '" + n + "' method")), y; var i = tryCatch(o, e.iterator, r.arg); if ("throw" === i.type) return r.method = "throw", r.arg = i.arg, r.delegate = null, y; var a = i.arg; return a ? a.done ? (r[e.resultName] = a.value, r.next = e.nextLoc, "return" !== r.method && (r.method = "next", r.arg = t), r.delegate = null, y) : a : (r.method = "throw", r.arg = new TypeError("iterator result is not an object"), r.delegate = null, y); } function pushTryEntry(t) { var e = { tryLoc: t[0] }; 1 in t && (e.catchLoc = t[1]), 2 in t && (e.finallyLoc = t[2], e.afterLoc = t[3]), this.tryEntries.push(e); } function resetTryEntry(t) { var e = t.completion || {}; e.type = "normal", delete e.arg, t.completion = e; } function Context(t) { this.tryEntries = [{ tryLoc: "root" }], t.forEach(pushTryEntry, this), this.reset(!0); } function values(e) { if (e || "" === e) { var r = e[a]; if (r) return r.call(e); if ("function" == typeof e.next) return e; if (!isNaN(e.length)) { var o = -1, i = function next() { for (; ++o < e.length;) if (n.call(e, o)) return next.value = e[o], next.done = !1, next; return next.value = t, next.done = !0, next; }; return i.next = i; } } throw new TypeError(_typeof(e) + " is not iterable"); } return GeneratorFunction.prototype = GeneratorFunctionPrototype, o(g, "constructor", { value: GeneratorFunctionPrototype, configurable: !0 }), o(GeneratorFunctionPrototype, "constructor", { value: GeneratorFunction, configurable: !0 }), GeneratorFunction.displayName = define(GeneratorFunctionPrototype, u, "GeneratorFunction"), e.isGeneratorFunction = function (t) { var e = "function" == typeof t && t.constructor; return !!e && (e === GeneratorFunction || "GeneratorFunction" === (e.displayName || e.name)); }, e.mark = function (t) { return Object.setPrototypeOf ? Object.setPrototypeOf(t, GeneratorFunctionPrototype) : (t.__proto__ = GeneratorFunctionPrototype, define(t, u, "GeneratorFunction")), t.prototype = Object.create(g), t; }, e.awrap = function (t) { return { __await: t }; }, defineIteratorMethods(AsyncIterator.prototype), define(AsyncIterator.prototype, c, function () { return this; }), e.AsyncIterator = AsyncIterator, e.async = function (t, r, n, o, i) { void 0 === i && (i = Promise); var a = new AsyncIterator(wrap(t, r, n, o), i); return e.isGeneratorFunction(r) ? a : a.next().then(function (t) { return t.done ? t.value : a.next(); }); }, defineIteratorMethods(g), define(g, u, "Generator"), define(g, a, function () { return this; }), define(g, "toString", function () { return "[object Generator]"; }), e.keys = function (t) { var e = Object(t), r = []; for (var n in e) r.push(n); return r.reverse(), function next() { for (; r.length;) { var t = r.pop(); if (t in e) return next.value = t, next.done = !1, next; } return next.done = !0, next; }; }, e.values = values, Context.prototype = { constructor: Context, reset: function reset(e) { if (this.prev = 0, this.next = 0, this.sent = this._sent = t, this.done = !1, this.delegate = null, this.method = "next", this.arg = t, this.tryEntries.forEach(resetTryEntry), !e) for (var r in this) "t" === r.charAt(0) && n.call(this, r) && !isNaN(+r.slice(1)) && (this[r] = t); }, stop: function stop() { this.done = !0; var t = this.tryEntries[0].completion; if ("throw" === t.type) throw t.arg; return this.rval; }, dispatchException: function dispatchException(e) { if (this.done) throw e; var r = this; function handle(n, o) { return a.type = "throw", a.arg = e, r.next = n, o && (r.method = "next", r.arg = t), !!o; } for (var o = this.tryEntries.length - 1; o >= 0; --o) { var i = this.tryEntries[o], a = i.completion; if ("root" === i.tryLoc) return handle("end"); if (i.tryLoc <= this.prev) { var c = n.call(i, "catchLoc"), u = n.call(i, "finallyLoc"); if (c && u) { if (this.prev < i.catchLoc) return handle(i.catchLoc, !0); if (this.prev < i.finallyLoc) return handle(i.finallyLoc); } else if (c) { if (this.prev < i.catchLoc) return handle(i.catchLoc, !0); } else { if (!u) throw Error("try statement without catch or finally"); if (this.prev < i.finallyLoc) return handle(i.finallyLoc); } } } }, abrupt: function abrupt(t, e) { for (var r = this.tryEntries.length - 1; r >= 0; --r) { var o = this.tryEntries[r]; if (o.tryLoc <= this.prev && n.call(o, "finallyLoc") && this.prev < o.finallyLoc) { var i = o; break; } } i && ("break" === t || "continue" === t) && i.tryLoc <= e && e <= i.finallyLoc && (i = null); var a = i ? i.completion : {}; return a.type = t, a.arg = e, i ? (this.method = "next", this.next = i.finallyLoc, y) : this.complete(a); }, complete: function complete(t, e) { if ("throw" === t.type) throw t.arg; return "break" === t.type || "continue" === t.type ? this.next = t.arg : "return" === t.type ? (this.rval = this.arg = t.arg, this.method = "return", this.next = "end") : "normal" === t.type && e && (this.next = e), y; }, finish: function finish(t) { for (var e = this.tryEntries.length - 1; e >= 0; --e) { var r = this.tryEntries[e]; if (r.finallyLoc === t) return this.complete(r.completion, r.afterLoc), resetTryEntry(r), y; } }, "catch": function _catch(t) { for (var e = this.tryEntries.length - 1; e >= 0; --e) { var r = this.tryEntries[e]; if (r.tryLoc === t) { var n = r.completion; if ("throw" === n.type) { var o = n.arg; resetTryEntry(r); } return o; } } throw Error("illegal catch attempt"); }, delegateYield: function delegateYield(e, r, n) { return this.delegate = { iterator: values(e), resultName: r, nextLoc: n }, "next" === this.method && (this.arg = t), y; } }, e; }
 function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
 function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
@@ -6904,54 +6946,97 @@ var Game = /*#__PURE__*/function () {
     value: function () {
       var _connectToServer = _asyncToGenerator(/*#__PURE__*/_regeneratorRuntime().mark(function _callee2() {
         var _this = this;
+        var debugElement;
         return _regeneratorRuntime().wrap(function _callee2$(_context2) {
           while (1) switch (_context2.prev = _context2.next) {
             case 0:
               _context2.prev = 0;
-              console.log("Connecting to server...");
+              console.log('\n=== Connecting to Server ===');
+              console.log('Client initialized:', !!this.client);
               this.uiManager.showNotification("Connecting to server...");
 
+              // Add debug element to the DOM for connection status
+              debugElement = document.createElement('div');
+              debugElement.id = 'connection-status';
+              debugElement.style.position = 'fixed';
+              debugElement.style.top = '10px';
+              debugElement.style.left = '10px';
+              debugElement.style.padding = '10px';
+              debugElement.style.background = 'rgba(0,0,0,0.7)';
+              debugElement.style.color = 'white';
+              debugElement.style.fontFamily = 'monospace';
+              debugElement.style.zIndex = '9999';
+              debugElement.innerText = 'Connecting...';
+              document.body.appendChild(debugElement);
+
               // Join or create a game room
-              _context2.next = 5;
+              console.log('Attempting to join game_room...');
+              _context2.next = 19;
               return this.client.joinOrCreate("game_room");
-            case 5:
+            case 19:
               this.room = _context2.sent;
               // Store player ID
               this.playerId = this.room.sessionId;
-              console.log("Connected to server with ID:", this.playerId);
+              console.log('Connected successfully!');
+              console.log('Session ID:', this.playerId);
+              console.log('Room:', this.room.name);
+              console.log('Room ID:', this.room.id);
               this.uiManager.showNotification("Connected! Your ID: ".concat(this.playerId));
 
+              // Update debug element
+              document.getElementById('connection-status').innerText = "Connected! ID: ".concat(this.playerId, "\nPlayers: ").concat(this.players.size);
+              document.getElementById('connection-status').style.background = 'rgba(0,128,0,0.7)';
+
               // Set up state change listeners
+              console.log('Setting up state listeners...');
               this.setupStateListeners();
 
               // Set up other room listeners
+              console.log('Setting up room listeners...');
               this.setupRoomListeners();
 
               // Handle disconnection
               this.room.onLeave(function (code) {
-                console.log("Left room:", code);
+                console.log('\n=== Disconnected from Server ===');
+                console.log('Disconnect code:', code);
                 _this.uiManager.showNotification("Disconnected from server. Attempting to reconnect...");
+
+                // Update debug element
+                document.getElementById('connection-status').innerText = 'Disconnected! Reconnecting...';
+                document.getElementById('connection-status').style.background = 'rgba(255,0,0,0.7)';
+
                 // Try to reconnect after 3 seconds
                 setTimeout(function () {
                   return _this.connectToServer();
                 }, 3000);
               });
+              console.log('=== Connection Complete ===\n');
               return _context2.abrupt("return", true);
-            case 15:
-              _context2.prev = 15;
+            case 37:
+              _context2.prev = 37;
               _context2.t0 = _context2["catch"](0);
-              console.error("Failed to connect to server:", _context2.t0);
+              console.error('\n=== Connection Error ===');
+              console.error('Error:', _context2.t0);
+              console.error('Stack:', _context2.t0.stack);
               this.uiManager.showNotification("Failed to connect. Retrying in 3 seconds...");
+
+              // Update debug element
+              if (document.getElementById('connection-status')) {
+                document.getElementById('connection-status').innerText = "Connection error: ".concat(_context2.t0.message);
+                document.getElementById('connection-status').style.background = 'rgba(255,0,0,0.7)';
+              }
+
               // Try to reconnect after 3 seconds
               setTimeout(function () {
                 return _this.connectToServer();
               }, 3000);
+              console.log('=== Connection Error Handled ===\n');
               return _context2.abrupt("return", false);
-            case 21:
+            case 47:
             case "end":
               return _context2.stop();
           }
-        }, _callee2, this, [[0, 15]]);
+        }, _callee2, this, [[0, 37]]);
       }));
       function connectToServer() {
         return _connectToServer.apply(this, arguments);
@@ -6964,7 +7049,27 @@ var Game = /*#__PURE__*/function () {
       var _this2 = this;
       // Listen for game state changes
       this.room.onMessage("gameState", function (state) {
-        console.log('Received gameState message:', state);
+        console.log('\n=== Received gameState Message ===');
+        console.log('Message type:', _typeof(state));
+        console.log('Message keys:', Object.keys(state));
+        console.log('PlayerId:', state.playerId);
+        if (state.gameState) {
+          console.log('GameState keys:', Object.keys(state.gameState));
+          console.log('Players present:', !!state.gameState.players);
+          console.log('Buildings present:', !!state.gameState.buildings);
+          console.log('Units present:', !!state.gameState.units);
+          if (state.gameState.players) {
+            console.log('Players data type:', _typeof(state.gameState.players));
+            console.log('Players has forEach?', typeof state.gameState.players.forEach === 'function');
+            if (typeof state.gameState.players.forEach === 'function') {
+              var playerCount = 0;
+              state.gameState.players.forEach(function () {
+                playerCount++;
+              });
+              console.log('Player count in message:', playerCount);
+            }
+          }
+        }
         _this2.updateGameState(state);
       });
 
@@ -7010,19 +7115,28 @@ var Game = /*#__PURE__*/function () {
     value: function updateGameState(state) {
       var _this4 = this;
       console.log('\n=== Updating Game State ===');
+      console.log('Raw state received:', state);
 
       // Extract the actual game state from the message
       var gameState = state.gameState || state;
+      console.log('Processed gameState type:', _typeof(gameState));
+      console.log('Processed gameState keys:', gameState ? Object.keys(gameState) : 'null');
       if (!gameState) {
         console.error('No game state data received');
         return;
       }
       try {
+        // Debug players data
+        console.log('Players data type:', _typeof(gameState.players));
+        console.log('Players has forEach?', gameState.players && typeof gameState.players.forEach === 'function');
+
         // Update players
         var oldPlayerCount = this.players.size;
         this.players.clear();
         if (gameState.players && typeof gameState.players.forEach === 'function') {
+          console.log('About to process players data');
           gameState.players.forEach(function (playerData, id) {
+            console.log('Processing player:', id, 'Hero present:', !!playerData.hero);
             _this4.players.set(id, playerData);
           });
 
@@ -7030,31 +7144,63 @@ var Game = /*#__PURE__*/function () {
           if (this.players.size !== oldPlayerCount) {
             this.uiManager.updatePlayerCount(this.players.size);
           }
+          console.log('Final player count:', this.players.size);
+        } else {
+          console.warn('Invalid players data:', gameState.players);
         }
+
+        // Debug buildings data
+        console.log('Buildings data type:', _typeof(gameState.buildings));
+        console.log('Buildings has forEach?', gameState.buildings && typeof gameState.buildings.forEach === 'function');
 
         // Update buildings
         this.buildings.clear();
         if (gameState.buildings && typeof gameState.buildings.forEach === 'function') {
+          console.log('About to process buildings data');
           gameState.buildings.forEach(function (building, id) {
+            var _building$position, _building$position2;
+            console.log('Processing building:', id, building.type, (_building$position = building.position) === null || _building$position === void 0 ? void 0 : _building$position.x, (_building$position2 = building.position) === null || _building$position2 === void 0 ? void 0 : _building$position2.y);
             _this4.buildings.set(id, building);
           });
+          console.log('Final building count:', this.buildings.size);
+        } else {
+          console.warn('Invalid buildings data:', gameState.buildings);
         }
+
+        // Debug units data
+        console.log('Units data type:', _typeof(gameState.units));
+        console.log('Units has forEach?', gameState.units && typeof gameState.units.forEach === 'function');
 
         // Update units
         this.units.clear();
         if (gameState.units && typeof gameState.units.forEach === 'function') {
+          console.log('About to process units data');
           gameState.units.forEach(function (unit, id) {
+            var _unit$position, _unit$position2;
+            console.log('Processing unit:', id, unit.type, (_unit$position = unit.position) === null || _unit$position === void 0 ? void 0 : _unit$position.x, (_unit$position2 = unit.position) === null || _unit$position2 === void 0 ? void 0 : _unit$position2.y);
             _this4.units.set(id, unit);
           });
+          console.log('Final unit count:', this.units.size);
+        } else {
+          console.warn('Invalid units data:', gameState.units);
         }
 
         // Update map if provided
         if (gameState.map && Array.isArray(gameState.map)) {
           this.map = Array.from(gameState.map);
-          // Center camera on map if this is the first time receiving map data
+
+          // Check if centerOnMap exists before calling it
           if (!this.hasReceivedMap) {
-            this.renderer.centerOnMap();
+            console.log('First map data received, setting hasReceivedMap flag');
             this.hasReceivedMap = true;
+
+            // Only call centerOnMap if it exists
+            if (this.renderer && typeof this.renderer.centerOnMap === 'function') {
+              console.log('Calling centerOnMap method');
+              this.renderer.centerOnMap();
+            } else {
+              console.log('centerOnMap method not available, skipping camera centering');
+            }
           }
         }
 
@@ -7086,6 +7232,8 @@ var Game = /*#__PURE__*/function () {
         }
       } catch (error) {
         console.error('Error updating game state:', error);
+        console.error('Error stack:', error.stack);
+        console.error('State that caused error:', JSON.stringify(gameState).slice(0, 200) + '...');
         this.uiManager.showNotification('Error updating game state');
       }
     }
@@ -7107,34 +7255,57 @@ var Game = /*#__PURE__*/function () {
   }, {
     key: "render",
     value: function render() {
-      var _this6 = this;
+      var _this$map,
+        _this$buildings,
+        _this6 = this,
+        _this$units,
+        _this$players;
+      console.log('\n=== Render Called ===');
+
       // Clear canvas
       this.renderer.clear();
 
       // Render map
+      console.log('Rendering map, size:', ((_this$map = this.map) === null || _this$map === void 0 ? void 0 : _this$map.length) || 0);
       this.renderer.renderMap(this.map);
 
       // Render buildings
+      console.log('Buildings to render:', ((_this$buildings = this.buildings) === null || _this$buildings === void 0 ? void 0 : _this$buildings.size) || 0);
       this.buildings.forEach(function (building) {
+        var _building$position3, _building$position4;
+        console.log('Rendering building:', building.id, building.type, (_building$position3 = building.position) === null || _building$position3 === void 0 ? void 0 : _building$position3.x, (_building$position4 = building.position) === null || _building$position4 === void 0 ? void 0 : _building$position4.y);
         _this6.renderer.renderBuilding(building);
       });
 
       // Render units
+      console.log('Units to render:', ((_this$units = this.units) === null || _this$units === void 0 ? void 0 : _this$units.size) || 0);
       this.units.forEach(function (unit) {
+        var _unit$position3, _unit$position4;
+        console.log('Rendering unit:', unit.id, unit.type, (_unit$position3 = unit.position) === null || _unit$position3 === void 0 ? void 0 : _unit$position3.x, (_unit$position4 = unit.position) === null || _unit$position4 === void 0 ? void 0 : _unit$position4.y);
         _this6.renderer.renderUnit(unit);
       });
 
       // Render heroes
+      console.log('Players to check for heroes:', ((_this$players = this.players) === null || _this$players === void 0 ? void 0 : _this$players.size) || 0);
       this.players.forEach(function (playerData) {
         if (playerData.hero) {
-          _this6.renderer.renderHero(playerData.hero, playerData.id === _this6.playerId);
+          var _playerData$hero$posi, _playerData$hero$posi2;
+          console.log('Rendering hero for player:', playerData.id, 'at position:', (_playerData$hero$posi = playerData.hero.position) === null || _playerData$hero$posi === void 0 ? void 0 : _playerData$hero$posi.x, (_playerData$hero$posi2 = playerData.hero.position) === null || _playerData$hero$posi2 === void 0 ? void 0 : _playerData$hero$posi2.y);
+          var isSelected = _this6.selectedEntities.includes(playerData.hero);
+          var isOwnHero = playerData.id === _this6.playerId;
+          _this6.renderer.renderHero(playerData.hero, isSelected, isOwnHero);
+        } else {
+          console.log('Player has no hero:', playerData.id);
         }
       });
 
       // Render selection highlight
+      console.log('Selected entities:', this.selectedEntities.length);
       this.selectedEntities.forEach(function (entity) {
+        console.log('Rendering selection for:', entity.id, entity.type);
         _this6.renderer.renderSelection(entity);
       });
+      console.log('=== Render Complete ===\n');
     }
 
     // Game actions

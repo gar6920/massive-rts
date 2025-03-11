@@ -19,6 +19,9 @@ class Renderer {
     this.cameraY = 0;
     this.zoom = 1.0;
     
+    // Map data reference
+    this.map = null;
+    
     // Colors for different terrain types
     this.colors = {
       tile: '#4a8505', // Default grass
@@ -99,39 +102,54 @@ class Renderer {
   
   /**
    * Render the map
-   * @param {Array} map - Array of tile values
+   * @param {Array} map - 2D array of map tiles
    */
   renderMap(map) {
     console.log('=== Render Map Called ===');
-    console.log('Map data received:', map);
-    console.log('Map type:', map ? (Array.isArray(map) ? 'Array' : typeof map) : 'undefined');
     
-    if (!map || !map.length) {
-      console.warn('No map data to render');
-      console.log('Camera position:', { x: this.cameraX, y: this.cameraY });
-      console.log('Zoom level:', this.zoom);
+    // Store map reference
+    this.map = map;
+    
+    if (!Array.isArray(map)) {
+      console.error('Invalid map data:', map);
       return;
     }
     
-    console.log('Map dimensions:', {
-      length: map.length,
-      firstRowLength: map[0]?.length,
-      isValid2DArray: map.every(row => Array.isArray(row))
-    });
+    console.log('Map data received:', map);
+    console.log('Map type:', map.constructor.name);
     
-    // Sample some map data
-    if (map.length > 0 && map[0]?.length > 0) {
-      console.log('Sample tile data:');
+    // Log the map dimensions
+    const dimensions = {
+      length: map.length,
+      firstRowLength: map[0] ? map[0].length : 0,
+      isValid2DArray: map.length > 0 && Array.isArray(map[0])
+    };
+    console.log('Map dimensions:', dimensions);
+    
+    // Log some tile data
+    console.log('Sample tile data:');
+    if (map.length > 0 && map[0].length > 0) {
       console.log('Top-left:', map[0][0]);
-      console.log('Center:', map[Math.floor(map.length/2)]?.[Math.floor(map[0].length/2)]);
-      console.log('Bottom-right:', map[map.length-1]?.[map[0].length-1]);
+      
+      const centerX = Math.floor(map.length / 2);
+      const centerY = Math.floor(map[0].length / 2);
+      if (map[centerX] && map[centerX][centerY]) {
+        console.log('Center:', map[centerX][centerY]);
+      }
+      
+      const lastX = map.length - 1;
+      const lastY = map[0].length - 1;
+      if (map[lastX] && map[lastX][lastY]) {
+        console.log('Bottom-right:', map[lastX][lastY]);
+      }
     }
     
-    // Iterate through the map grid
-    for (let y = 0; y < map.length; y++) {
-      for (let x = 0; x < map[y].length; x++) {
-        const tile = map[y][x];
-        this.renderTile(x, y, tile);
+    // Render each tile
+    for (let x = 0; x < map.length; x++) {
+      for (let y = 0; y < map[x].length; y++) {
+        const tile = map[x][y];
+        const tileType = tile.terrainType || tile.type || 'grass';
+        this.renderTile(x, y, tileType);
       }
     }
     
@@ -139,41 +157,50 @@ class Renderer {
   }
   
   /**
-   * Render a single tile
-   * @param {number} x - Grid x coordinate
-   * @param {number} y - Grid y coordinate
-   * @param {number} tileType - Type of tile
+   * Render a single tile at the specified position
+   * @param {number} x - X coordinate in the grid
+   * @param {number} y - Y coordinate in the grid
+   * @param {string} tileType - Type of tile (grass, water, etc.)
    */
   renderTile(x, y, tileType) {
+    // Convert grid position to screen coordinates
     const screenPos = this.gridToScreen(x, y);
     
-    // Get color based on tile type
-    let color = this.colors.tile;
+    // Determine tile color based on type
+    let fillColor;
+    let strokeColor;
+    
     switch (tileType) {
-      case 1: // Water
-        color = this.colors.water;
+      case 'water':
+        fillColor = this.colors.water;
         break;
-      case 2: // Mountain
-        color = this.colors.mountain;
+      case 'mountain':
+        fillColor = this.colors.mountain;
         break;
-      case 3: // Forest
-        color = this.colors.forest;
+      case 'forest':
+        fillColor = this.colors.forest;
         break;
-      case 4: // Plains
-        color = this.colors.plains;
+      case 'plains':
+        fillColor = this.colors.plains;
         break;
-      case 5: // Desert
-        color = this.colors.desert;
+      case 'desert':
+        fillColor = this.colors.desert;
+        break;
+      case 'grass':
+      default:
+        fillColor = this.colors.tile;
         break;
     }
     
-    // Draw tile
+    strokeColor = this.colors.tileOutline;
+    
+    // Draw isometric tile
     this.drawIsometricTile(
       screenPos.x,
       screenPos.y,
       this.tileWidth * this.zoom,
       this.tileHeight * this.zoom,
-      color
+      fillColor
     );
     
     // Draw tile outline
@@ -182,7 +209,7 @@ class Renderer {
       screenPos.y,
       this.tileWidth * this.zoom,
       this.tileHeight * this.zoom,
-      this.colors.tileOutline
+      strokeColor
     );
   }
   
@@ -239,6 +266,12 @@ class Renderer {
    * @param {boolean} isOwnHero - Whether this hero belongs to the current player
    */
   renderHero(hero, isSelected, isOwnHero) {
+    console.log('Rendering hero:', hero);
+    if (!hero || !hero.position) {
+      console.error('Invalid hero object:', hero);
+      return;
+    }
+    
     const screenPos = this.gridToScreen(hero.position.x, hero.position.y);
     
     this.ctx.save();
@@ -314,7 +347,11 @@ class Renderer {
    * @param {Object} building - Building object
    */
   renderBuilding(building) {
-    if (!building || !building.position) return;
+    console.log('Rendering building:', building);
+    if (!building || !building.position) {
+      console.error('Invalid building object:', building);
+      return;
+    }
     
     const screenPos = this.gridToScreen(building.position.x, building.position.y);
     
@@ -379,6 +416,28 @@ class Renderer {
    */
   adjustZoom(delta) {
     this.zoom = Math.max(0.5, Math.min(2, this.zoom + delta));
+  }
+  
+  /**
+   * Center the camera on the center of the map
+   */
+  centerOnMap() {
+    console.log('Centering camera on map');
+    if (Array.isArray(this.map) && this.map.length > 0) {
+      // Calculate center coordinates
+      const centerX = this.map.length / 2;
+      const centerY = this.map[0].length / 2;
+      
+      console.log(`Map dimensions: ${this.map.length}x${this.map[0].length}, center at (${centerX}, ${centerY})`);
+      
+      // Set camera position
+      this.cameraX = centerX * this.tileWidth / 2;
+      this.cameraY = centerY * this.tileHeight / 2;
+      
+      console.log(`Set camera position to (${this.cameraX}, ${this.cameraY})`);
+    } else {
+      console.warn('Cannot center on map: map data not available', this.map);
+    }
   }
 }
 
